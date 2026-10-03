@@ -4,6 +4,7 @@
 #include "types.h"
 
 extern lv_obj_t *screen_pregame_home;
+extern lv_obj_t *screen_pregame_multiplayer;
 extern lv_obj_t *screen_pregame_players;
 extern lv_obj_t *screen_pregame_roster;
 extern lv_obj_t *screen_pregame_mulligans;
