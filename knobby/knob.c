@@ -13,6 +13,7 @@
 #include "src/damage_log.h"
 #include "src/rename.h"
 #include "src/mana.h"
+#include "src/ui_damage_resolver.h"
 
 // ---------- swipe state ----------
 static lv_obj_t *previous_screen = NULL;
@@ -333,6 +334,10 @@ static void handle_back_navigation(lv_obj_t *screen)
     } else if (screen == screen_damage) {
         damage_cancel();
         open_select_screen();
+    } else if (screen == screen_damage_resolver) {
+        back_to_main();
+    } else if (screen == screen_damage_target) {
+        back_to_main();
     } else if (screen == screen_game_mode_menu) {
         lv_scr_load(screen_quad_menu);
     } else if (screen == screen_custom_life) {
@@ -401,6 +406,7 @@ static void menu_facing_hook_screens(void)
         screen_player_all_damage, screen_counter_menu, screen_counter_edit,
         screen_player_color_menu, screen_player_color_picker,
         screen_player_name, screen_select, screen_damage,
+        screen_damage_target, screen_damage_resolver,
     };
     size_t i;
 
@@ -437,6 +443,7 @@ void knob_gui(void)
     build_player_color_picker_screen();
     build_select_screen();
     build_damage_screen();
+    build_damage_resolver_screens();
     build_mana_screen();
     build_settings_screen();
     build_battery_screen();
@@ -483,6 +490,11 @@ static void handle_knob_event(knob_event_t k)
     {
         if (k == KNOB_LEFT)      add_damage_to_selected_enemy(-1);
         else if (k == KNOB_RIGHT) add_damage_to_selected_enemy(+1);
+    }
+    else if (lv_scr_act() == screen_damage_resolver)
+    {
+        if (k == KNOB_LEFT)      damage_resolver_change_amount(-1);
+        else if (k == KNOB_RIGHT) damage_resolver_change_amount(+1);
     }
     else if (lv_scr_act() == screen_settings)
     {
