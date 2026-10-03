@@ -84,9 +84,12 @@ static void event_local_play(lv_event_t *e)
     int i;
     (void)e;
 
-    /* Generic roster until Playgroup supplies real members/decks. */
-    for (i = 0; i < MAX_DISPLAY_PLAYERS; i++)
+    playgroup_roster_active = false;
+    for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
         snprintf(player_names[i], sizeof(player_names[i]), "P%d", i + 1);
+        selected_deck_id[i] = 0;
+        selected_deck_name[i][0] = '\0';
+    }
 
     /* New games always open on the Commander-table default: four seats.
        The user can adjust 1..6 with touch +/- or the physical dial. */
@@ -274,8 +277,11 @@ static void event_playgroup_select(lv_event_t *e)
     }
 
     playgroup_roster_active = true;
-    for (i = 0; i < MAX_DISPLAY_PLAYERS; i++)
+    for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
         selected_member_index[i] = i % member_count;
+        selected_deck_id[i] = 0;
+        selected_deck_name[i][0] = '\0';
+    }
 
     refresh_roster();
     lv_scr_load(screen_pregame_roster);
