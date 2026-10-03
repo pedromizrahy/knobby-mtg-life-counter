@@ -413,15 +413,15 @@ static void turn_reminder_flash_timer_cb(lv_timer_t *timer)
 
     /* Smooth breathing halo after the threshold alert. */
     if (turn_reminder_pulse_dir > 0) {
-        if (turn_reminder_pulse_level >= 90) {
-            turn_reminder_pulse_level = 90;
+        if (turn_reminder_pulse_level >= 100) {
+            turn_reminder_pulse_level = 100;
             turn_reminder_pulse_dir = -1;
         } else {
             turn_reminder_pulse_level = (uint8_t)(turn_reminder_pulse_level + 2);
         }
     } else {
-        if (turn_reminder_pulse_level <= 24) {
-            turn_reminder_pulse_level = 24;
+        if (turn_reminder_pulse_level <= 20) {
+            turn_reminder_pulse_level = 20;
             turn_reminder_pulse_dir = 1;
         } else {
             turn_reminder_pulse_level = (uint8_t)(turn_reminder_pulse_level - 2);
@@ -454,6 +454,13 @@ void event_turn_hold(lv_event_t *e)
 
     if (code == LV_EVENT_PRESSED) {
         if (!turn_timer_enabled || active_turn_player < 0) return;
+
+        /* A life preview can still be waiting on its auto-commit timer.
+           Resolve it synchronously before arming turn advance so the preview
+           callback and turn/log mutation can never race each other. */
+        if (life_preview_active) {
+            life_preview_commit_cb(NULL);
+        }
 
         turn_hold_started_ms = lv_tick_get();
         turn_hold_active = true;
