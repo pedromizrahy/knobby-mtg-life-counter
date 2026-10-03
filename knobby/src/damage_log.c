@@ -53,7 +53,6 @@ void damage_log_end_action(void)
     active_action_depth--;
     if (active_action_depth == 0) {
         active_action_id = 0;
-    active_action_depth = 0;
     }
 }
 
@@ -86,6 +85,7 @@ void damage_log_reset(void)
     damage_log_count = 0;
     damage_log_head = 0;
     active_action_id = 0;
+    active_action_depth = 0;
 }
 
 /* Remove the newest entry matching player + event_type (used by elimination
