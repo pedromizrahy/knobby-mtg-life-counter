@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_heap_caps.h"
-#include "esp_jpg_decode_compat.h"
+#include "commander_image_decode.h"
 
 extern void reset_all_values(void);
 extern void back_to_main(void);
@@ -55,127 +55,6 @@ static lv_timer_t *deck_art_timer = NULL;
 static uint8_t *deck_art_data = NULL;
 static uint8_t *deck_art_pixels = NULL;
 static lv_img_dsc_t deck_art_dsc;
-
-typedef struct {
-    const uint8_t *src;
-    size_t src_size;
-    uint8_t *dst;
-    uint16_t width;
-    uint16_t height;
-} commander_jpeg_ctx_t;
-
-static size_t commander_jpeg_reader(void *arg, size_t index, uint8_t *buf, size_t len)
-{
-    commander_jpeg_ctx_t *ctx = (commander_jpeg_ctx_t *)arg;
-    size_t remaining;
-
-    if (ctx == NULL || index >= ctx->src_size)
-        return 0;
-
-    remaining = ctx->src_size - index;
-    if (len > remaining)
-        len = remaining;
-
-    if (buf != NULL)
-        memcpy(buf, ctx->src + index, len);
-
-    return len;
-}
-
-static bool commander_jpeg_writer(void *arg, uint16_t x, uint16_t y,
-                                  uint16_t w, uint16_t h, uint8_t *data)
-{
-    commander_jpeg_ctx_t *ctx = (commander_jpeg_ctx_t *)arg;
-    uint16_t row;
-    uint16_t col;
-
-    if (ctx == NULL)
-        return false;
-
-    if (data == NULL) {
-        if (x == 0 && y == 0) {
-            size_t bytes;
-
-            ctx->width = w;
-            ctx->height = h;
-            bytes = (size_t)w * (size_t)h * 2U;
-            ctx->dst = (uint8_t *)heap_caps_malloc(bytes,
-                                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-            if (ctx->dst == NULL) {
-                printf("[Playgroup] Commander JPEG pixel allocation failed: %u bytes\n",
-                       (unsigned)bytes);
-                return false;
-            }
-            memset(ctx->dst, 0, bytes);
-        }
-        return true;
-    }
-
-    if (ctx->dst == NULL || ctx->width == 0 || ctx->height == 0)
-        return false;
-
-    for (row = 0; row < h; row++) {
-        for (col = 0; col < w; col++) {
-            uint16_t dx = (uint16_t)(x + col);
-            uint16_t dy = (uint16_t)(y + row);
-            size_t src_i;
-            size_t dst_i;
-            uint16_t color;
-
-            if (dx >= ctx->width || dy >= ctx->height)
-                continue;
-
-            src_i = ((size_t)row * w + col) * 3U;
-            color = (uint16_t)(((uint16_t)(data[src_i] & 0xF8U) << 8) |
-                               ((uint16_t)(data[src_i + 1] & 0xFCU) << 3) |
-                               ((uint16_t)data[src_i + 2] >> 3));
-#if LV_COLOR_16_SWAP
-            color = (uint16_t)((color << 8) | (color >> 8));
-#endif
-            dst_i = ((size_t)dy * ctx->width + dx) * 2U;
-            ctx->dst[dst_i] = (uint8_t)(color & 0xFFU);
-            ctx->dst[dst_i + 1] = (uint8_t)(color >> 8);
-        }
-    }
-
-    return true;
-}
-
-static bool decode_commander_jpeg(const uint8_t *jpeg, size_t jpeg_size,
-                                  uint8_t **out_pixels,
-                                  uint16_t *out_width, uint16_t *out_height)
-{
-    commander_jpeg_ctx_t ctx;
-    esp_err_t err;
-
-    if (jpeg == NULL || jpeg_size == 0 || out_pixels == NULL ||
-        out_width == NULL || out_height == NULL)
-        return false;
-
-    memset(&ctx, 0, sizeof(ctx));
-    ctx.src = jpeg;
-    ctx.src_size = jpeg_size;
-
-    err = knobby_esp_jpg_decode(jpeg_size, KNOBBY_JPG_SCALE_8X,
-                                commander_jpeg_reader,
-                                commander_jpeg_writer,
-                                &ctx);
-    if (err != ESP_OK || ctx.dst == NULL || ctx.width == 0 || ctx.height == 0) {
-        if (ctx.dst != NULL)
-            heap_caps_free(ctx.dst);
-        printf("[Playgroup] Commander JPEG wrapper decode failed: %d\n", (int)err);
-        return false;
-    }
-
-    printf("[Playgroup] Commander JPEG decoded to %ux%u RGB565 (%u bytes)\n",
-           (unsigned)ctx.width, (unsigned)ctx.height,
-           (unsigned)((size_t)ctx.width * ctx.height * 2U));
-
-    *out_pixels = ctx.dst;
-    *out_width = ctx.width;
-    *out_height = ctx.height;
-    return true;
-}
 
 static void refresh_roster(void);
 static void refresh_mulligans(void);
@@ -570,7 +449,7 @@ static void clear_deck_art(void)
     }
 
     if (deck_art_pixels != NULL) {
-        heap_caps_free(deck_art_pixels);
+        commander_image_free_pixels(deck_art_pixels);
         deck_art_pixels = NULL;
     }
 
@@ -616,13 +495,13 @@ static void deck_art_timer_cb(lv_timer_t *timer)
         uint16_t decoded_h = 0;
         uint32_t decode_started = lv_tick_get();
 
-        if (!decode_commander_jpeg(deck_art_data, data_size,
-                                   &deck_art_pixels, &decoded_w, &decoded_h)) {
-            printf("[Playgroup] Commander art ROM JPEG decode failed.\n");
+        if (!commander_image_decode_rgb565(deck_art_data, data_size,
+                                           &deck_art_pixels, &decoded_w, &decoded_h)) {
+            printf("[Playgroup] Commander art stb JPEG decode failed.\n");
             return;
         }
 
-        printf("[Playgroup] Commander art ROM decode completed in %lu ms\n",
+        printf("[Playgroup] Commander art stb decode completed in %lu ms\n",
                (unsigned long)(lv_tick_get() - decode_started));
 
         memset(&deck_art_dsc, 0, sizeof(deck_art_dsc));
