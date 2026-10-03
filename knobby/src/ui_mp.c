@@ -27,7 +27,7 @@ static lv_obj_t *mp_reminder_overlay = NULL;
 static lv_obj_t *mp_reminder_overlay_label = NULL;
 
 #define DAMAGE_DRAG_THRESHOLD_PX 18
-#define DAMAGE_DRAG_CENTER_HOLD_MS 700
+#define DAMAGE_DRAG_CENTER_HOLD_MS 600
 
 static int drag_source_player = -1;
 static int drag_target_player = -1;
@@ -206,6 +206,22 @@ static void apply_label_rotation(lv_obj_t *life_lbl, lv_obj_t *name_lbl,
     apply_object_rotation(name_lbl, angle, 0, name_pivot_y);
 }
 
+static void get_counter_equator_anchor(lv_obj_t *panel,
+                                       lv_coord_t *anchor_x, lv_coord_t *anchor_y);
+
+static int visible_commander_count(int target_player)
+{
+    int source;
+    int count = 0;
+
+    for (source = 0; source < MAX_DISPLAY_PLAYERS; source++) {
+        if (source != target_player &&
+            cmd_damage_totals[source][target_player] > 0)
+            count++;
+    }
+    return count;
+}
+
 static void refresh_commander_markers(const mp_panel_spec_t *spec,
                                       lv_obj_t *panel,
                                       lv_obj_t **markers,
@@ -216,7 +232,16 @@ static void refresh_commander_markers(const mp_panel_spec_t *spec,
 {
     int source;
     int visible = 0;
+    int counter_visible = 0;
     int sources[MAX_DISPLAY_PLAYERS];
+    lv_coord_t anchor_x = 0;
+    lv_coord_t anchor_y = 0;
+
+    for (source = 0; source < COUNTER_TYPE_COUNT; source++) {
+        if (counter_type_is_enabled((counter_type_t)source) &&
+            get_counter_value(target_player, (counter_type_t)source) > 0)
+            counter_visible++;
+    }
 
     for (source = 0; source < MAX_DISPLAY_PLAYERS; source++) {
         if (markers[source] == NULL) continue;
@@ -227,20 +252,23 @@ static void refresh_commander_markers(const mp_panel_spec_t *spec,
         sources[visible++] = source;
     }
 
+    if (!spec_is_wedge(spec))
+        get_counter_equator_anchor(panel, &anchor_x, &anchor_y);
+
     for (source = 0; source < visible; source++) {
         int src = sources[source];
+        int total = counter_visible + visible;
+        int slot = counter_visible + source;
         char buf[8];
         lv_obj_t *marker = markers[src];
         lv_obj_t *dot = lv_obj_get_child(marker, 0);
         lv_obj_t *value = lv_obj_get_child(marker, 1);
-        lv_coord_t xoff = 0;
-        lv_coord_t yoff = 0;
+        lv_coord_t xoff;
+        lv_coord_t yoff;
 
         snprintf(buf, sizeof(buf), "%d", cmd_damage_totals[src][target_player]);
 
         if (dot != NULL) {
-            /* Art mode intentionally falls back to the colored dot until
-               commander artwork is available from the deck integration. */
             lv_obj_set_style_bg_color(
                 dot, get_effective_player_color(src, src, LIFE_VIB_VIV), 0);
         }
@@ -250,23 +278,18 @@ static void refresh_commander_markers(const mp_panel_spec_t *spec,
         }
 
         if (spec_is_wedge(spec)) {
-            /* Counters live on the outer radius (~152). Commander damage
-               gets its own inner arc so the two systems never overlap. */
-            const int radius = 126;
-            const int step_deg = 17;
-            int a = (wedge_geom[panel_index].bis_deg
-                     + ((visible - 1) * step_deg / 2)
-                     - (source * step_deg) + 360) % 360;
-            xoff = wedge_polar(lv_trigo_cos(a), radius);
-            yoff = wedge_polar(lv_trigo_sin(a), radius);
-        } else if (panel != NULL) {
-            /* Rect layouts: counters sit next to the table equator at
-               roughly +/-66. Keep commander damage on a separate inner
-               band, closer to the player's life area. */
-            const lv_coord_t step = 32;
-            xoff = (lv_coord_t)((source * step) - ((visible - 1) * step / 2));
-            yoff = ((lv_obj_get_y(panel) + lv_obj_get_height(panel) / 2) < 180)
-                     ? 34 : -34;
+            const int radius = 152;
+            const int step_deg = 12;
+            int angle = (wedge_geom[panel_index].bis_deg
+                         + ((total - 1) * step_deg / 2)
+                         - (slot * step_deg) + 360) % 360;
+            xoff = wedge_polar(lv_trigo_cos((int16_t)angle), radius);
+            yoff = wedge_polar(lv_trigo_sin((int16_t)angle), radius);
+        } else {
+            const lv_coord_t step = 30;
+            xoff = anchor_x +
+                   (lv_coord_t)((slot * step) - ((total - 1) * step / 2));
+            yoff = anchor_y;
         }
 
         lv_obj_align(marker, LV_ALIGN_CENTER, xoff, yoff);
@@ -451,6 +474,7 @@ static void refresh_counter_rows(const mp_panel_spec_t *spec, int16_t wedge_bis,
 {
     int type;
     int visible_count = 0;
+    int cmd_count = visible_commander_count(player_index);
     int visible_types[COUNTER_TYPE_COUNT];
     char buf[8];
     const lv_coord_t step = 30;
@@ -471,43 +495,39 @@ static void refresh_counter_rows(const mp_panel_spec_t *spec, int16_t wedge_bis,
             continue;
         }
 
-        visible_types[visible_count] = type;
-        visible_count++;
+        visible_types[visible_count++] = type;
     }
 
     for (type = 0; type < visible_count; type++) {
         int value;
         int counter_type = visible_types[type];
-        lv_coord_t x_offset = (lv_coord_t)((type * step) - ((visible_count - 1) * step / 2));
+        int total = visible_count + cmd_count;
         lv_coord_t local_x;
         lv_coord_t local_y;
 
         if (spec_is_wedge(spec)) {
-            /* Badges on an arc near the rim, centered on the wedge
-               bisector: constant clearance from both the rim and the
-               life/name labels regardless of badge count. */
             const int radius = 152;
             const int step_deg = 12;
-            int a = (wedge_bis + ((visible_count - 1) * step_deg / 2)
-                     - (type * step_deg) + 360) % 360;
-            local_x = wedge_polar(lv_trigo_cos((int16_t)a), radius);
-            local_y = wedge_polar(lv_trigo_sin((int16_t)a), radius);
+            int angle = (wedge_bis + ((total - 1) * step_deg / 2)
+                         - (type * step_deg) + 360) % 360;
+            local_x = wedge_polar(lv_trigo_cos((int16_t)angle), radius);
+            local_y = wedge_polar(lv_trigo_sin((int16_t)angle), radius);
         } else {
-            local_x = anchor_x + x_offset;
+            local_x = anchor_x +
+                      (lv_coord_t)((type * step) - ((total - 1) * step / 2));
             local_y = anchor_y;
         }
 
         value = get_counter_value(player_index, (counter_type_t)counter_type);
-
         snprintf(buf, sizeof(buf), "%d", value);
         lv_label_set_text(value_labels[counter_type], buf);
         lv_obj_set_style_text_color(value_labels[counter_type], text_color, 0);
         {
             lv_obj_t *glyph = lv_obj_get_child(rows[counter_type], 0);
-            if (glyph != NULL) {
+            if (glyph != NULL)
                 lv_obj_set_style_text_color(glyph, text_color, 0);
-            }
         }
+
         lv_obj_clear_flag(rows[counter_type], LV_OBJ_FLAG_HIDDEN);
         lv_obj_align(rows[counter_type], LV_ALIGN_CENTER, local_x, local_y);
         apply_object_rotation(rows[counter_type], row_angle, 0, 0);
@@ -524,14 +544,10 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
 
     {
         int vib;
-        if (selection_count() == 0) {
-            if (turn_timer_enabled && active_turn_player >= 0) {
-                vib = (active_turn_player == i) ? LIFE_VIB_VIV : LIFE_VIB_DIM;
-            } else {
-                vib = LIFE_VIB_MID;
-            }
+        if (turn_timer_enabled && active_turn_player >= 0) {
+            vib = (active_turn_player == i) ? LIFE_VIB_VIV : LIFE_VIB_DIM;
         } else {
-            vib = selected ? LIFE_VIB_VIV : LIFE_VIB_DIM;
+            vib = LIFE_VIB_MID;
         }
         bg_color = get_effective_player_color(i, color_i, vib);
         text_color = color_is_light(bg_color) ? lv_color_black() : lv_color_white();
@@ -843,8 +859,14 @@ void refresh_multiplayer_ui(void)
 static int player_at_screen_point(lv_coord_t x, lv_coord_t y)
 {
     int i;
+    int dx = x - WEDGE_CX;
+    int dy = y - WEDGE_CY;
 
     if (mp_state.layout == NULL) return -1;
+
+    /* The center/timer is a universal multi-target gesture zone for every
+       layout, including rectangular 2P/4P layouts. */
+    if ((dx * dx) + (dy * dy) < (62 * 62)) return -2;
 
     for (i = 0; i < mp_state.layout->panel_count; i++) {
         const mp_panel_spec_t *spec = &mp_state.layout->panels[i];
@@ -854,8 +876,6 @@ static int player_at_screen_point(lv_coord_t x, lv_coord_t y)
             int dy = y - WEDGE_CY;
             int angle;
 
-            /* Reserve the center for future multi-target gestures. */
-            if ((dx * dx) + (dy * dy) < (52 * 52)) return -2;
             if (dx == 0 && dy == 0) dx = 1;
             angle = lv_atan2(dy, dx);
             if (wedge_contains_angle(spec, angle)) return spec->player_index;
