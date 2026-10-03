@@ -53,6 +53,16 @@ void change_all_damage(int delta);
 void apply_life_delta(int player, int delta);
 bool apply_sourced_damage(int source, int target, int amount, game_damage_type_t damage_type);
 
+/* Combat/damage action modifiers can be combined. Infect replaces player
+   life loss with poison counters, while Commander and Lifelink remain
+   independent properties of the same damage event. */
+#define ATTACK_EFFECT_COMMANDER (1U << 0)
+#define ATTACK_EFFECT_INFECT    (1U << 1)
+#define ATTACK_EFFECT_LIFELINK  (1U << 2)
+
+bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
+                          uint8_t effects);
+
 // ---------- player selection set ----------
 int selection_count(void);
 bool is_player_selected(int player);
