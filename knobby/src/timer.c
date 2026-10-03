@@ -26,7 +26,9 @@ bool turn_hold_active = false;
 int turn_hold_progress = 0;
 
 #define TURN_HOLD_MS 1000U
-#define TURN_REMINDER_FLASH_STEPS 8
+#define TURN_REMINDER_FLASH_STEPS 12
+#define TURN_REMINDER_ALERT_PERIOD_MS 250U
+#define TURN_REMINDER_PULSE_PERIOD_MS 700U
 
 static uint32_t current_turn_started_ms = 0;
 static uint32_t turn_hold_started_ms = 0;
@@ -84,6 +86,7 @@ void turn_timer_start_for_player(int player)
     turn_hold_completed = false;
 
     if (turn_reminder_flash_timer != NULL) {
+        lv_timer_set_period(turn_reminder_flash_timer, TURN_REMINDER_ALERT_PERIOD_MS);
         lv_timer_pause(turn_reminder_flash_timer);
     }
 
@@ -130,6 +133,7 @@ void turn_timer_reset(void)
         lv_timer_pause(turn_hold_timer);
     }
     if (turn_reminder_flash_timer != NULL) {
+        lv_timer_set_period(turn_reminder_flash_timer, TURN_REMINDER_ALERT_PERIOD_MS);
         lv_timer_pause(turn_reminder_flash_timer);
     }
 
@@ -203,6 +207,7 @@ void turn_advance(void)
     turn_hold_completed = false;
 
     if (turn_reminder_flash_timer != NULL) {
+        lv_timer_set_period(turn_reminder_flash_timer, TURN_REMINDER_ALERT_PERIOD_MS);
         lv_timer_pause(turn_reminder_flash_timer);
     }
 
@@ -241,6 +246,7 @@ static void turn_timer_tick_cb(lv_timer_t *timer)
             turn_reminder_flash_on = true;
             turn_reminder_overlay_active = true;
             if (turn_reminder_flash_timer != NULL) {
+                lv_timer_set_period(turn_reminder_flash_timer, TURN_REMINDER_ALERT_PERIOD_MS);
                 lv_timer_reset(turn_reminder_flash_timer);
                 lv_timer_resume(turn_reminder_flash_timer);
             }
@@ -304,18 +310,37 @@ static void turn_hold_timer_cb(lv_timer_t *timer)
 
 static void turn_reminder_flash_timer_cb(lv_timer_t *timer)
 {
-    (void)timer;
-
-    if (turn_reminder_flash_steps_remaining == 0) {
+    if (!turn_reminder_active || !nvs_get_turn_visual_alert()) {
         turn_reminder_flash_on = false;
         turn_reminder_overlay_active = false;
-        lv_timer_pause(turn_reminder_flash_timer);
+        lv_timer_set_period(timer, TURN_REMINDER_ALERT_PERIOD_MS);
+        lv_timer_pause(timer);
         refresh_turn_ui();
         return;
     }
 
+    if (turn_reminder_overlay_active) {
+        /* Strong threshold alert: ~3 seconds at 250 ms steps. */
+        turn_reminder_flash_on = !turn_reminder_flash_on;
+
+        if (turn_reminder_flash_steps_remaining > 0)
+            turn_reminder_flash_steps_remaining--;
+
+        if (turn_reminder_flash_steps_remaining == 0) {
+            /* Drop the full-screen alert, then keep only a slow,
+               unobtrusive halo pulse until the turn changes. */
+            turn_reminder_overlay_active = false;
+            turn_reminder_flash_on = true;
+            lv_timer_set_period(timer, TURN_REMINDER_PULSE_PERIOD_MS);
+            lv_timer_reset(timer);
+        }
+
+        refresh_turn_ui();
+        return;
+    }
+
+    /* Over-time state: persistent red timer with a soft slow halo pulse. */
     turn_reminder_flash_on = !turn_reminder_flash_on;
-    turn_reminder_flash_steps_remaining--;
     refresh_turn_ui();
 }
 
@@ -387,7 +412,8 @@ void knob_timer_init(void)
         lv_timer_pause(turn_hold_timer);
     }
 
-    turn_reminder_flash_timer = lv_timer_create(turn_reminder_flash_timer_cb, 250, NULL);
+    turn_reminder_flash_timer = lv_timer_create(
+        turn_reminder_flash_timer_cb, TURN_REMINDER_ALERT_PERIOD_MS, NULL);
     if (turn_reminder_flash_timer != NULL) {
         lv_timer_pause(turn_reminder_flash_timer);
     }
