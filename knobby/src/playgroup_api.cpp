@@ -11,6 +11,8 @@
 #define PG_API_BASE "https://playgroup.gg/api/public/v1"
 #define PG_WIFI_TIMEOUT_MS 15000UL
 #define PG_HTTP_TIMEOUT_MS 10000U
+#define PG_TIME_TIMEOUT_MS 10000UL
+#define PG_VALID_EPOCH 1700000000L
 
 #define PG_SSID_MAX 33
 #define PG_PASSWORD_MAX 65
@@ -88,6 +90,36 @@ static void wifi_power_down(void)
     WiFi.mode(WIFI_OFF);
 }
 
+static bool sync_clock_for_tls(void)
+{
+    uint32_t started;
+    time_t now;
+
+    /* Certificate validation needs a sane wall clock. A freshly booted
+       ESP32 starts near the Unix epoch, which makes valid HTTPS
+       certificates look "not yet valid". Keep UTC only; timezone is
+       irrelevant for TLS validity checks. */
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    started = millis();
+
+    Serial.print("[Playgroup] Syncing clock");
+    do {
+        time(&now);
+        if (now >= PG_VALID_EPOCH) {
+            Serial.println();
+            Serial.println("[Playgroup] Clock synced.");
+            return true;
+        }
+        delay(250);
+        Serial.print(".");
+    } while ((millis() - started) < PG_TIME_TIMEOUT_MS);
+
+    Serial.println();
+    Serial.println("[Playgroup] Clock sync failed; cannot validate HTTPS safely.");
+    return false;
+}
+
+
 static bool wifi_connect_saved(void)
 {
     char ssid[PG_SSID_MAX];
@@ -128,6 +160,12 @@ static bool wifi_connect_saved(void)
     }
 
     Serial.println("[Playgroup] Wi-Fi connected.");
+
+    if (!sync_clock_for_tls()) {
+        wifi_power_down();
+        return false;
+    }
+
     return true;
 }
 
