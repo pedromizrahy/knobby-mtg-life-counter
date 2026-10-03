@@ -32,6 +32,7 @@ typedef struct {
     uint32_t duration_ms;
     uint8_t type;
     uint8_t damage_type;
+    uint8_t effects;       /* ATTACK_EFFECT_* bitmask for combined damage */
     int8_t source_player;
     int8_t target_player;
     uint8_t target_mask;
