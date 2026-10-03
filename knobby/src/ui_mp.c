@@ -307,7 +307,7 @@ static void get_counter_equator_anchor(lv_obj_t *panel,
     lv_coord_t parent_h;
     lv_coord_t panel_center_y;
     lv_coord_t target_world_y;
-    const lv_coord_t equator_gap = 34;
+    const lv_coord_t equator_gap = 44;
     const lv_coord_t edge_margin = 24;
 
     if (anchor_x == NULL || anchor_y == NULL) return;
@@ -339,7 +339,7 @@ static void get_counter_equator_anchor(lv_obj_t *panel,
            shift could clip the first counter (notably Infect) when several
            commander markers were present. */
         if (panel_w < parent_w) {
-            *anchor_x = (panel_center_x < (parent_w / 2)) ? 34 : -34;
+            *anchor_x = (panel_center_x < (parent_w / 2)) ? 28 : -28;
         } else {
             *anchor_x = 0;
         }
