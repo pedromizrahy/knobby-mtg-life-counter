@@ -56,6 +56,7 @@ static void refresh_mulligans(void);
 static void refresh_playgroup_picker(void);
 static void refresh_member_picker(void);
 static void refresh_deck_picker(bool schedule_art);
+static void schedule_deck_art(void);
 
 static lv_obj_t *pregame_button(lv_obj_t *parent, const char *text,
                                 lv_coord_t w, lv_coord_t h,
