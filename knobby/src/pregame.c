@@ -13,6 +13,7 @@ lv_obj_t *screen_pregame_home = NULL;
 lv_obj_t *screen_pregame_multiplayer = NULL;
 lv_obj_t *screen_pregame_players = NULL;
 lv_obj_t *screen_pregame_playgroup = NULL;
+lv_obj_t *screen_pregame_member = NULL;
 lv_obj_t *screen_pregame_roster = NULL;
 lv_obj_t *screen_pregame_deck = NULL;
 lv_obj_t *screen_pregame_mulligans = NULL;
@@ -25,10 +26,17 @@ static lv_obj_t *mulligan_labels[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *multiplayer_status_label = NULL;
 static lv_timer_t *multiplayer_status_timer = NULL;
 static lv_obj_t *player_count_label = NULL;
+static lv_obj_t *players_status_label = NULL;
 static lv_obj_t *playgroup_name_label = NULL;
 static lv_obj_t *playgroup_meta_label = NULL;
 static int selected_playgroup_index = 0;
 static int selected_member_index[MAX_DISPLAY_PLAYERS] = {0};
+static int member_picker_seat = 0;
+static int member_picker_index = 0;
+static lv_obj_t *member_title_label = NULL;
+static lv_obj_t *member_name_label = NULL;
+static lv_obj_t *member_position_label = NULL;
+static lv_obj_t *member_status_label = NULL;
 static bool playgroup_roster_active = false;
 static long selected_deck_id[MAX_DISPLAY_PLAYERS] = {0};
 static char selected_deck_name[MAX_DISPLAY_PLAYERS][PG_DECK_NAME_LEN] = {{0}};
@@ -46,6 +54,7 @@ static lv_img_dsc_t deck_art_dsc;
 static void refresh_roster(void);
 static void refresh_mulligans(void);
 static void refresh_playgroup_picker(void);
+static void refresh_member_picker(void);
 static void refresh_deck_picker(bool schedule_art);
 
 static lv_obj_t *pregame_button(lv_obj_t *parent, const char *text,
@@ -203,12 +212,19 @@ static void event_choose_players(lv_event_t *e)
         return;
     }
 
-    /* Network refresh is intentionally on-demand. If it fails, Local Play
-       remains usable instead of blocking game setup. */
+    if (players_status_label != NULL) {
+        lv_label_set_text(players_status_label, "Connecting to Wi-Fi...");
+        lv_refr_now(NULL);
+    }
+
     if (!playgroup_refresh_playgroups() || playgroup_cached_playgroup_count() <= 0) {
-        open_local_roster();
+        if (players_status_label != NULL)
+            lv_label_set_text(players_status_label, "Wi-Fi/API failed - tap SELECT to retry");
         return;
     }
+
+    if (players_status_label != NULL)
+        lv_label_set_text(players_status_label, "");
 
     selected_playgroup_index = 0;
     refresh_playgroup_picker();
@@ -265,26 +281,37 @@ static void event_playgroup_select(lv_event_t *e)
     (void)e;
 
     pg = playgroup_cached_playgroup(selected_playgroup_index);
-    if (pg == NULL || !playgroup_refresh_members(pg->id)) {
-        open_local_roster();
+    if (pg == NULL) return;
+
+    if (playgroup_meta_label != NULL) {
+        lv_label_set_text(playgroup_meta_label, "Loading members...");
+        lv_refr_now(NULL);
+    }
+
+    if (!playgroup_refresh_members(pg->id)) {
+        if (playgroup_meta_label != NULL)
+            lv_label_set_text(playgroup_meta_label, "Connection failed - tap SELECT to retry");
         return;
     }
 
     member_count = playgroup_cached_member_count();
     if (member_count <= 0) {
-        open_local_roster();
+        if (playgroup_meta_label != NULL)
+            lv_label_set_text(playgroup_meta_label, "No members found");
         return;
     }
 
     playgroup_roster_active = true;
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
-        selected_member_index[i] = i % member_count;
+        selected_member_index[i] = 0;
         selected_deck_id[i] = 0;
         selected_deck_name[i][0] = '\0';
     }
 
-    refresh_roster();
-    lv_scr_load(screen_pregame_roster);
+    member_picker_seat = 0;
+    member_picker_index = 0;
+    refresh_member_picker();
+    lv_scr_load(screen_pregame_member);
 }
 
 static void event_roster_member_cycle(lv_event_t *e)
@@ -300,6 +327,108 @@ static void event_roster_member_cycle(lv_event_t *e)
     selected_deck_id[seat] = 0;
     selected_deck_name[seat][0] = '\0';
     refresh_roster();
+}
+
+static void refresh_member_picker(void)
+{
+    const playgroup_member_t *member;
+    int count = playgroup_cached_member_count();
+    char title[32];
+    char pos[24];
+
+    if (count <= 0) return;
+
+    if (member_picker_index < 0) member_picker_index = count - 1;
+    if (member_picker_index >= count) member_picker_index = 0;
+
+    member = playgroup_cached_member(member_picker_index);
+    if (member == NULL) return;
+
+    if (member_title_label != NULL) {
+        snprintf(title, sizeof(title), "PLAYER %d OF %d",
+                 member_picker_seat + 1, pregame_player_count);
+        lv_label_set_text(member_title_label, title);
+    }
+
+    if (member_name_label != NULL)
+        lv_label_set_text(member_name_label, member->username);
+
+    if (member_position_label != NULL) {
+        snprintf(pos, sizeof(pos), "%d / %d", member_picker_index + 1, count);
+        lv_label_set_text(member_position_label, pos);
+    }
+
+    if (member_status_label != NULL)
+        lv_label_set_text(member_status_label, "Turn dial to choose player");
+}
+
+void pregame_change_member(int delta)
+{
+    int count = playgroup_cached_member_count();
+
+    if (count <= 0 || delta == 0 || lv_scr_act() != screen_pregame_member)
+        return;
+
+    member_picker_index += (delta < 0) ? -1 : 1;
+    if (member_picker_index < 0) member_picker_index = count - 1;
+    if (member_picker_index >= count) member_picker_index = 0;
+    refresh_member_picker();
+}
+
+static void event_member_adjust(lv_event_t *e)
+{
+    int delta = (int)(intptr_t)lv_event_get_user_data(e);
+    pregame_change_member(delta);
+}
+
+static void event_member_select(lv_event_t *e)
+{
+    const playgroup_member_t *member;
+    char title[64];
+    (void)e;
+
+    if (member_picker_seat < 0 || member_picker_seat >= pregame_player_count)
+        return;
+
+    member = playgroup_cached_member(member_picker_index);
+    if (member == NULL)
+        return;
+
+    selected_member_index[member_picker_seat] = member_picker_index;
+    selected_deck_id[member_picker_seat] = 0;
+    selected_deck_name[member_picker_seat][0] = '\0';
+    snprintf(player_names[member_picker_seat], sizeof(player_names[member_picker_seat]),
+             "%s", member->username);
+
+    if (member_status_label != NULL) {
+        lv_label_set_text(member_status_label, "Loading decks...");
+        lv_refr_now(NULL);
+    }
+
+    deck_picker_seat = member_picker_seat;
+    deck_picker_index = 0;
+
+    if (!playgroup_refresh_decks(member->user_id)) {
+        if (member_status_label != NULL)
+            lv_label_set_text(member_status_label, "Deck load failed - tap SELECT to retry");
+        return;
+    }
+
+    if (playgroup_cached_deck_count() <= 0) {
+        if (member_status_label != NULL)
+            lv_label_set_text(member_status_label, "No decks found for this player");
+        return;
+    }
+
+    if (deck_title_label != NULL) {
+        snprintf(title, sizeof(title), "P%d  %s",
+                 member_picker_seat + 1, member->username);
+        lv_label_set_text(deck_title_label, title);
+    }
+
+    refresh_deck_picker(false);
+    lv_scr_load(screen_pregame_deck);
+    schedule_deck_art();
 }
 
 static void clear_deck_art(void)
@@ -493,16 +622,26 @@ static void event_deck_select(lv_event_t *e)
         return;
 
     deck = playgroup_cached_deck(deck_picker_index);
-    if (deck != NULL) {
-        selected_deck_id[deck_picker_seat] = deck->id;
-        snprintf(selected_deck_name[deck_picker_seat],
-                 sizeof(selected_deck_name[deck_picker_seat]),
-                 "%s", deck->name);
-    }
+    if (deck == NULL)
+        return;
+
+    selected_deck_id[deck_picker_seat] = deck->id;
+    snprintf(selected_deck_name[deck_picker_seat],
+             sizeof(selected_deck_name[deck_picker_seat]),
+             "%s", deck->name);
 
     clear_deck_art();
     if (deck_art_timer != NULL)
         lv_timer_pause(deck_art_timer);
+
+    if (deck_picker_seat + 1 < pregame_player_count) {
+        member_picker_seat = deck_picker_seat + 1;
+        member_picker_index = 0;
+        refresh_member_picker();
+        lv_scr_load(screen_pregame_member);
+        return;
+    }
+
     refresh_roster();
     lv_scr_load(screen_pregame_roster);
 }
@@ -681,8 +820,12 @@ bool pregame_handle_back(lv_obj_t *screen)
         lv_scr_load(screen_pregame_players);
         return true;
     }
+    if (screen == screen_pregame_member) {
+        lv_scr_load(screen_pregame_playgroup);
+        return true;
+    }
     if (screen == screen_pregame_roster) {
-        lv_scr_load(playgroup_roster_active ? screen_pregame_playgroup
+        lv_scr_load(playgroup_roster_active ? screen_pregame_member
                                             : screen_pregame_players);
         return true;
     }
@@ -690,7 +833,10 @@ bool pregame_handle_back(lv_obj_t *screen)
         clear_deck_art();
         if (deck_art_timer != NULL)
             lv_timer_pause(deck_art_timer);
-        lv_scr_load(screen_pregame_roster);
+        member_picker_seat = deck_picker_seat;
+        member_picker_index = selected_member_index[deck_picker_seat];
+        refresh_member_picker();
+        lv_scr_load(screen_pregame_member);
         return true;
     }
     if (screen == screen_pregame_mulligans) {
@@ -809,9 +955,17 @@ void build_pregame_screens(void)
         lv_obj_set_style_text_font(lv_obj_get_child(plus, 0),
                                    &lv_font_montserrat_32, 0);
 
+        players_status_label = lv_label_create(screen_pregame_players);
+        lv_label_set_text(players_status_label, "");
+        lv_obj_set_width(players_status_label, 280);
+        lv_obj_set_style_text_align(players_status_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(players_status_label, lv_color_hex(0xC98F6B), 0);
+        lv_obj_set_style_text_font(players_status_label, &lv_font_montserrat_14, 0);
+        lv_obj_align(players_status_label, LV_ALIGN_CENTER, 0, 47);
+
         select = pregame_button(screen_pregame_players, "SELECT", 150, 44,
                                 event_choose_players, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(select, LV_ALIGN_CENTER, 0, 76);
+        lv_obj_align(select, LV_ALIGN_CENTER, 0, 86);
     }
 
     screen_pregame_playgroup = lv_obj_create(NULL);
@@ -866,6 +1020,60 @@ void build_pregame_screens(void)
         lv_obj_align(select, LV_ALIGN_CENTER, 0, 82);
     }
 
+    screen_pregame_member = lv_obj_create(NULL);
+    lv_obj_set_size(screen_pregame_member, 360, 360);
+    lv_obj_set_style_bg_color(screen_pregame_member, lv_color_black(), 0);
+    lv_obj_set_style_border_width(screen_pregame_member, 0, 0);
+
+    {
+        lv_obj_t *minus;
+        lv_obj_t *plus;
+        lv_obj_t *select;
+
+        member_title_label = lv_label_create(screen_pregame_member);
+        lv_label_set_text(member_title_label, "PLAYER 1 OF 4");
+        lv_obj_set_style_text_color(member_title_label, lv_color_white(), 0);
+        lv_obj_set_style_text_font(member_title_label, &lv_font_montserrat_22, 0);
+        lv_obj_align(member_title_label, LV_ALIGN_TOP_MID, 0, 42);
+
+        member_status_label = lv_label_create(screen_pregame_member);
+        lv_label_set_text(member_status_label, "Turn dial to choose player");
+        lv_obj_set_width(member_status_label, 280);
+        lv_obj_set_style_text_align(member_status_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(member_status_label, lv_color_hex(0x778391), 0);
+        lv_obj_set_style_text_font(member_status_label, &lv_font_montserrat_14, 0);
+        lv_obj_align(member_status_label, LV_ALIGN_TOP_MID, 0, 78);
+
+        minus = pregame_button(screen_pregame_member, "<", 52, 52,
+                               event_member_adjust, LV_EVENT_CLICKED,
+                               (void *)(intptr_t)-1);
+        lv_obj_align(minus, LV_ALIGN_CENTER, -132, -8);
+
+        plus = pregame_button(screen_pregame_member, ">", 52, 52,
+                              event_member_adjust, LV_EVENT_CLICKED,
+                              (void *)(intptr_t)1);
+        lv_obj_align(plus, LV_ALIGN_CENTER, 132, -8);
+
+        member_name_label = lv_label_create(screen_pregame_member);
+        lv_label_set_text(member_name_label, "Player");
+        lv_obj_set_width(member_name_label, 190);
+        lv_label_set_long_mode(member_name_label, LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_align(member_name_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(member_name_label, lv_color_white(), 0);
+        lv_obj_set_style_text_font(member_name_label, &lv_font_montserrat_22, 0);
+        lv_obj_align(member_name_label, LV_ALIGN_CENTER, 0, -18);
+
+        member_position_label = lv_label_create(screen_pregame_member);
+        lv_label_set_text(member_position_label, "");
+        lv_obj_set_style_text_color(member_position_label, lv_color_hex(0x778391), 0);
+        lv_obj_set_style_text_font(member_position_label, &lv_font_montserrat_14, 0);
+        lv_obj_align(member_position_label, LV_ALIGN_CENTER, 0, 22);
+
+        select = pregame_button(screen_pregame_member, "SELECT PLAYER", 174, 44,
+                                event_member_select, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(select, LV_ALIGN_CENTER, 0, 86);
+    }
+
     screen_pregame_roster = lv_obj_create(NULL);
     lv_obj_set_size(screen_pregame_roster, 360, 360);
     lv_obj_set_style_bg_color(screen_pregame_roster, lv_color_black(), 0);
@@ -880,7 +1088,7 @@ void build_pregame_screens(void)
 
         {
             lv_obj_t *hint = lv_label_create(screen_pregame_roster);
-            lv_label_set_text(hint, "Tap player   |   Hold for deck");
+            lv_label_set_text(hint, "Review players and decks");
             lv_obj_set_style_text_color(hint, lv_color_hex(0x778391), 0);
             lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
             lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 48);
