@@ -21,6 +21,7 @@ static lv_obj_t *add_low_battery_icon(lv_obj_t *parent)
 static lv_obj_t *mp_battery_icon = NULL;
 static lv_obj_t *mp_turn_badge = NULL;
 static lv_obj_t *mp_turn_label = NULL;
+static lv_obj_t *mp_turn_hold_arc = NULL;
 
 #define DAMAGE_DRAG_THRESHOLD_PX 18
 #define DAMAGE_DRAG_ADVANCED_HOLD_MS 900
@@ -451,9 +452,11 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
     {
         int vib;
         if (selection_count() == 0) {
-            vib = (turn_timer_enabled && active_turn_player == i)
-                      ? LIFE_VIB_VIV
-                      : LIFE_VIB_MID;
+            if (turn_timer_enabled && active_turn_player >= 0) {
+                vib = (active_turn_player == i) ? LIFE_VIB_VIV : LIFE_VIB_DIM;
+            } else {
+                vib = LIFE_VIB_MID;
+            }
         } else {
             vib = selected ? LIFE_VIB_VIV : LIFE_VIB_DIM;
         }
@@ -552,6 +555,16 @@ void refresh_multiplayer_turn_ui(void)
     }
 
     lv_label_set_text(mp_turn_label, buf);
+
+    if (mp_turn_hold_arc != NULL) {
+        if (turn_hold_active) {
+            lv_arc_set_value(mp_turn_hold_arc, turn_hold_progress);
+            lv_obj_clear_flag(mp_turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_arc_set_value(mp_turn_hold_arc, 0);
+            lv_obj_add_flag(mp_turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 
     if (turn_reminder_active && nvs_get_turn_visual_alert()) {
         lv_obj_set_style_text_color(mp_turn_label, lv_palette_main(LV_PALETTE_RED), 0);
@@ -1114,6 +1127,21 @@ void rebuild_multiplayer_layout(int track)
     lv_obj_set_style_text_align(drag_hint_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(drag_hint_label);
 
+    mp_turn_hold_arc = lv_arc_create(screen_multiplayer);
+    lv_obj_set_size(mp_turn_hold_arc, 116, 116);
+    lv_obj_align(mp_turn_hold_arc, LV_ALIGN_CENTER, 0, 0);
+    lv_arc_set_rotation(mp_turn_hold_arc, 270);
+    lv_arc_set_bg_angles(mp_turn_hold_arc, 0, 360);
+    lv_arc_set_range(mp_turn_hold_arc, 0, 1000);
+    lv_arc_set_value(mp_turn_hold_arc, 0);
+    lv_obj_remove_style(mp_turn_hold_arc, NULL, LV_PART_KNOB);
+    lv_obj_set_style_arc_width(mp_turn_hold_arc, 4, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(mp_turn_hold_arc, lv_color_hex(0x333333), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(mp_turn_hold_arc, 6, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(mp_turn_hold_arc, lv_color_white(), LV_PART_INDICATOR);
+    lv_obj_clear_flag(mp_turn_hold_arc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(mp_turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
+
     mp_turn_badge = lv_btn_create(screen_multiplayer);
     lv_obj_remove_style_all(mp_turn_badge);
     lv_obj_set_size(mp_turn_badge, 104, 48);
@@ -1123,7 +1151,7 @@ void rebuild_multiplayer_layout(int track)
     lv_obj_set_style_bg_opa(mp_turn_badge, LV_OPA_90, 0);
     lv_obj_set_style_border_width(mp_turn_badge, 1, 0);
     lv_obj_set_style_border_color(mp_turn_badge, lv_color_hex(0x777777), 0);
-    lv_obj_add_event_cb(mp_turn_badge, event_turn_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(mp_turn_badge, event_turn_hold, LV_EVENT_ALL, NULL);
     lv_obj_add_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
 
     mp_turn_label = lv_label_create(mp_turn_badge);
