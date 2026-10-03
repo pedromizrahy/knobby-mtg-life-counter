@@ -289,11 +289,13 @@ static void update_selection_highlight(void)
     for (i = 0; i < (int)child_count && first + i < damage_log_count; i++) {
         lv_obj_t *lbl = lv_obj_get_child(damage_log_container, i);
 
+        lv_obj_set_style_bg_opa(lbl, LV_OPA_TRANSP, 0);
         if (i == sel_child) {
-            lv_obj_set_style_bg_color(lbl, lv_color_hex(0x333333), 0);
-            lv_obj_set_style_bg_opa(lbl, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(lbl, 3, 0);
+            lv_obj_set_style_border_side(lbl, LV_BORDER_SIDE_LEFT, 0);
+            lv_obj_set_style_border_color(lbl, lv_color_hex(0xB0B0B0), 0);
         } else {
-            lv_obj_set_style_bg_opa(lbl, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(lbl, 0, 0);
         }
     }
 
@@ -328,7 +330,7 @@ static void update_selection_highlight(void)
 static void refresh_damage_log_ui(void)
 {
     int i, idx, first, last;
-    char buf[128];
+    char buf[192];
 
     lv_obj_clean(damage_log_container);
 
@@ -357,11 +359,25 @@ static void refresh_damage_log_ui(void)
         idx = (damage_log_head - 1 - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
 
         {
-            char line[88];
+            char line[96];
+            const char *event_hex = "B8B8B8";
             bool new_group = false;
             int newer_idx;
 
             format_log_line(&damage_log[idx], line, sizeof(line));
+
+            if (damage_log[idx].event_type == LOG_EVT_DAMAGE ||
+                damage_log[idx].event_type == LOG_EVT_CMD_DAMAGE ||
+                damage_log[idx].event_type == LOG_EVT_CMD_INFECT ||
+                damage_log[idx].event_type == LOG_EVT_POISON) {
+                event_hex = "FF5252";
+            } else if (damage_log[idx].event_type == LOG_EVT_LIFE) {
+                event_hex = (damage_log[idx].delta > 0) ? "4CAF50" : "FF5252";
+            } else if (damage_log[idx].event_type == LOG_EVT_COUNTER) {
+                event_hex = (damage_log[idx].delta > 0) ? "FFB74D" : "B8B8B8";
+            } else {
+                event_hex = (damage_log[idx].delta > 0) ? "4CAF50" : "FF5252";
+            }
 
             if (i == first) {
                 new_group = true;
@@ -377,33 +393,22 @@ static void refresh_damage_log_ui(void)
             if (new_group && damage_log[idx].turn_number > 0 &&
                 damage_log[idx].turn_player >= 0 &&
                 damage_log[idx].turn_player < MAX_GAME_PLAYERS) {
-                snprintf(buf, sizeof(buf), "R%u · %s\n----------------\n%s",
+                snprintf(buf, sizeof(buf),
+                         "#8A8A8A R%u · %s\n----------------#\n#%s %s#",
                          (unsigned)damage_log[idx].round_number,
                          player_names[damage_log[idx].turn_player],
-                         line);
+                         event_hex, line);
             } else {
-                snprintf(buf, sizeof(buf), "%s", line);
+                snprintf(buf, sizeof(buf), "#%s %s#", event_hex, line);
             }
         }
 
         lv_obj_t *lbl = lv_label_create(damage_log_container);
+        lv_label_set_recolor(lbl, true);
         lv_label_set_text(lbl, buf);
         lv_obj_set_width(lbl, 280);
         lv_obj_add_style(lbl, &log_label_style, 0);
-        if (damage_log[idx].event_type == LOG_EVT_COUNTER ||
-            damage_log[idx].event_type == LOG_EVT_POISON ||
-            damage_log[idx].event_type == LOG_EVT_CMD_INFECT) {
-            const counter_definition_t *definition =
-                (damage_log[idx].event_type == LOG_EVT_POISON ||
-                 damage_log[idx].event_type == LOG_EVT_CMD_INFECT)
-                    ? get_counter_definition(COUNTER_TYPE_POISON)
-                    : get_counter_definition((counter_type_t)damage_log[idx].source);
-            lv_obj_set_style_text_color(lbl,
-                definition != NULL ? lv_color_hex(definition->accent_color) : lv_color_hex(0xFFB74D), 0);
-        } else {
-            lv_obj_set_style_text_color(lbl,
-                damage_log[idx].delta > 0 ? lv_color_hex(0x4CAF50) : lv_color_hex(0xFF5252), 0);
-        }
+        lv_obj_set_style_text_color(lbl, lv_color_hex(0xB8B8B8), 0);
     }
 
     if (page_label != NULL) {
@@ -510,9 +515,11 @@ void build_damage_log_screen(void)
     lv_obj_set_size(delete_btn, 140, 48);
     lv_obj_align(delete_btn, LV_ALIGN_BOTTOM_MID, 0, -50);
     lv_obj_set_ext_click_area(delete_btn, 20);
-    lv_obj_set_style_bg_color(delete_btn, lv_color_hex(0xB71C1C), 0);
+    lv_obj_set_style_bg_color(delete_btn, lv_color_hex(0x141414), 0);
     lv_obj_set_style_bg_opa(delete_btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(delete_btn, 6, 0);
+    lv_obj_set_style_border_width(delete_btn, 2, 0);
+    lv_obj_set_style_border_color(delete_btn, lv_color_hex(0x8A2D2D), 0);
+    lv_obj_set_style_radius(delete_btn, 10, 0);
     lv_obj_add_event_cb(delete_btn, event_delete_pressed, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(delete_btn, event_delete_pressed, LV_EVENT_RELEASED, NULL);
     lv_obj_add_event_cb(delete_btn, event_delete_pressed, LV_EVENT_PRESS_LOST, NULL);
