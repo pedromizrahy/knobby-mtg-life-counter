@@ -249,13 +249,16 @@ static bool diagnose_https_path(void)
 
     print_heap_diagnostics();
 
-    Serial.print("[Playgroup] TLS handshake ... ");
-    tls.useBuiltinCACertBundle();
+    /* Diagnostic only: no HTTP request and no API key are sent here.
+       This isolates raw TLS memory pressure from certificate-validation
+       overhead. The real API request below still requires verified TLS. */
+    Serial.print("[Playgroup] TLS diagnostic (no cert validation, no request) ... ");
+    tls.setInsecure();
     tls.setHandshakeTimeout(12);
     if (!tls.connect(PG_API_HOST, 443, 12000)) {
         Serial.println("FAILED");
         int err = tls.lastError(tls_error, sizeof(tls_error));
-        Serial.print("[Playgroup] TLS error ");
+        Serial.print("[Playgroup] TLS diagnostic error ");
         Serial.print(err);
         Serial.print(": ");
         Serial.println(tls_error[0] ? tls_error : "(no detail)");
