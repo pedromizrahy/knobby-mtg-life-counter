@@ -2,10 +2,8 @@
 #include "storage.h"
 #include "settings.h"
 #include "ui_mp.h"
-#include "net_sync.h"
 
-// Forward declarations
-extern void reset_all_values(void);
+// Forward declaration
 extern void back_to_main(void);
 
 // ---------- screens ----------
@@ -76,10 +74,13 @@ static void event_gm_num_players(lv_event_t *e)
     (void)e;
 
     temp_num_players++;
-    if (temp_num_players > MAX_GAME_PLAYERS) temp_num_players = 1;
+    if (temp_num_players > MAX_DISPLAY_PLAYERS) temp_num_players = 1;
 
-    max_track = temp_num_players < MAX_DISPLAY_PLAYERS ? temp_num_players : MAX_DISPLAY_PLAYERS;
-    if (temp_players_to_track > max_track) temp_players_to_track = max_track;
+    max_track = temp_num_players;
+    /* In the local table view, changing player count follows the number
+       visible on the HUD by default. The Track control can still override
+       this afterwards if the user explicitly wants a smaller view. */
+    temp_players_to_track = max_track;
 
     refresh_game_mode_menu_ui();
 }
@@ -119,19 +120,18 @@ static void event_gm_life_custom(lv_event_t *e)
 static void event_gm_apply(lv_event_t *e)
 {
     (void)e;
-    /* Applying game mode redefines the game (players, view, starting
-       life), and settings don't sync — so rather than broadcasting a
-       reset at THIS device's config over the whole table, leave the
-       session before the reset below can reach it. Same-config new
-       games use the shared reset; config changes re-pair. (No-op when
-       not synced.) */
-    net_sync_leave_game();
+
+    /* Game Settings edits the current match in place. Life, counters,
+       timer, turn history and event log remain untouched; only the
+       configuration and corresponding HUD layout change. */
     nvs_set_num_players(temp_num_players);
     nvs_set_players_to_track(temp_players_to_track);
     nvs_set_life_total(temp_life_total);
     settings_save();
-    reset_all_values();
-    rebuild_multiplayer_layout(temp_players_to_track);
+
+    if (temp_players_to_track > 1)
+        rebuild_multiplayer_layout(temp_players_to_track);
+
     back_to_main();
     lv_indev_wait_release(lv_indev_get_act());
 }
