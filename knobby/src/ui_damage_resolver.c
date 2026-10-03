@@ -2,6 +2,7 @@
 #include "game.h"
 #include "storage.h"
 #include "ui_1p.h"
+#include <string.h>
 
 lv_obj_t *screen_damage_target = NULL;
 lv_obj_t *screen_damage_resolver = NULL;
