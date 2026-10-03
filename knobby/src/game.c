@@ -552,6 +552,8 @@ bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
     if (track < 1) track = 1;
     if (track > MAX_DISPLAY_PLAYERS) track = MAX_DISPLAY_PLAYERS;
 
+    damage_log_begin_action();
+
     for (target = 0; target < track; target++) {
         game_event_t event = {0};
         bool infect;
@@ -573,8 +575,11 @@ bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
         if (infect) {
             player_counters[target][COUNTER_TYPE_POISON] =
                 clamp_counter(player_counters[target][COUNTER_TYPE_POISON] + amount);
-            damage_log_add(target, amount, LOG_EVT_POISON, source);
-            event.type = GAME_EVENT_COUNTER_CHANGE;
+            damage_log_add(target, amount,
+                           commander ? LOG_EVT_CMD_INFECT : LOG_EVT_POISON,
+                           source);
+            event.type = commander ? GAME_EVENT_COMMANDER_DAMAGE
+                                   : GAME_EVENT_COUNTER_CHANGE;
             event.damage_type = DAMAGE_TYPE_POISON;
             event.value = (int16_t)player_counters[target][COUNTER_TYPE_POISON];
 
@@ -602,11 +607,6 @@ bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
            even when Infect replaces life loss with poison counters. */
         if (commander) {
             cmd_damage_totals[source][target] += amount;
-            if (infect) {
-                /* Keep a visible commander entry too; poison remains the
-                   actual player-damage consequence. */
-                damage_log_add(target, -amount, LOG_EVT_CMD_DAMAGE, source);
-            }
             if (cmd_damage_totals[source][target] >= 21) {
                 set_player_elimination_action(target, LOG_EVT_CMD_DAMAGE, source, -amount);
             }
@@ -627,6 +627,8 @@ bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
         !player_eliminated[source]) {
         apply_life_delta(source, total_lifelink);
     }
+
+    damage_log_end_action();
 
     if (applied) {
         refresh_player_ui();
