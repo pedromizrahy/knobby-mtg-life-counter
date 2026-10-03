@@ -934,7 +934,7 @@ void knob_life_init(void)
     counter_edit_type = COUNTER_TYPE_COMMANDER_TAX;
     counter_edit_value = 0;
 
-    life_preview_timer = lv_timer_create(life_preview_commit_cb, 3000, NULL);
+    life_preview_timer = lv_timer_create(life_preview_commit_cb, 1000, NULL);
     if (life_preview_timer != NULL) {
         lv_timer_pause(life_preview_timer);
     }
@@ -945,6 +945,7 @@ static lv_timer_t *player_select_anim_timer = NULL;
 static int player_select_anim_steps = 0;
 static int player_select_anim_period = 0;
 static int roulette_idx = 0;
+static int last_roulette_winner = -1;
 
 static void player_select_anim_cb(lv_timer_t *timer)
 {
@@ -984,7 +985,10 @@ static void player_select_anim_cb(lv_timer_t *timer)
 void start_player_selection_animation(void)
 {
     int track = nvs_get_players_to_track();
-    int random_stops;
+    int start_player;
+    int winner;
+    int offset;
+    int full_cycles = 3;
 
     if (track <= 1) return;
     if (!nvs_get_random_first()) return;
@@ -993,17 +997,28 @@ void start_player_selection_animation(void)
         player_select_anim_timer = lv_timer_create(player_select_anim_cb, 50, NULL);
     }
 
-    /* Always show enough visible hops to feel like a roulette. The final
-       0..track-1 offset keeps each seat reachable with the same cadence. */
-    random_stops = 12;
-    while ((random_stops % track) != 0) random_stops++;
-    random_stops += (int)(esp_random() % track);
+    /*
+     * Pick the winner independently from the animation, then calculate a
+     * path that is guaranteed to land on it. Avoid repeating the immediately
+     * previous winner when possible so repeated New Game tests don't look
+     * deterministic even when RNG happens to repeat.
+     */
+    start_player = (int)(esp_random() % (uint32_t)track);
+    winner = (int)(esp_random() % (uint32_t)track);
+    if (track > 1 && winner == last_roulette_winner) {
+        winner = (winner + 1 +
+                  (int)(esp_random() % (uint32_t)(track - 1))) % track;
+    }
 
-    player_select_anim_steps = random_stops;
+    offset = (winner - start_player + track) % track;
+    if (offset == 0) offset = track;
+
+    player_select_anim_steps = (full_cycles * track) + offset;
     player_select_anim_period = 80;
 
-    roulette_idx = 0;
-    selection_set_single(0);
+    roulette_idx = start_player;
+    last_roulette_winner = winner;
+    selection_set_single(roulette_idx);
     select_kick_timer();
 
     lv_timer_set_period(player_select_anim_timer, player_select_anim_period);
