@@ -195,18 +195,26 @@ static void event_counter_experience(lv_event_t *e) {
 
 static void event_all_damage_apply(lv_event_t *e) {
   int i;
+  int track = nvs_get_players_to_track();
   bool include_myself = false;
+
+  (void)e;
+  if (all_damage_value <= 0) return;
 
   if (cb_include_myself != NULL) {
     include_myself = lv_obj_has_state(cb_include_myself, LV_STATE_CHECKED);
   }
 
-  (void)e;
-  for (i = 0; i < nvs_get_players_to_track(); i++) {
-    if (i == menu_player && !include_myself) {
+  /* Opponents receive sourced normal damage so history records who dealt it.
+     The optional self hit remains a direct life change because self-target
+     combat is intentionally not part of the drag/damage resolver UX. */
+  for (i = 0; i < track && i < MAX_DISPLAY_PLAYERS; i++) {
+    if (i == menu_player) {
+      if (include_myself) apply_life_delta(i, -all_damage_value);
       continue;
     }
-    apply_life_delta(i, -all_damage_value);
+    if (player_eliminated[i]) continue;
+    apply_sourced_damage(menu_player, i, all_damage_value, DAMAGE_TYPE_NORMAL);
   }
 
   refresh_player_ui();
