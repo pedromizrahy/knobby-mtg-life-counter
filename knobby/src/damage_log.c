@@ -139,30 +139,49 @@ void damage_log_remove_last_for(int player, uint8_t event_type)
 static void update_selection_highlight(void);
 static void refresh_damage_log_ui(void);
 
+static bool damage_log_offset_undoable(int offset)
+{
+    int idx;
+
+    if (offset < 0 || offset >= damage_log_count) return false;
+    idx = (damage_log_head - 1 - offset + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+    return damage_log[idx].event_type != LOG_EVT_TURN_END;
+}
+
+static int find_undoable_offset(int start, int dir)
+{
+    int offset = start;
+
+    while (offset >= 0 && offset < damage_log_count) {
+        if (damage_log_offset_undoable(offset))
+            return offset;
+        offset += dir;
+    }
+    return -1;
+}
+
 void damage_log_select_next(void)
 {
+    int next;
+
     if (damage_log_count == 0) return;
-    if (damage_log_selected < damage_log_count - 1) {
-        damage_log_selected++;
-    }
-    if (damage_log_selected / LOG_PAGE_SIZE != damage_log_page) {
-        refresh_damage_log_ui();
-    } else {
-        update_selection_highlight();
-    }
+    next = find_undoable_offset(damage_log_selected + 1, +1);
+    if (next < 0) return;
+
+    damage_log_selected = next;
+    refresh_damage_log_ui();
 }
 
 void damage_log_select_prev(void)
 {
+    int prev;
+
     if (damage_log_count == 0) return;
-    if (damage_log_selected > 0) {
-        damage_log_selected--;
-    }
-    if (damage_log_selected / LOG_PAGE_SIZE != damage_log_page) {
-        refresh_damage_log_ui();
-    } else {
-        update_selection_highlight();
-    }
+    prev = find_undoable_offset(damage_log_selected - 1, -1);
+    if (prev < 0) return;
+
+    damage_log_selected = prev;
+    refresh_damage_log_ui();
 }
 
 static void undo_log_entry(const damage_log_entry_t *entry)
@@ -222,8 +241,17 @@ void damage_log_undo_selected(void)
 
     if (damage_log_count == 0) {
         damage_log_selected = -1;
-    } else if (damage_log_selected >= damage_log_count) {
-        damage_log_selected = damage_log_count - 1;
+    } else {
+        int preferred = damage_log_selected;
+        int next;
+
+        if (preferred >= damage_log_count)
+            preferred = damage_log_count - 1;
+
+        next = find_undoable_offset(preferred, +1);
+        if (next < 0)
+            next = find_undoable_offset(preferred, -1);
+        damage_log_selected = next;
     }
 
     refresh_damage_log_ui();
@@ -308,25 +336,18 @@ static void format_log_line(damage_log_entry_t *entry, char *buf, size_t buf_sz)
 
 static int newest_undoable_offset(void)
 {
-    int i;
-
-    for (i = 0; i < damage_log_count; i++) {
-        int idx = (damage_log_head - 1 - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
-        if (damage_log[idx].event_type != LOG_EVT_TURN_END)
-            return i;
-    }
-    return -1;
+    return find_undoable_offset(0, +1);
 }
 
-static void event_undo_last(lv_event_t *e)
+static void event_undo_selected_row(lv_event_t *e)
 {
-    int offset = newest_undoable_offset();
-    (void)e;
+    int offset = (int)(intptr_t)lv_event_get_user_data(e);
 
-    if (offset < 0) return;
+    if (!damage_log_offset_undoable(offset)) return;
     damage_log_selected = offset;
     damage_log_undo_selected();
-    lv_indev_wait_release(lv_indev_get_act());
+    if (lv_indev_get_act() != NULL)
+        lv_indev_wait_release(lv_indev_get_act());
 }
 
 static void update_selection_highlight(void)
@@ -380,7 +401,8 @@ static void update_selection_highlight(void)
 static void refresh_damage_log_ui(void)
 {
     int i, idx, first, last;
-    int undo_offset = newest_undoable_offset();
+    int undo_offset = damage_log_offset_undoable(damage_log_selected)
+                    ? damage_log_selected : -1;
 
     lv_obj_clean(damage_log_container);
 
@@ -396,10 +418,8 @@ static void refresh_damage_log_ui(void)
         return;
     }
 
-    if (damage_log_selected >= damage_log_count)
-        damage_log_selected = damage_log_count - 1;
-    if (damage_log_selected < 0)
-        damage_log_selected = 0;
+    if (!damage_log_offset_undoable(damage_log_selected))
+        damage_log_selected = newest_undoable_offset();
 
     damage_log_page = damage_log_selected / LOG_PAGE_SIZE;
     first = damage_log_page * LOG_PAGE_SIZE;
@@ -508,19 +528,18 @@ static void refresh_damage_log_ui(void)
         if (i == undo_offset && damage_log[idx].event_type != LOG_EVT_TURN_END) {
             lv_obj_t *undo = lv_btn_create(row);
             lv_obj_remove_style_all(undo);
-            lv_obj_set_size(undo, 28, 28);
+            lv_obj_set_size(undo, 26, 26);
             lv_obj_align(undo, LV_ALIGN_RIGHT_MID, 0, new_group ? 15 : 0);
-            lv_obj_set_style_radius(undo, LV_RADIUS_CIRCLE, 0);
-            lv_obj_set_style_bg_color(undo, lv_color_hex(0x181818), 0);
-            lv_obj_set_style_bg_opa(undo, LV_OPA_80, 0);
-            lv_obj_set_style_border_width(undo, 1, 0);
-            lv_obj_set_style_border_color(undo, lv_color_hex(0x666666), 0);
-            lv_obj_add_event_cb(undo, event_undo_last, LV_EVENT_CLICKED, NULL);
+            lv_obj_set_style_bg_opa(undo, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(undo, 0, 0);
+            lv_obj_set_ext_click_area(undo, 8);
+            lv_obj_add_event_cb(undo, event_undo_selected_row,
+                                LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
             {
                 lv_obj_t *icon = lv_label_create(undo);
-                lv_label_set_text(icon, LV_SYMBOL_LEFT);
-                lv_obj_set_style_text_color(icon, lv_color_hex(0xD8D8D8), 0);
+                lv_label_set_text(icon, LV_SYMBOL_REFRESH);
+                lv_obj_set_style_text_color(icon, lv_color_hex(0xA8A8A8), 0);
                 lv_obj_set_style_text_font(icon, &lv_font_montserrat_14, 0);
                 lv_obj_center(icon);
             }
@@ -570,7 +589,7 @@ static void event_delete_pressed(lv_event_t *e)
 
 void open_damage_log_screen(void)
 {
-    damage_log_selected = (damage_log_count > 0) ? 0 : -1;
+    damage_log_selected = newest_undoable_offset();
     refresh_damage_log_ui();
     load_screen_if_needed(screen_damage_log);
 }
