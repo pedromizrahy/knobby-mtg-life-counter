@@ -540,6 +540,11 @@ static void handle_knob_event(knob_event_t k)
         if (k == KNOB_LEFT)       pregame_change_playgroup(-1);
         else if (k == KNOB_RIGHT) pregame_change_playgroup(+1);
     }
+    else if (lv_scr_act() == screen_pregame_member)
+    {
+        if (k == KNOB_LEFT)       pregame_change_member(-1);
+        else if (k == KNOB_RIGHT) pregame_change_member(+1);
+    }
     else if (lv_scr_act() == screen_pregame_deck)
     {
         if (k == KNOB_LEFT)       pregame_change_deck(-1);
