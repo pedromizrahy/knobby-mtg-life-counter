@@ -50,6 +50,7 @@ static lv_obj_t *deck_title_label = NULL;
 static lv_obj_t *deck_name_label = NULL;
 static lv_obj_t *deck_commander_label = NULL;
 static lv_obj_t *deck_position_label = NULL;
+static lv_obj_t *deck_image_clip = NULL;
 static lv_obj_t *deck_image = NULL;
 static lv_timer_t *deck_art_timer = NULL;
 static uint8_t *deck_art_data = NULL;
@@ -427,6 +428,10 @@ static void event_member_select(lv_event_t *e)
         return;
     }
 
+    /* Start downloading this player's commander art immediately, before the
+       deck picker needs it. This runs on a low-priority background task. */
+    playgroup_prefetch_deck_images();
+
     if (deck_title_label != NULL) {
         snprintf(title, sizeof(title), "P%d  %s",
                  member_picker_seat + 1, member->username);
@@ -440,8 +445,8 @@ static void event_member_select(lv_event_t *e)
 
 static void clear_deck_art(void)
 {
-    if (deck_image != NULL)
-        lv_obj_add_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
+    if (deck_image_clip != NULL)
+        lv_obj_add_flag(deck_image_clip, LV_OBJ_FLAG_HIDDEN);
 
     if (deck_art_data != NULL) {
         playgroup_free_image(deck_art_data);
@@ -477,13 +482,12 @@ static void deck_art_timer_cb(lv_timer_t *timer)
         lv_refr_now(NULL);
     }
 
-    if (!playgroup_download_image(deck->scryfall_id, &data, &data_size)) {
-        if (deck_commander_label != NULL) {
-            char buf[96];
-            snprintf(buf, sizeof(buf), "%s\nArt unavailable",
-                     deck->commander[0] ? deck->commander : "Commander");
-            lv_label_set_text(deck_commander_label, buf);
-        }
+    if (!playgroup_cached_image_copy(deck->scryfall_id, &data, &data_size)) {
+        /* Prefetch owns network I/O. Never block LVGL waiting for HTTPS. */
+        if (deck_commander_label != NULL)
+            lv_label_set_text(deck_commander_label, "Loading commander art...");
+        lv_timer_set_period(timer, 350);
+        lv_timer_resume(timer);
         return;
     }
 
@@ -522,8 +526,9 @@ static void deck_art_timer_cb(lv_timer_t *timer)
 
         lv_img_set_src(deck_image, &deck_art_dsc);
         lv_img_set_zoom(deck_image, zoom);
-        lv_obj_align(deck_image, LV_ALIGN_CENTER, 0, -40);
-        lv_obj_clear_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_center(deck_image);
+        if (deck_image_clip != NULL)
+            lv_obj_clear_flag(deck_image_clip, LV_OBJ_FLAG_HIDDEN);
         lv_refr_now(NULL);
 
         printf("[Playgroup] Commander art shown %ux%u; zoom %u\n",
@@ -547,6 +552,7 @@ static void schedule_deck_art(void)
     if (deck_art_timer == NULL)
         return;
 
+    lv_timer_set_period(deck_art_timer, 120);
     lv_timer_reset(deck_art_timer);
     lv_timer_resume(deck_art_timer);
 }
@@ -1221,8 +1227,21 @@ void build_pregame_screens(void)
         lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
         lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 47);
 
-        deck_image = lv_img_create(screen_pregame_deck);
-        lv_obj_add_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
+        deck_image_clip = lv_obj_create(screen_pregame_deck);
+        lv_obj_remove_style_all(deck_image_clip);
+        lv_obj_set_size(deck_image_clip, 130, 130);
+        lv_obj_set_style_radius(deck_image_clip, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_clip_corner(deck_image_clip, true, 0);
+        lv_obj_set_style_bg_opa(deck_image_clip, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(deck_image_clip, lv_color_hex(0x0C0F13), 0);
+        lv_obj_set_style_border_width(deck_image_clip, 2, 0);
+        lv_obj_set_style_border_color(deck_image_clip, lv_color_hex(0x4A5563), 0);
+        lv_obj_clear_flag(deck_image_clip, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(deck_image_clip, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_align(deck_image_clip, LV_ALIGN_CENTER, 0, -40);
+        lv_obj_add_flag(deck_image_clip, LV_OBJ_FLAG_HIDDEN);
+
+        deck_image = lv_img_create(deck_image_clip);
         lv_obj_clear_flag(deck_image, LV_OBJ_FLAG_CLICKABLE);
 
         minus = pregame_button(screen_pregame_deck, "<", 42, 42,
@@ -1304,9 +1323,9 @@ void build_pregame_screens(void)
     multiplayer_status_timer = lv_timer_create(multiplayer_status_timer_cb, 500, NULL);
     lv_timer_pause(multiplayer_status_timer);
 
-    /* Give dial/touch selection priority. Commander art is decorative and
-       must not immediately block interaction while HTTPS/JPEG work runs. */
-    deck_art_timer = lv_timer_create(deck_art_timer_cb, 1200, NULL);
+    /* Art network I/O is prefetched in the background. This timer only
+       polls the PSRAM cache and decodes when data is ready. */
+    deck_art_timer = lv_timer_create(deck_art_timer_cb, 120, NULL);
     lv_timer_pause(deck_art_timer);
 
     refresh_roster();
