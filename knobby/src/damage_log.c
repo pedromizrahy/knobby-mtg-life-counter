@@ -29,7 +29,7 @@ static uint32_t undo_press_started_ms = 0;
 /* Labels are rendered one page at a time: a full 256-entry ring as one
    widget per entry would eat most of the 128KB LVGL heap and hard-freeze
    the device on alloc failure (LV_ASSERT_HANDLER). */
-#define LOG_PAGE_SIZE 32
+#define LOG_PAGE_SIZE 16
 
 lv_obj_t *screen_damage_log = NULL;
 static lv_obj_t *damage_log_container = NULL;
