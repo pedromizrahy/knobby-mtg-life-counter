@@ -107,11 +107,13 @@ void damage_log_undo_selected(void)
     buf_idx = (damage_log_head - 1 - damage_log_selected + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
     entry = &damage_log[buf_idx];
 
-    if (entry->event_type == LOG_EVT_LIFE) {
+    if (entry->event_type == LOG_EVT_LIFE || entry->event_type == LOG_EVT_DAMAGE) {
         undo_life_change(entry->player, entry->delta);
     } else if (entry->event_type == LOG_EVT_CMD_DAMAGE) {
         undo_life_change(entry->player, entry->delta);
         undo_cmd_damage(entry->source, entry->player, entry->delta);
+    } else if (entry->event_type == LOG_EVT_POISON) {
+        undo_counter_change(entry->player, COUNTER_TYPE_POISON, entry->delta);
     } else if (entry->event_type == LOG_EVT_COUNTER) {
         undo_counter_change(entry->player, entry->source, entry->delta);
     }
@@ -154,10 +156,26 @@ static void format_log_line(damage_log_entry_t *entry, char *buf, size_t buf_sz)
     buf[0] = '\0';  /* ensure a defined string if no branch below matches */
     format_elapsed(elapsed_s, time_str, sizeof(time_str));
 
-    if (entry->event_type == LOG_EVT_CMD_DAMAGE && entry->source >= 0 &&
+    if (entry->event_type == LOG_EVT_DAMAGE && entry->source >= 0 &&
+        entry->source < MAX_GAME_PLAYERS && entry->player >= 0 &&
+        entry->player < MAX_GAME_PLAYERS) {
+        snprintf(buf, buf_sz, "%s: %s dealt %d to %s",
+                 time_str,
+                 player_names[entry->source],
+                 abs_delta,
+                 player_names[entry->player]);
+    } else if (entry->event_type == LOG_EVT_CMD_DAMAGE && entry->source >= 0 &&
         entry->source < MAX_GAME_PLAYERS && entry->player >= 0 &&
         entry->player < MAX_GAME_PLAYERS) {
         snprintf(buf, buf_sz, "%s: %s dealt %d cmd to %s",
+                 time_str,
+                 player_names[entry->source],
+                 abs_delta,
+                 player_names[entry->player]);
+    } else if (entry->event_type == LOG_EVT_POISON && entry->source >= 0 &&
+               entry->source < MAX_GAME_PLAYERS && entry->player >= 0 &&
+               entry->player < MAX_GAME_PLAYERS) {
+        snprintf(buf, buf_sz, "%s: %s gave %d poison to %s",
                  time_str,
                  player_names[entry->source],
                  abs_delta,
@@ -263,8 +281,12 @@ static void refresh_damage_log_ui(void)
         lv_label_set_text(lbl, buf);
         lv_obj_set_width(lbl, 280);
         lv_obj_add_style(lbl, &log_label_style, 0);
-        if (damage_log[idx].event_type == LOG_EVT_COUNTER) {
-            const counter_definition_t *definition = get_counter_definition((counter_type_t)damage_log[idx].source);
+        if (damage_log[idx].event_type == LOG_EVT_COUNTER ||
+            damage_log[idx].event_type == LOG_EVT_POISON) {
+            const counter_definition_t *definition =
+                (damage_log[idx].event_type == LOG_EVT_POISON)
+                    ? get_counter_definition(COUNTER_TYPE_POISON)
+                    : get_counter_definition((counter_type_t)damage_log[idx].source);
             lv_obj_set_style_text_color(lbl,
                 definition != NULL ? lv_color_hex(definition->accent_color) : lv_color_hex(0xFFB74D), 0);
         } else {
