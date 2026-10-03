@@ -14,6 +14,7 @@ lv_obj_t *screen_pregame_multiplayer = NULL;
 lv_obj_t *screen_pregame_players = NULL;
 lv_obj_t *screen_pregame_playgroup = NULL;
 lv_obj_t *screen_pregame_roster = NULL;
+lv_obj_t *screen_pregame_deck = NULL;
 lv_obj_t *screen_pregame_mulligans = NULL;
 
 static int pregame_player_count = 4;
@@ -29,10 +30,23 @@ static lv_obj_t *playgroup_meta_label = NULL;
 static int selected_playgroup_index = 0;
 static int selected_member_index[MAX_DISPLAY_PLAYERS] = {0};
 static bool playgroup_roster_active = false;
+static long selected_deck_id[MAX_DISPLAY_PLAYERS] = {0};
+static char selected_deck_name[MAX_DISPLAY_PLAYERS][PG_DECK_NAME_LEN] = {{0}};
+static int deck_picker_seat = -1;
+static int deck_picker_index = 0;
+static lv_obj_t *deck_title_label = NULL;
+static lv_obj_t *deck_name_label = NULL;
+static lv_obj_t *deck_commander_label = NULL;
+static lv_obj_t *deck_position_label = NULL;
+static lv_obj_t *deck_image = NULL;
+static lv_timer_t *deck_art_timer = NULL;
+static uint8_t *deck_art_data = NULL;
+static lv_img_dsc_t deck_art_dsc;
 
 static void refresh_roster(void);
 static void refresh_mulligans(void);
 static void refresh_playgroup_picker(void);
+static void refresh_deck_picker(bool schedule_art);
 
 static lv_obj_t *pregame_button(lv_obj_t *parent, const char *text,
                                 lv_coord_t w, lv_coord_t h,
