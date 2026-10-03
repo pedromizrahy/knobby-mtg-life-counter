@@ -24,6 +24,13 @@
 static char serial_line[PG_SERIAL_LINE_MAX];
 static size_t serial_line_len = 0;
 
+static playgroup_summary_t cached_playgroups[PG_MAX_PLAYGROUPS];
+static int cached_playgroup_count = 0;
+static playgroup_member_t cached_members[PG_MAX_MEMBERS];
+static int cached_member_count = 0;
+static playgroup_deck_t cached_decks[PG_MAX_DECKS];
+static int cached_deck_count = 0;
+
 static bool nvs_read_string(const char *key, char *out, size_t out_size)
 {
     nvs_handle_t handle;
@@ -364,6 +371,323 @@ static int json_collect_top_level_ids(const String &json, long *ids, int max_ids
     }
 
     return count;
+}
+
+
+static bool json_extract_string_from_object(const String &obj, const char *key,
+                                            char *out, size_t out_size)
+{
+    return json_extract_string(obj, key, out, out_size);
+}
+
+static bool json_extract_long_from_object(const String &obj, const char *key, long *out)
+{
+    char token[24];
+    if (out == NULL) return false;
+    if (!json_extract_number_token(obj, key, token, sizeof(token))) return false;
+    *out = strtol(token, NULL, 10);
+    return true;
+}
+
+static bool json_extract_bool_from_object(const String &obj, const char *key, bool *out)
+{
+    String needle = String("\"") + key + "\"";
+    int key_pos = obj.indexOf(needle);
+    int colon;
+    int pos;
+
+    if (out == NULL || key_pos < 0) return false;
+    colon = obj.indexOf(':', key_pos + needle.length());
+    if (colon < 0) return false;
+    pos = colon + 1;
+    while (pos < (int)obj.length() &&
+           (obj[pos] == ' ' || obj[pos] == '\t' || obj[pos] == '\r' || obj[pos] == '\n'))
+        pos++;
+
+    if (obj.startsWith("true", pos)) {
+        *out = true;
+        return true;
+    }
+    if (obj.startsWith("false", pos)) {
+        *out = false;
+        return true;
+    }
+    return false;
+}
+
+static bool json_extract_float_from_object(const String &obj, const char *key, float *out)
+{
+    String needle = String("\"") + key + "\"";
+    int key_pos = obj.indexOf(needle);
+    int colon;
+    int pos;
+    int end_pos;
+    char token[24];
+
+    if (out == NULL || key_pos < 0) return false;
+    colon = obj.indexOf(':', key_pos + needle.length());
+    if (colon < 0) return false;
+    pos = colon + 1;
+    while (pos < (int)obj.length() &&
+           (obj[pos] == ' ' || obj[pos] == '\t' || obj[pos] == '\r' || obj[pos] == '\n'))
+        pos++;
+
+    if (obj.startsWith("null", pos)) {
+        *out = 0.0f;
+        return true;
+    }
+
+    end_pos = pos;
+    while (end_pos < (int)obj.length() &&
+           ((obj[end_pos] >= '0' && obj[end_pos] <= '9') ||
+            obj[end_pos] == '-' || obj[end_pos] == '+' ||
+            obj[end_pos] == '.' || obj[end_pos] == 'e' || obj[end_pos] == 'E'))
+        end_pos++;
+
+    if (end_pos <= pos || (end_pos - pos) >= (int)sizeof(token)) return false;
+    memcpy(token, obj.c_str() + pos, end_pos - pos);
+    token[end_pos - pos] = '\0';
+    *out = strtof(token, NULL);
+    return true;
+}
+
+static bool json_extract_nested_name(const String &obj, const char *key,
+                                     char *out, size_t out_size)
+{
+    String needle = String("\"") + key + "\"";
+    int key_pos = obj.indexOf(needle);
+    int colon;
+    int pos;
+    int object_start;
+    int depth = 0;
+    bool in_string = false;
+    bool escape = false;
+
+    if (out == NULL || out_size == 0) return false;
+    out[0] = '\0';
+    if (key_pos < 0) return false;
+
+    colon = obj.indexOf(':', key_pos + needle.length());
+    if (colon < 0) return false;
+    pos = colon + 1;
+    while (pos < (int)obj.length() &&
+           (obj[pos] == ' ' || obj[pos] == '\t' || obj[pos] == '\r' || obj[pos] == '\n'))
+        pos++;
+
+    if (obj.startsWith("null", pos)) return true;
+    object_start = obj.indexOf('{', pos);
+    if (object_start < 0) return false;
+
+    for (int i = object_start; i < (int)obj.length(); i++) {
+        char ch = obj[i];
+        if (in_string) {
+            if (escape) escape = false;
+            else if (ch == '\\') escape = true;
+            else if (ch == '"') in_string = false;
+            continue;
+        }
+        if (ch == '"') in_string = true;
+        else if (ch == '{') depth++;
+        else if (ch == '}') {
+            depth--;
+            if (depth == 0) {
+                String nested = obj.substring(object_start, i + 1);
+                return json_extract_string(nested, "name", out, out_size);
+            }
+        }
+    }
+    return false;
+}
+
+typedef bool (*json_object_cb_t)(const String &obj, void *ctx);
+
+static int json_for_each_top_level_object(const String &json, json_object_cb_t cb,
+                                          void *ctx, int max_objects)
+{
+    int count = 0;
+    int depth = 0;
+    int object_start = -1;
+    bool in_string = false;
+    bool escape = false;
+
+    for (int i = 0; i < (int)json.length(); i++) {
+        char ch = json[i];
+
+        if (in_string) {
+            if (escape) escape = false;
+            else if (ch == '\\') escape = true;
+            else if (ch == '"') in_string = false;
+            continue;
+        }
+
+        if (ch == '"') {
+            in_string = true;
+        } else if (ch == '{') {
+            if (depth == 0) object_start = i;
+            depth++;
+        } else if (ch == '}') {
+            if (depth > 0) depth--;
+            if (depth == 0 && object_start >= 0) {
+                String obj = json.substring(object_start, i + 1);
+                if (cb != NULL && !cb(obj, ctx)) break;
+                count++;
+                object_start = -1;
+                if (count >= max_objects) break;
+            }
+        }
+    }
+
+    return count;
+}
+
+static bool parse_playgroup_object(const String &obj, void *ctx)
+{
+    (void)ctx;
+    if (cached_playgroup_count >= PG_MAX_PLAYGROUPS) return false;
+
+    playgroup_summary_t *pg = &cached_playgroups[cached_playgroup_count];
+    memset(pg, 0, sizeof(*pg));
+
+    long member_count = 0;
+    if (!json_extract_long_from_object(obj, "id", &pg->id)) return true;
+    json_extract_long_from_object(obj, "member_count", &member_count);
+    pg->member_count = (int)member_count;
+    json_extract_string_from_object(obj, "name", pg->name, sizeof(pg->name));
+    cached_playgroup_count++;
+    return true;
+}
+
+static bool parse_member_object(const String &obj, void *ctx)
+{
+    (void)ctx;
+    if (cached_member_count >= PG_MAX_MEMBERS) return false;
+
+    playgroup_member_t *member = &cached_members[cached_member_count];
+    memset(member, 0, sizeof(*member));
+
+    if (!json_extract_long_from_object(obj, "user_id", &member->user_id)) return true;
+    json_extract_bool_from_object(obj, "admin", &member->admin);
+    json_extract_string_from_object(obj, "username", member->username, sizeof(member->username));
+    cached_member_count++;
+    return true;
+}
+
+static bool parse_deck_object(const String &obj, void *ctx)
+{
+    (void)ctx;
+    if (cached_deck_count >= PG_MAX_DECKS) return false;
+
+    playgroup_deck_t *deck = &cached_decks[cached_deck_count];
+    memset(deck, 0, sizeof(*deck));
+
+    if (!json_extract_long_from_object(obj, "id", &deck->id)) return true;
+    json_extract_long_from_object(obj, "user_id", &deck->user_id);
+    json_extract_bool_from_object(obj, "archived", &deck->archived);
+    json_extract_float_from_object(obj, "power_level", &deck->power_level);
+    json_extract_string_from_object(obj, "name", deck->name, sizeof(deck->name));
+    json_extract_nested_name(obj, "commander", deck->commander, sizeof(deck->commander));
+    json_extract_nested_name(obj, "partner", deck->partner, sizeof(deck->partner));
+
+    cached_deck_count++;
+    return true;
+}
+
+bool playgroup_refresh_playgroups(void)
+{
+    String me;
+    String response;
+    char user_id[24];
+    int status;
+
+    cached_playgroup_count = 0;
+    if (!wifi_connect_saved()) return false;
+
+    if (!playgroup_https_get("/me", me, status) || status != HTTP_CODE_OK ||
+        !json_extract_number_token(me, "id", user_id, sizeof(user_id))) {
+        wifi_power_down();
+        return false;
+    }
+
+    String path = String("/users/") + user_id + "/playgroups";
+    if (!playgroup_https_get(path, response, status) || status != HTTP_CODE_OK) {
+        wifi_power_down();
+        return false;
+    }
+
+    json_for_each_top_level_object(response, parse_playgroup_object, NULL, PG_MAX_PLAYGROUPS);
+    wifi_power_down();
+    return cached_playgroup_count > 0;
+}
+
+int playgroup_cached_playgroup_count(void)
+{
+    return cached_playgroup_count;
+}
+
+const playgroup_summary_t *playgroup_cached_playgroup(int index)
+{
+    if (index < 0 || index >= cached_playgroup_count) return NULL;
+    return &cached_playgroups[index];
+}
+
+bool playgroup_refresh_members(long playgroup_id)
+{
+    String response;
+    int status;
+
+    cached_member_count = 0;
+    if (playgroup_id <= 0 || !wifi_connect_saved()) return false;
+
+    String path = String("/playgroups/") + String(playgroup_id) + "/members";
+    if (!playgroup_https_get(path, response, status) || status != HTTP_CODE_OK) {
+        wifi_power_down();
+        return false;
+    }
+
+    json_for_each_top_level_object(response, parse_member_object, NULL, PG_MAX_MEMBERS);
+    wifi_power_down();
+    return cached_member_count > 0;
+}
+
+int playgroup_cached_member_count(void)
+{
+    return cached_member_count;
+}
+
+const playgroup_member_t *playgroup_cached_member(int index)
+{
+    if (index < 0 || index >= cached_member_count) return NULL;
+    return &cached_members[index];
+}
+
+bool playgroup_refresh_decks(long user_id)
+{
+    String response;
+    int status;
+
+    cached_deck_count = 0;
+    if (user_id <= 0 || !wifi_connect_saved()) return false;
+
+    String path = String("/users/") + String(user_id) + "/decks";
+    if (!playgroup_https_get(path, response, status) || status != HTTP_CODE_OK) {
+        wifi_power_down();
+        return false;
+    }
+
+    json_for_each_top_level_object(response, parse_deck_object, NULL, PG_MAX_DECKS);
+    wifi_power_down();
+    return true;
+}
+
+int playgroup_cached_deck_count(void)
+{
+    return cached_deck_count;
+}
+
+const playgroup_deck_t *playgroup_cached_deck(int index)
+{
+    if (index < 0 || index >= cached_deck_count) return NULL;
+    return &cached_decks[index];
 }
 
 static bool playgroup_discover_my_decks(void)
