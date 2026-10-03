@@ -146,7 +146,8 @@ static void event_start_game(lv_event_t *e)
         snprintf(player_names[i], sizeof(player_names[i]), "P%d", i + 1);
     }
 
-    rebuild_multiplayer_layout(pregame_player_count);
+    if (pregame_player_count > 1)
+        rebuild_multiplayer_layout(pregame_player_count);
     reset_all_values();
     back_to_main();
 }
