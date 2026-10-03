@@ -57,16 +57,21 @@ static void refresh_ring(void)
 void refresh_turn_ui(void)
 {
     char buf[48];
-    uint32_t total_seconds = get_turn_elapsed_ms() / 1000;
-    uint32_t hours = total_seconds / 3600;
-    uint32_t minutes = (total_seconds % 3600) / 60;
+    uint32_t total_seconds = get_current_turn_elapsed_ms() / 1000;
+    uint32_t minutes = total_seconds / 60;
+    uint32_t seconds = total_seconds % 60;
 
-    if (turn_number <= 0) {
-        snprintf(buf, sizeof(buf), "turn  %lu:%02lu",
-                 (unsigned long)hours, (unsigned long)minutes);
+    if (turn_number <= 0 || active_turn_player < 0) {
+        snprintf(buf, sizeof(buf), "turn  0:00");
     } else {
-        snprintf(buf, sizeof(buf), "turn %d  %lu:%02lu",
-                 turn_number, (unsigned long)hours, (unsigned long)minutes);
+        const char *name = (active_turn_player < MAX_GAME_PLAYERS)
+                               ? player_names[active_turn_player]
+                               : "P?";
+        snprintf(buf, sizeof(buf), "%s T%d  %lu:%02lu",
+                 name,
+                 turn_number,
+                 (unsigned long)minutes,
+                 (unsigned long)seconds);
     }
     lv_label_set_text(label_turn, buf);
 
@@ -93,6 +98,8 @@ void refresh_turn_ui(void)
     if (turn_container != NULL) {
         lv_obj_set_style_opa(turn_container, turn_indicator_visible ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
     }
+
+    refresh_multiplayer_turn_ui();
 }
 
 static void refresh_life_digits(void)
