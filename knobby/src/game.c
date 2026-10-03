@@ -155,6 +155,9 @@ void undo_elimination_action(int player)
     } else if (action.event_type == LOG_EVT_CMD_DAMAGE) {
         undo_life_change(player, action.delta);
         undo_cmd_damage(action.source, player, action.delta);
+    } else if (action.event_type == LOG_EVT_CMD_INFECT) {
+        undo_counter_change(player, COUNTER_TYPE_POISON, action.delta);
+        undo_cmd_damage(action.source, player, -action.delta);
     } else if (action.event_type == LOG_EVT_POISON) {
         undo_counter_change(player, COUNTER_TYPE_POISON, action.delta);
     } else if (action.event_type == LOG_EVT_COUNTER) {
@@ -584,7 +587,11 @@ bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
             event.value = (int16_t)player_counters[target][COUNTER_TYPE_POISON];
 
             if (player_counters[target][COUNTER_TYPE_POISON] >= 10) {
-                set_player_elimination_action(target, LOG_EVT_POISON, source, amount);
+                set_player_elimination_action(
+                    target,
+                    commander ? LOG_EVT_CMD_INFECT : LOG_EVT_POISON,
+                    source,
+                    amount);
             }
         } else {
             player_life[target] = clamp_life(player_life[target] - amount);
@@ -608,7 +615,11 @@ bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
         if (commander) {
             cmd_damage_totals[source][target] += amount;
             if (cmd_damage_totals[source][target] >= 21) {
-                set_player_elimination_action(target, LOG_EVT_CMD_DAMAGE, source, -amount);
+                set_player_elimination_action(
+                    target,
+                    infect ? LOG_EVT_CMD_INFECT : LOG_EVT_CMD_DAMAGE,
+                    source,
+                    infect ? amount : -amount);
             }
         }
 
