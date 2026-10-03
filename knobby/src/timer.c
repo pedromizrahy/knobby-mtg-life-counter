@@ -21,6 +21,7 @@ int round_number = 0;
 int turn_in_round = 0;
 bool turn_reminder_active = false;
 bool turn_reminder_flash_on = false;
+bool turn_reminder_overlay_active = false;
 bool turn_hold_active = false;
 int turn_hold_progress = 0;
 
@@ -76,6 +77,7 @@ void turn_timer_start_for_player(int player)
     turn_blink_steps_remaining = 10;
     turn_reminder_active = false;
     turn_reminder_flash_on = false;
+    turn_reminder_overlay_active = false;
     turn_reminder_flash_steps_remaining = 0;
     turn_hold_active = false;
     turn_hold_progress = 0;
@@ -115,6 +117,7 @@ void turn_timer_reset(void)
     turn_blink_steps_remaining = 0;
     turn_reminder_active = false;
     turn_reminder_flash_on = false;
+    turn_reminder_overlay_active = false;
     turn_reminder_flash_steps_remaining = 0;
     turn_hold_active = false;
     turn_hold_progress = 0;
@@ -193,6 +196,7 @@ void turn_advance(void)
     current_turn_started_ms = lv_tick_get();
     turn_reminder_active = false;
     turn_reminder_flash_on = false;
+    turn_reminder_overlay_active = false;
     turn_reminder_flash_steps_remaining = 0;
     turn_hold_active = false;
     turn_hold_progress = 0;
@@ -235,6 +239,7 @@ static void turn_timer_tick_cb(lv_timer_t *timer)
         if (nvs_get_turn_visual_alert()) {
             turn_reminder_flash_steps_remaining = TURN_REMINDER_FLASH_STEPS;
             turn_reminder_flash_on = true;
+            turn_reminder_overlay_active = true;
             if (turn_reminder_flash_timer != NULL) {
                 lv_timer_reset(turn_reminder_flash_timer);
                 lv_timer_resume(turn_reminder_flash_timer);
@@ -243,6 +248,7 @@ static void turn_timer_tick_cb(lv_timer_t *timer)
     } else if (!reminder_crossed) {
         turn_reminder_active = false;
         turn_reminder_flash_on = false;
+        turn_reminder_overlay_active = false;
         turn_reminder_flash_steps_remaining = 0;
         if (turn_reminder_flash_timer != NULL) {
             lv_timer_pause(turn_reminder_flash_timer);
@@ -302,6 +308,7 @@ static void turn_reminder_flash_timer_cb(lv_timer_t *timer)
 
     if (turn_reminder_flash_steps_remaining == 0) {
         turn_reminder_flash_on = false;
+        turn_reminder_overlay_active = false;
         lv_timer_pause(turn_reminder_flash_timer);
         refresh_turn_ui();
         return;
