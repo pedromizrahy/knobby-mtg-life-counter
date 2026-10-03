@@ -17,6 +17,9 @@ static uint8_t mulligans[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *roster_labels[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *mulligan_labels[MAX_DISPLAY_PLAYERS] = {0};
 
+static void refresh_roster(void);
+static void refresh_mulligans(void);
+
 static lv_obj_t *pregame_button(lv_obj_t *parent, const char *text,
                                 lv_coord_t w, lv_coord_t h,
                                 lv_event_cb_t cb)
