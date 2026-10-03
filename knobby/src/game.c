@@ -149,11 +149,13 @@ void undo_elimination_action(int player)
     elimination_action_t action = elimination_action[player];
     clear_player_elimination_action(player);
 
-    if (action.event_type == LOG_EVT_LIFE) {
+    if (action.event_type == LOG_EVT_LIFE || action.event_type == LOG_EVT_DAMAGE) {
         undo_life_change(player, action.delta);
     } else if (action.event_type == LOG_EVT_CMD_DAMAGE) {
         undo_life_change(player, action.delta);
         undo_cmd_damage(action.source, player, action.delta);
+    } else if (action.event_type == LOG_EVT_POISON) {
+        undo_counter_change(player, COUNTER_TYPE_POISON, action.delta);
     } else if (action.event_type == LOG_EVT_COUNTER) {
         undo_counter_change(player, action.source, action.delta);
     }
