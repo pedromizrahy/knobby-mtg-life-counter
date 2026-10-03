@@ -12,11 +12,14 @@ typedef enum {
     LOG_EVT_CMD_INFECT,
     LOG_EVT_POISON,
     LOG_EVT_COUNTER,
+    LOG_EVT_TURN_END,
 } log_event_type_t;
 
 extern lv_obj_t *screen_damage_log;
 
 void damage_log_add(int player, int delta, uint8_t event_type, int source);
+void damage_log_add_turn_end(int player, int round, int turn_in_round,
+                             uint32_t duration_ms);
 void damage_log_begin_action(void);
 void damage_log_end_action(void);
 void damage_log_reset(void);
