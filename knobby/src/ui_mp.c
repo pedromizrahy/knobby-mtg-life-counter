@@ -1003,7 +1003,14 @@ void rebuild_multiplayer_layout(int track)
 
         panel = lv_btn_create(screen_multiplayer);
         lv_obj_remove_style_all(panel);
-        lv_obj_clear_flag(panel, LV_OBJ_FLAG_PRESS_LOCK);
+        /*
+         * Keep the initial player panel as the active press target while the
+         * finger crosses into another panel. The damage drag reads the global
+         * pointer position and resolves the destination itself; without
+         * PRESS_LOCK LVGL sends PRESS_LOST as soon as the pointer leaves the
+         * source panel, so source -> target drags cannot complete.
+         */
+        lv_obj_add_flag(panel, LV_OBJ_FLAG_PRESS_LOCK);
         lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
         lv_obj_set_size(panel, spec->w, spec->h);
         lv_obj_set_pos(panel, spec->x, spec->y);
