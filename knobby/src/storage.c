@@ -21,6 +21,7 @@ static int cached_turn_timer_enabled = 1; /* 1=ON: start turn tracking with a ne
 static int cached_turn_show_name = 0; /* compact timer by default */
 static int cached_turn_reminder_minutes = 10; /* 0 disables reminder */
 static int cached_turn_visual_alert = 1;
+static int cached_timer_face_player = 1;
 static int cached_cmd_marker_mode = CMD_MARKER_DOT;
 static int cached_multi_select = 0; /* 0=OFF (default), 1=ON */
 static char cached_name_list[NAME_LIST_COUNT][NAME_LIST_LEN];
@@ -84,11 +85,13 @@ void knob_nvs_init(void)
         int8_t tn_val = 0;
         int8_t tr_val = 10;
         int8_t tv_val = 1;
+        int8_t tf_val = 1;
         int8_t cm_val = CMD_MARKER_DOT;
         nvs_get_i8(handle, "turn_timer", &tt_val);
         nvs_get_i8(handle, "turn_name", &tn_val);
         nvs_get_i8(handle, "turn_rem", &tr_val);
         nvs_get_i8(handle, "turn_visual", &tv_val);
+        nvs_get_i8(handle, "timer_face", &tf_val);
         nvs_get_i8(handle, "cmd_marker", &cm_val);
         cached_turn_timer_enabled = (tt_val != 0) ? 1 : 0;
         cached_turn_show_name = (tn_val != 0) ? 1 : 0;
@@ -96,6 +99,7 @@ void knob_nvs_init(void)
             (tr_val == 0 || tr_val == 5 || tr_val == 10 || tr_val == 15 || tr_val == 20)
                 ? tr_val : 10;
         cached_turn_visual_alert = (tv_val != 0) ? 1 : 0;
+        cached_timer_face_player = (tf_val != 0) ? 1 : 0;
         cached_cmd_marker_mode =
             (cm_val < 0 || cm_val >= CMD_MARKER_COUNT) ? CMD_MARKER_DOT : cm_val;
 
@@ -303,6 +307,17 @@ void nvs_set_turn_visual_alert(int value)
     settings_dirty = true;
 }
 
+int nvs_get_timer_face_player(void)
+{
+    return cached_timer_face_player;
+}
+
+void nvs_set_timer_face_player(int value)
+{
+    cached_timer_face_player = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
 int nvs_get_cmd_marker_mode(void)
 {
     return cached_cmd_marker_mode;
@@ -360,6 +375,7 @@ void settings_save(void)
         nvs_set_i8(handle, "turn_name", (int8_t)cached_turn_show_name);
         nvs_set_i8(handle, "turn_rem", (int8_t)cached_turn_reminder_minutes);
         nvs_set_i8(handle, "turn_visual", (int8_t)cached_turn_visual_alert);
+        nvs_set_i8(handle, "timer_face", (int8_t)cached_timer_face_player);
         nvs_set_i8(handle, "cmd_marker", (int8_t)cached_cmd_marker_mode);
         nvs_set_i8(handle, "multi_sel", (int8_t)cached_multi_select);
         nvs_set_i8(handle, "menu_face", (int8_t)cached_menu_facing);
