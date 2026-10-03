@@ -23,7 +23,7 @@ static lv_obj_t *label_gm_life_total = NULL;
 static lv_obj_t *label_gm_color_mode = NULL;
 static lv_obj_t *label_gm_cmd_marker = NULL;
 static lv_obj_t *label_gm_orientation = NULL;
-static lv_obj_t *label_gm_timer_facing = NULL;
+static lv_obj_t *label_gm_name_display = NULL;
 
 // ---------- custom life widgets ----------
 static lv_obj_t *label_custom_life_value = NULL;
@@ -62,10 +62,10 @@ static void refresh_player_settings_ui(void)
         }
     }
 
-    if (label_gm_timer_facing != NULL) {
-        lv_label_set_text(label_gm_timer_facing,
-            nvs_get_timer_face_player()
-                ? "Timer Face\nPlayer" : "Timer Face\nFixed");
+    if (label_gm_name_display != NULL) {
+        lv_label_set_text(label_gm_name_display,
+            nvs_get_turn_show_name()
+                ? "Name Display\nON" : "Name Display\nOFF");
     }
 }
 
@@ -222,10 +222,10 @@ static void event_gm_orientation(lv_event_t *e)
     refresh_player_settings_ui();
 }
 
-static void event_gm_timer_facing(lv_event_t *e)
+static void event_gm_name_display(lv_event_t *e)
 {
     (void)e;
-    nvs_set_timer_face_player(!nvs_get_timer_face_player());
+    nvs_set_turn_show_name(!nvs_get_turn_show_name());
     settings_save();
     refresh_turn_ui();
     refresh_player_settings_ui();
@@ -314,8 +314,8 @@ void build_game_mode_menu_screen(void)
         quad_item_t items[4] = {
             {"Colors\nPlayer",       event_gm_color_mode,    true, LV_EVENT_CLICKED},
             {"Cmd Marker\nDot",      event_gm_cmd_marker,    true, LV_EVENT_CLICKED},
-            {"Orientation\nAbsolute",event_gm_orientation,   true, LV_EVENT_CLICKED},
-            {"Timer Face\nFixed",    event_gm_timer_facing,  true, LV_EVENT_CLICKED},
+            {"Orientation\nAbsolute",event_gm_orientation,    true, LV_EVENT_CLICKED},
+            {"Name Display\nON",     event_gm_name_display,   true, LV_EVENT_CLICKED},
         };
         build_quad_screen(&screen_game_player_settings, items);
 
@@ -326,7 +326,7 @@ void build_game_mode_menu_screen(void)
         btn = lv_obj_get_child(screen_game_player_settings, 2);
         label_gm_orientation = lv_obj_get_child(btn, 0);
         btn = lv_obj_get_child(screen_game_player_settings, 3);
-        label_gm_timer_facing = lv_obj_get_child(btn, 0);
+        label_gm_name_display = lv_obj_get_child(btn, 0);
 
         /* Long-press on any player-setting tile is not special; edge swipe
            or back navigation returns to the Game Settings hub. */
