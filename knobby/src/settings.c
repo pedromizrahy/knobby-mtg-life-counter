@@ -32,6 +32,8 @@ static lv_obj_t *label_settings_hint = NULL;
 static lv_obj_t *label_settings_battery = NULL;
 static lv_obj_t *label_settings_battery_detail = NULL;
 static lv_obj_t *label_rotate_value = NULL;
+static lv_obj_t *turn_timer_btns[4] = {NULL, NULL, NULL, NULL};
+static lv_obj_t *turn_timer_lbls[4] = {NULL, NULL, NULL, NULL};
 
 // ---------- quadrant menu builder ----------
 void build_quad_screen(lv_obj_t **screen, quad_item_t items[4])
@@ -350,6 +352,114 @@ static const char *multi_select_label(int val)
     return val ? "Multi-\nSelect\nON" : "Multi-\nSelect\nOFF";
 }
 
+static const char *turn_reminder_label(int minutes)
+{
+    switch (minutes) {
+        case 5:  return "Reminder\n5 min";
+        case 10: return "Reminder\n10 min";
+        case 15: return "Reminder\n15 min";
+        case 20: return "Reminder\n20 min";
+        default: return "Reminder\nOFF";
+    }
+}
+
+static void refresh_turn_timer_settings_button(int index, const char *text, bool enabled)
+{
+    if (index < 0 || index >= 4) return;
+    if (turn_timer_lbls[index] != NULL)
+        lv_label_set_text(turn_timer_lbls[index], text);
+    if (turn_timer_btns[index] != NULL)
+        set_btn_color(turn_timer_btns[index], enabled ? TOGGLE_ON : TOGGLE_OFF);
+}
+
+void refresh_turn_timer_settings_ui(void)
+{
+    int reminder = nvs_get_turn_reminder_minutes();
+
+    refresh_turn_timer_settings_button(
+        0,
+        nvs_get_turn_timer_enabled() ? "Timer\nON" : "Timer\nOFF",
+        nvs_get_turn_timer_enabled() != 0);
+
+    refresh_turn_timer_settings_button(
+        1,
+        nvs_get_turn_show_name() ? "Player Name\nON" : "Player Name\nOFF",
+        nvs_get_turn_show_name() != 0);
+
+    if (turn_timer_lbls[2] != NULL)
+        lv_label_set_text(turn_timer_lbls[2], turn_reminder_label(reminder));
+    if (turn_timer_btns[2] != NULL)
+        set_btn_color(turn_timer_btns[2],
+                      reminder > 0 ? 0x0D47A1 : TOGGLE_OFF);
+
+    refresh_turn_timer_settings_button(
+        3,
+        nvs_get_turn_visual_alert() ? "Visual Alert\nON" : "Visual Alert\nOFF",
+        nvs_get_turn_visual_alert() != 0);
+}
+
+static void event_turn_timer_enable(lv_event_t *e)
+{
+    (void)e;
+    nvs_set_turn_timer_enabled(!nvs_get_turn_timer_enabled());
+    refresh_turn_timer_settings_ui();
+}
+
+static void event_turn_timer_name(lv_event_t *e)
+{
+    (void)e;
+    nvs_set_turn_show_name(!nvs_get_turn_show_name());
+    refresh_turn_timer_settings_ui();
+    refresh_turn_ui();
+}
+
+static void event_turn_timer_reminder(lv_event_t *e)
+{
+    int value = nvs_get_turn_reminder_minutes();
+    (void)e;
+
+    if (value == 0) value = 5;
+    else if (value == 5) value = 10;
+    else if (value == 10) value = 15;
+    else if (value == 15) value = 20;
+    else value = 0;
+
+    nvs_set_turn_reminder_minutes(value);
+    refresh_turn_timer_settings_ui();
+}
+
+static void event_turn_timer_visual(lv_event_t *e)
+{
+    (void)e;
+    nvs_set_turn_visual_alert(!nvs_get_turn_visual_alert());
+    refresh_turn_timer_settings_ui();
+    refresh_turn_ui();
+}
+
+void open_turn_timer_settings(void)
+{
+    refresh_turn_timer_settings_ui();
+    load_screen_if_needed(screen_turn_timer_settings);
+}
+
+void build_turn_timer_settings_screen(void)
+{
+    quad_item_t items[4] = {
+        {"Timer\nON",        event_turn_timer_enable,   true, LV_EVENT_CLICKED},
+        {"Player Name\nOFF", event_turn_timer_name,     true, LV_EVENT_CLICKED},
+        {"Reminder\n10 min", event_turn_timer_reminder, true, LV_EVENT_CLICKED},
+        {"Visual Alert\nON", event_turn_timer_visual,   true, LV_EVENT_CLICKED},
+    };
+    int i;
+
+    build_quad_screen(&screen_turn_timer_settings, items);
+    for (i = 0; i < 4; i++) {
+        turn_timer_btns[i] = lv_obj_get_child(screen_turn_timer_settings, i);
+        turn_timer_lbls[i] = lv_obj_get_child(turn_timer_btns[i], 0);
+    }
+    refresh_turn_timer_settings_ui();
+}
+
 static void multi_select_set(int v)
 {
     nvs_set_multi_select(v);
@@ -362,6 +472,7 @@ static void multi_select_set(int v)
 
 // ---------- table sync screen ----------
 lv_obj_t *screen_table_sync = NULL;
+lv_obj_t *screen_turn_timer_settings = NULL;
 static lv_obj_t *table_sync_action_lbl; /* Start <-> Invite quadrant */
 static lv_obj_t *table_sync_status_lbl; /* status tile */
 static lv_timer_t *table_sync_timer;
@@ -486,7 +597,7 @@ static const setting_item_t settings_items[] = {
     { .id = "orientation",    .label = orientation_mode_label, .color = orientation_color, .get = nvs_get_orientation,      .set = nvs_set_orientation,      .count = ORIENTATION_MODE_COUNT },
     { .id = "auto-eliminate", .label = auto_eliminate_label,   .color = toggle_color,      .get = nvs_get_auto_eliminate,   .set = nvs_set_auto_eliminate,   .count = 2 },
     { .id = "random-first",   .label = random_first_label,     .color = toggle_color,      .get = nvs_get_random_first,     .set = nvs_set_random_first,     .count = 2 },
-    { .id = "turn-timer",     .label = turn_timer_label,       .color = toggle_color,      .get = nvs_get_turn_timer_enabled, .set = nvs_set_turn_timer_enabled, .count = 2 },
+    { .id = "turn-timer",     .fixed_label = "Turn Timer\nSettings", .navigate = open_turn_timer_settings, .nav_screen = &screen_turn_timer_settings },
     { .id = "multi-select",   .label = multi_select_label,     .color = toggle_color,      .get = nvs_get_multi_select,     .set = multi_select_set,         .count = 2 },
     { .id = "table-sync",     .fixed_label = "Table Sync\n(Experimental)", .navigate = open_table_sync_screen, .nav_screen = &screen_table_sync },
     { .id = "rotate",         .fixed_label = "Rotate\nScreen", .navigate = open_rotate_screen, .nav_screen = &screen_rotate },
@@ -582,7 +693,7 @@ bool settings_handle_back(lv_obj_t *screen)
 
     for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
         if (settings_items[i].nav_screen != NULL && screen == *settings_items[i].nav_screen) {
-            if (screen == screen_settings || screen == screen_rotate) settings_save();
+            settings_save();
             lv_scr_load(settings_pages[setting_page_of[i]]);
             return true;
         }
