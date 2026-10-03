@@ -5,6 +5,7 @@
 #include "storage.h"
 #include "hw.h"
 #include "timer.h"
+#include "ui_damage_resolver.h"
 
 static lv_obj_t *add_low_battery_icon(lv_obj_t *parent)
 {
@@ -20,6 +21,19 @@ static lv_obj_t *add_low_battery_icon(lv_obj_t *parent)
 static lv_obj_t *mp_battery_icon = NULL;
 static lv_obj_t *mp_turn_badge = NULL;
 static lv_obj_t *mp_turn_label = NULL;
+
+#define DAMAGE_DRAG_THRESHOLD_PX 18
+#define DAMAGE_DRAG_ADVANCED_HOLD_MS 900
+
+static int drag_source_player = -1;
+static int drag_target_player = -1;
+static bool drag_active = false;
+static bool drag_advanced_ready = false;
+static uint32_t drag_target_enter_ms = 0;
+static uint32_t drag_release_ms = 0;
+static lv_point_t drag_start_point = {0, 0};
+static lv_obj_t *drag_hint = NULL;
+static lv_obj_t *drag_hint_label = NULL;
 
 #include <string.h>
 
@@ -619,9 +633,145 @@ void refresh_multiplayer_ui(void)
     refresh_multiplayer_turn_ui();
 }
 
+static int player_at_screen_point(lv_coord_t x, lv_coord_t y)
+{
+    int i;
+
+    if (mp_state.layout == NULL) return -1;
+
+    for (i = 0; i < mp_state.layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &mp_state.layout->panels[i];
+
+        if (spec_is_wedge(spec)) {
+            int dx = x - WEDGE_CX;
+            int dy = y - WEDGE_CY;
+            int angle;
+
+            /* Reserve the center for future multi-target gestures. */
+            if ((dx * dx) + (dy * dy) < (52 * 52)) return -2;
+            if (dx == 0 && dy == 0) dx = 1;
+            angle = lv_atan2(dy, dx);
+            if (wedge_contains_angle(spec, angle)) return spec->player_index;
+        } else if (x >= spec->x && x < spec->x + spec->w &&
+                   y >= spec->y && y < spec->y + spec->h) {
+            return spec->player_index;
+        }
+    }
+
+    return -1;
+}
+
+static void drag_hint_hide(void)
+{
+    if (drag_hint != NULL) lv_obj_add_flag(drag_hint, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void drag_hint_refresh(void)
+{
+    char buf[64];
+
+    if (drag_hint == NULL || drag_hint_label == NULL ||
+        drag_source_player < 0 || drag_target_player < 0) {
+        drag_hint_hide();
+        return;
+    }
+
+    snprintf(buf, sizeof(buf), "%s > %s\n%s",
+             player_names[drag_source_player],
+             player_names[drag_target_player],
+             drag_advanced_ready ? "More options" : "Damage");
+
+    lv_label_set_text(drag_hint_label, buf);
+    lv_obj_clear_flag(drag_hint, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(drag_hint);
+}
+
+static void damage_drag_reset(void)
+{
+    drag_source_player = -1;
+    drag_target_player = -1;
+    drag_active = false;
+    drag_advanced_ready = false;
+    drag_target_enter_ms = 0;
+    drag_hint_hide();
+}
+
+static void event_multiplayer_drag(lv_event_t *e)
+{
+    int player = (int)(intptr_t)lv_event_get_user_data(e);
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_indev_t *indev = lv_indev_get_act();
+    lv_point_t point;
+
+    if (player < 0 || player >= MULTIPLAYER_COUNT) return;
+    if (indev == NULL) return;
+    lv_indev_get_point(indev, &point);
+
+    if (code == LV_EVENT_PRESSED) {
+        if (player_eliminated[player]) return;
+        drag_source_player = player;
+        drag_target_player = -1;
+        drag_active = false;
+        drag_advanced_ready = false;
+        drag_target_enter_ms = 0;
+        drag_start_point = point;
+        drag_hint_hide();
+        return;
+    }
+
+    if (drag_source_player != player) return;
+
+    if (code == LV_EVENT_PRESSING) {
+        int dx = point.x - drag_start_point.x;
+        int dy = point.y - drag_start_point.y;
+        int target;
+
+        if (!drag_active &&
+            (dx * dx) + (dy * dy) >=
+                (DAMAGE_DRAG_THRESHOLD_PX * DAMAGE_DRAG_THRESHOLD_PX)) {
+            drag_active = true;
+        }
+        if (!drag_active) return;
+
+        target = player_at_screen_point(point.x, point.y);
+        if (target == drag_source_player || target == -2) target = -1;
+
+        if (target != drag_target_player) {
+            drag_target_player = target;
+            drag_target_enter_ms = lv_tick_get();
+            drag_advanced_ready = false;
+        } else if (drag_target_player >= 0 && !drag_advanced_ready &&
+                   lv_tick_elaps(drag_target_enter_ms) >=
+                       DAMAGE_DRAG_ADVANCED_HOLD_MS) {
+            drag_advanced_ready = true;
+        }
+
+        drag_hint_refresh();
+        return;
+    }
+
+    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        bool handled = drag_active && drag_target_player >= 0 &&
+                       drag_target_player != drag_source_player &&
+                       !player_eliminated[drag_target_player];
+        int source = drag_source_player;
+        int target = drag_target_player;
+        bool advanced = drag_advanced_ready;
+
+        drag_release_ms = lv_tick_get();
+        damage_drag_reset();
+
+        if (handled) {
+            open_damage_resolver_for_target(source, target, advanced);
+        }
+    }
+}
+
 /* ---------- events ---------- */
 static void event_multiplayer_select(lv_event_t *e)
 {
+    if (lv_tick_elaps(drag_release_ms) < 250) return;
+
     int player = (int)(intptr_t)lv_event_get_user_data(e);
     bool had_pending;
     bool was_selected;
@@ -677,6 +827,8 @@ static void event_multiplayer_select(lv_event_t *e)
 
 static void event_multiplayer_open_menu(lv_event_t *e)
 {
+    if (drag_active) return;
+
     int player = (int)(intptr_t)lv_event_get_user_data(e);
 
     if (player < 0 || player >= MULTIPLAYER_COUNT) return;
@@ -819,6 +971,9 @@ void rebuild_multiplayer_layout(int track)
     }
     mp_turn_badge = NULL;
     mp_turn_label = NULL;
+    drag_hint = NULL;
+    drag_hint_label = NULL;
+    damage_drag_reset();
 
     lv_obj_clean(screen_multiplayer);
     memset(&mp_state, 0, sizeof(mp_state));
@@ -857,6 +1012,10 @@ void rebuild_multiplayer_layout(int track)
             lv_obj_set_style_border_width(panel, 1, 0);
             lv_obj_set_style_border_color(panel, lv_color_black(), 0);
         }
+        lv_obj_add_event_cb(panel, event_multiplayer_drag, LV_EVENT_PRESSED, (void *)(intptr_t)p);
+        lv_obj_add_event_cb(panel, event_multiplayer_drag, LV_EVENT_PRESSING, (void *)(intptr_t)p);
+        lv_obj_add_event_cb(panel, event_multiplayer_drag, LV_EVENT_RELEASED, (void *)(intptr_t)p);
+        lv_obj_add_event_cb(panel, event_multiplayer_drag, LV_EVENT_PRESS_LOST, (void *)(intptr_t)p);
         lv_obj_add_event_cb(panel, event_multiplayer_select, LV_EVENT_SHORT_CLICKED, (void *)(intptr_t)p);
         lv_obj_add_event_cb(panel, event_multiplayer_open_menu, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)p);
         mp_state.panels[i] = panel;
@@ -896,6 +1055,25 @@ void rebuild_multiplayer_layout(int track)
         lv_obj_set_pos(sep, 0, 0);
         lv_obj_add_event_cb(sep, event_wedge_separators, LV_EVENT_DRAW_MAIN, NULL);
     }
+
+    drag_hint = lv_obj_create(screen_multiplayer);
+    lv_obj_remove_style_all(drag_hint);
+    lv_obj_set_size(drag_hint, 150, 58);
+    lv_obj_align(drag_hint, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_radius(drag_hint, 16, 0);
+    lv_obj_set_style_bg_color(drag_hint, lv_color_hex(0x101010), 0);
+    lv_obj_set_style_bg_opa(drag_hint, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(drag_hint, 2, 0);
+    lv_obj_set_style_border_color(drag_hint, lv_color_white(), 0);
+    lv_obj_clear_flag(drag_hint, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(drag_hint, LV_OBJ_FLAG_HIDDEN);
+
+    drag_hint_label = lv_label_create(drag_hint);
+    lv_label_set_text(drag_hint_label, "");
+    lv_obj_set_style_text_color(drag_hint_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(drag_hint_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_align(drag_hint_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(drag_hint_label);
 
     mp_turn_badge = lv_btn_create(screen_multiplayer);
     lv_obj_remove_style_all(mp_turn_badge);
