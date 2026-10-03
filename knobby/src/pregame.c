@@ -484,19 +484,45 @@ static void deck_art_timer_cb(lv_timer_t *timer)
     deck_art_dsc.data_size = (uint32_t)data_size;
     deck_art_dsc.data = deck_art_data;
 
-    if (lv_img_decoder_get_info(&deck_art_dsc, &header) == LV_RES_OK &&
-        header.w > 0 && header.h > 0) {
-        uint32_t zoom_w = (190U * 256U) / header.w;
-        uint32_t zoom_h = (130U * 256U) / header.h;
-        zoom = (uint16_t)((zoom_w < zoom_h) ? zoom_w : zoom_h);
-        if (zoom > 256U) zoom = 256U;
-        if (zoom < 32U) zoom = 32U;
+    {
+        uint32_t decode_started = millis();
+        lv_res_t info_res = lv_img_decoder_get_info(&deck_art_dsc, &header);
+
+        Serial.print("[Playgroup] Commander art decoder info -> ");
+        Serial.print(info_res == LV_RES_OK ? "OK" : "FAILED");
+        Serial.print(" in ");
+        Serial.print((unsigned long)(millis() - decode_started));
+        Serial.println(" ms");
+
+        if (info_res == LV_RES_OK && header.w > 0 && header.h > 0) {
+            uint32_t zoom_w = (190U * 256U) / header.w;
+            uint32_t zoom_h = (130U * 256U) / header.h;
+            zoom = (uint16_t)((zoom_w < zoom_h) ? zoom_w : zoom_h);
+            if (zoom > 256U) zoom = 256U;
+            if (zoom < 32U) zoom = 32U;
+
+            Serial.print("[Playgroup] Commander art size ");
+            Serial.print(header.w);
+            Serial.print("x");
+            Serial.print(header.h);
+            Serial.print("; zoom ");
+            Serial.println(zoom);
+        } else {
+            Serial.println("[Playgroup] Commander art is not a JPEG format LVGL can decode.");
+        }
     }
 
-    lv_img_set_src(deck_image, &deck_art_dsc);
-    lv_img_set_zoom(deck_image, zoom);
-    lv_obj_align(deck_image, LV_ALIGN_CENTER, 0, -40);
-    lv_obj_clear_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
+    {
+        uint32_t render_started = millis();
+        lv_img_set_src(deck_image, &deck_art_dsc);
+        lv_img_set_zoom(deck_image, zoom);
+        lv_obj_align(deck_image, LV_ALIGN_CENTER, 0, -40);
+        lv_obj_clear_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
+        lv_refr_now(NULL);
+        Serial.print("[Playgroup] Commander art render queued in ");
+        Serial.print((unsigned long)(millis() - render_started));
+        Serial.println(" ms");
+    }
 
     if (deck_commander_label != NULL) {
         char buf[96];
