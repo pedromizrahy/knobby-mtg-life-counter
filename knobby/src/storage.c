@@ -17,6 +17,7 @@ static int cached_players_to_track = 1;
 static int cached_life_total = DEFAULT_LIFE_TOTAL;
 static int cached_auto_eliminate = 1; /* 1=ON (default), 0=OFF */
 static int cached_random_first = 1; /* 1=ON (default): random first-player pick on reset */
+static int cached_turn_timer_enabled = 1; /* 1=ON: start turn tracking with a new game */
 static int cached_multi_select = 0; /* 0=OFF (default), 1=ON */
 static char cached_name_list[NAME_LIST_COUNT][NAME_LIST_LEN];
 
@@ -74,6 +75,10 @@ void knob_nvs_init(void)
         int8_t rf_val = 1;
         nvs_get_i8(handle, "rand_first", &rf_val);
         cached_random_first = (rf_val != 0) ? 1 : 0;
+
+        int8_t tt_val = 1;
+        nvs_get_i8(handle, "turn_timer", &tt_val);
+        cached_turn_timer_enabled = (tt_val != 0) ? 1 : 0;
 
         int8_t ms_val = 0;
         nvs_get_i8(handle, "multi_sel", &ms_val);
@@ -232,6 +237,18 @@ void nvs_set_random_first(int value)
     settings_dirty = true;
 }
 
+// ---------- turn timer ----------
+int nvs_get_turn_timer_enabled(void)
+{
+    return cached_turn_timer_enabled;
+}
+
+void nvs_set_turn_timer_enabled(int value)
+{
+    cached_turn_timer_enabled = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
 // ---------- multi-select ----------
 int nvs_get_multi_select(void)
 {
@@ -273,6 +290,7 @@ void settings_save(void)
         nvs_set_i16(handle, "life_total", (int16_t)cached_life_total);
         nvs_set_i8(handle, "auto_elim", (int8_t)cached_auto_eliminate);
         nvs_set_i8(handle, "rand_first", (int8_t)cached_random_first);
+        nvs_set_i8(handle, "turn_timer", (int8_t)cached_turn_timer_enabled);
         nvs_set_i8(handle, "multi_sel", (int8_t)cached_multi_select);
         nvs_set_i8(handle, "menu_face", (int8_t)cached_menu_facing);
         nvs_set_blob(handle, "name_list", cached_name_list, sizeof(cached_name_list));
