@@ -36,6 +36,7 @@ static lv_obj_t *label_rotate_value = NULL;
 static lv_obj_t *turn_timer_btns[4] = {NULL, NULL, NULL, NULL};
 static lv_obj_t *turn_timer_lbls[4] = {NULL, NULL, NULL, NULL};
 static bool turn_settings_from_tools = false;
+static bool turn_settings_from_game = false;
 
 // ---------- quadrant menu builder ----------
 void build_quad_screen(lv_obj_t **screen, quad_item_t items[4])
@@ -477,6 +478,15 @@ static void event_turn_timer_visual(lv_event_t *e)
 void open_turn_timer_settings(void)
 {
     turn_settings_from_tools = false;
+    turn_settings_from_game = false;
+    refresh_turn_timer_settings_ui();
+    load_screen_if_needed(screen_turn_timer_settings);
+}
+
+void open_turn_timer_settings_from_game(void)
+{
+    turn_settings_from_tools = false;
+    turn_settings_from_game = true;
     refresh_turn_timer_settings_ui();
     load_screen_if_needed(screen_turn_timer_settings);
 }
@@ -730,6 +740,13 @@ bool settings_handle_back(lv_obj_t *screen)
 {
     int i;
 
+    if (screen == screen_turn_timer_settings && turn_settings_from_game) {
+        settings_save();
+        turn_settings_from_game = false;
+        lv_scr_load(screen_game_mode_menu);
+        return true;
+    }
+
     if (screen == screen_turn_timer_settings && turn_settings_from_tools) {
         settings_save();
         turn_settings_from_tools = false;
@@ -799,11 +816,10 @@ static void event_open_damage_log(lv_event_t *e)
     open_damage_log_screen();
 }
 
-static void event_open_turn_timer_settings(lv_event_t *e)
+static void event_open_table_sync_tools(lv_event_t *e)
 {
     (void)e;
-    open_turn_timer_settings();
-    turn_settings_from_tools = true;
+    open_table_sync_screen();
 }
 
 static void event_start_new_game(lv_event_t *e)
@@ -825,7 +841,7 @@ static void event_start_new_game(lv_event_t *e)
 void build_quad_menus(void)
 {
     quad_item_t main_items[4] = {
-        {"Settings", event_quad_screen_settings, true, LV_EVENT_CLICKED},
+        {"Device\nSettings", event_quad_screen_settings, true, LV_EVENT_CLICKED},
         {"Game\nSettings", event_general_game_settings, true, LV_EVENT_CLICKED},
         {"Tools",             event_quad_tools, true, LV_EVENT_CLICKED},
         {"Start New\nGame (Hold)", event_start_new_game, true, LV_EVENT_LONG_PRESSED},
@@ -834,7 +850,7 @@ void build_quad_menus(void)
 
     quad_item_t tools_items[4] = {
         {"Dice",        event_tool_dice, true, LV_EVENT_CLICKED},
-        {"Timer\nSettings", event_open_turn_timer_settings, true, LV_EVENT_CLICKED},
+        {"Table\nSync", event_open_table_sync_tools, true, LV_EVENT_CLICKED},
         {"Event\nLog",  event_open_damage_log, true, LV_EVENT_CLICKED},
         {"Mana\nPool",  event_tool_mana, true, LV_EVENT_CLICKED},
     };
