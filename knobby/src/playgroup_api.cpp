@@ -304,7 +304,7 @@ static bool playgroup_https_get(const String &path, String &response, int &statu
     auth = "Bearer ";
     auth += api_key;
     http.addHeader("Authorization", auth);
-    http.addHeader("User-Agent", "DialDosPrimos/0.1 (ESP32-S3)");
+    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
 
     request_started = millis();
     status = http.GET();
@@ -783,7 +783,7 @@ bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_
         return false;
     }
 
-    http.addHeader("User-Agent", "DialDosPrimos/0.1 (ESP32-S3)");
+    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
     http.addHeader("Accept", "image/jpeg,image/*;q=0.9,*/*;q=0.8");
 
     Serial.print("[Playgroup] Commander art via Scryfall API: ");
@@ -1051,7 +1051,7 @@ static bool playgroup_test_me(void)
     auth += api_key;
 
     http.addHeader("Authorization", auth);
-    http.addHeader("User-Agent", "DialDosPrimos/0.1 (ESP32-S3)");
+    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
 
     Serial.println("[Playgroup] GET /me ...");
     status = http.GET();
