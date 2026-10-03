@@ -14,6 +14,7 @@ typedef struct {
     uint16_t turn_in_round;    /* user-facing T1/T2/... within the round */
     int8_t   turn_player;
     uint32_t duration_ms;      /* populated by LOG_EVT_TURN_END */
+    uint32_t turn_elapsed_ms;  /* when this action happened inside its turn */
     uint16_t action_id;
 } damage_log_entry_t;
 
@@ -70,6 +71,9 @@ void damage_log_add(int player, int delta, uint8_t event_type, int source)
     damage_log[damage_log_head].round_number = (uint16_t)(round_number > 0 ? round_number : 0);
     damage_log[damage_log_head].turn_in_round = (uint16_t)(turn_in_round > 0 ? turn_in_round : 0);
     damage_log[damage_log_head].duration_ms = 0;
+    damage_log[damage_log_head].turn_elapsed_ms =
+        (turn_number > 0 && active_turn_player >= 0)
+            ? get_current_turn_elapsed_ms() : 0;
     damage_log[damage_log_head].turn_player =
         (int8_t)((active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS)
                      ? active_turn_player
@@ -100,6 +104,7 @@ void damage_log_add_turn_end(int player, int round, int turn_index,
     entry->turn_in_round = (uint16_t)(turn_index > 0 ? turn_index : 0);
     entry->turn_player = (int8_t)player;
     entry->duration_ms = duration_ms;
+    entry->turn_elapsed_ms = duration_ms;
     entry->action_id = next_action_id++;
     if (next_action_id == 0) next_action_id = 1;
 
@@ -266,70 +271,57 @@ void damage_log_undo_all(void)
 }
 
 // ---------- UI ----------
-static void format_elapsed(uint32_t elapsed_s, char *out, size_t out_sz)
+static void format_turn_time(uint32_t elapsed_ms, char *out, size_t out_sz)
 {
-    if (elapsed_s >= 60) {
-        snprintf(out, out_sz, "%2lum ago", (unsigned long)(elapsed_s / 60));
-    } else {
-        snprintf(out, out_sz, "%2lus ago", (unsigned long)elapsed_s);
-    }
+    unsigned long total_s = (unsigned long)(elapsed_ms / 1000U);
+    snprintf(out, out_sz, "%lu:%02lu", total_s / 60UL, total_s % 60UL);
 }
 
 static void format_log_line(damage_log_entry_t *entry, char *buf, size_t buf_sz)
 {
-    uint32_t elapsed_s = lv_tick_elaps(entry->timestamp_ms) / 1000;
     int abs_delta = entry->delta > 0 ? entry->delta : -entry->delta;
     char time_str[16];
 
-    buf[0] = '\0';  /* ensure a defined string if no branch below matches */
-    format_elapsed(elapsed_s, time_str, sizeof(time_str));
+    buf[0] = '\0';
+    format_turn_time(entry->turn_elapsed_ms, time_str, sizeof(time_str));
 
     if (entry->event_type == LOG_EVT_DAMAGE && entry->source >= 0 &&
         entry->source < MAX_GAME_PLAYERS && entry->player >= 0 &&
         entry->player < MAX_GAME_PLAYERS) {
-        snprintf(buf, buf_sz, "%s: %s dealt %d to %s",
-                 time_str,
-                 player_names[entry->source],
-                 abs_delta,
+        snprintf(buf, buf_sz, "%s  %s dealt %d to %s",
+                 time_str, player_names[entry->source], abs_delta,
                  player_names[entry->player]);
     } else if (entry->event_type == LOG_EVT_CMD_DAMAGE && entry->source >= 0 &&
-        entry->source < MAX_GAME_PLAYERS && entry->player >= 0 &&
-        entry->player < MAX_GAME_PLAYERS) {
-        snprintf(buf, buf_sz, "%s: %s dealt %d cmd to %s",
-                 time_str,
-                 player_names[entry->source],
-                 abs_delta,
+               entry->source < MAX_GAME_PLAYERS && entry->player >= 0 &&
+               entry->player < MAX_GAME_PLAYERS) {
+        snprintf(buf, buf_sz, "%s  %s dealt %d cmd to %s",
+                 time_str, player_names[entry->source], abs_delta,
                  player_names[entry->player]);
     } else if (entry->event_type == LOG_EVT_CMD_INFECT && entry->source >= 0 &&
                entry->source < MAX_GAME_PLAYERS && entry->player >= 0 &&
                entry->player < MAX_GAME_PLAYERS) {
-        snprintf(buf, buf_sz, "%s: %s dealt %d cmd infect to %s",
-                 time_str,
-                 player_names[entry->source],
-                 abs_delta,
+        snprintf(buf, buf_sz, "%s  %s dealt %d cmd infect to %s",
+                 time_str, player_names[entry->source], abs_delta,
                  player_names[entry->player]);
     } else if (entry->event_type == LOG_EVT_POISON && entry->source >= 0 &&
                entry->source < MAX_GAME_PLAYERS && entry->player >= 0 &&
                entry->player < MAX_GAME_PLAYERS) {
-        snprintf(buf, buf_sz, "%s: %s gave %d poison to %s",
-                 time_str,
-                 player_names[entry->source],
-                 abs_delta,
+        snprintf(buf, buf_sz, "%s  %s gave %d poison to %s",
+                 time_str, player_names[entry->source], abs_delta,
                  player_names[entry->player]);
     } else if (entry->event_type == LOG_EVT_COUNTER && entry->source >= 0 &&
                entry->player >= 0 && entry->player < MAX_GAME_PLAYERS) {
-        const counter_definition_t *definition = get_counter_definition((counter_type_t)entry->source);
+        const counter_definition_t *definition =
+            get_counter_definition((counter_type_t)entry->source);
         const char *action = entry->delta > 0 ? "increased" : "decreased";
-        const char *counter_name = (definition != NULL) ? definition->display_name : "Counter";
-        snprintf(buf, buf_sz, "%s: %s %s %s by %d",
-                 time_str,
-                 player_names[entry->player],
-                 action,
-                 counter_name,
-                 abs_delta);
+        const char *counter_name =
+            (definition != NULL) ? definition->display_name : "Counter";
+        snprintf(buf, buf_sz, "%s  %s %s %s by %d",
+                 time_str, player_names[entry->player], action,
+                 counter_name, abs_delta);
     } else if (entry->player >= 0 && entry->player < MAX_GAME_PLAYERS) {
         const char *action = entry->delta > 0 ? "gained" : "lost";
-        snprintf(buf, buf_sz, "%s: %s %s %d life",
+        snprintf(buf, buf_sz, "%s  %s %s %d life",
                  time_str, player_names[entry->player], action, abs_delta);
     }
 }
@@ -421,7 +413,8 @@ static void refresh_damage_log_ui(void)
     if (!damage_log_offset_undoable(damage_log_selected))
         damage_log_selected = newest_undoable_offset();
 
-    damage_log_page = damage_log_selected / LOG_PAGE_SIZE;
+    damage_log_page = (damage_log_selected >= 0)
+                    ? damage_log_selected / LOG_PAGE_SIZE : 0;
     first = damage_log_page * LOG_PAGE_SIZE;
     last = first + LOG_PAGE_SIZE;
     if (last > damage_log_count) last = damage_log_count;
@@ -451,7 +444,7 @@ static void refresh_damage_log_ui(void)
         row = lv_obj_create(damage_log_container);
         lv_obj_remove_style_all(row);
         lv_obj_set_width(row, 280);
-        lv_obj_set_height(row, new_group ? 58 : 24);
+        lv_obj_set_height(row, new_group ? 62 : 24);
         lv_obj_set_style_pad_left(row, 4, 0);
         lv_obj_set_style_pad_right(row, 4, 0);
         lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
@@ -477,26 +470,47 @@ static void refresh_damage_log_ui(void)
                 }
             }
 
+            if (i != first) {
+                lv_obj_t *sep = lv_label_create(row);
+                lv_label_set_text(sep, "---------------------------");
+                lv_obj_set_style_text_color(sep, lv_color_hex(0x565656), 0);
+                lv_obj_set_style_text_font(sep, &lv_font_montserrat_14, 0);
+                lv_obj_align(sep, LV_ALIGN_TOP_LEFT, 0, 0);
+            }
+
             if (duration_ms > 0) {
                 unsigned long total_s = (unsigned long)(duration_ms / 1000U);
-                snprintf(header, sizeof(header), "R%u | T%u | %s | %lu:%02lu\n----------------",
+                snprintf(header, sizeof(header), "R%u | T%u | %s | %lu:%02lu",
                          (unsigned)damage_log[idx].round_number,
                          (unsigned)(damage_log[idx].turn_in_round > 0
                                       ? damage_log[idx].turn_in_round : 1),
                          player_names[damage_log[idx].turn_player],
                          total_s / 60UL, total_s % 60UL);
             } else {
-                snprintf(header, sizeof(header), "R%u | T%u | %s\n----------------",
-                         (unsigned)damage_log[idx].round_number,
-                         (unsigned)(damage_log[idx].turn_in_round > 0
-                                      ? damage_log[idx].turn_in_round : 1),
-                         player_names[damage_log[idx].turn_player]);
+                uint32_t live_ms = 0;
+                if ((int)damage_log[idx].turn_number == turn_number)
+                    live_ms = get_current_turn_elapsed_ms();
+                if (live_ms > 0) {
+                    unsigned long total_s = (unsigned long)(live_ms / 1000U);
+                    snprintf(header, sizeof(header), "R%u | T%u | %s | %lu:%02lu",
+                             (unsigned)damage_log[idx].round_number,
+                             (unsigned)(damage_log[idx].turn_in_round > 0
+                                          ? damage_log[idx].turn_in_round : 1),
+                             player_names[damage_log[idx].turn_player],
+                             total_s / 60UL, total_s % 60UL);
+                } else {
+                    snprintf(header, sizeof(header), "R%u | T%u | %s",
+                             (unsigned)damage_log[idx].round_number,
+                             (unsigned)(damage_log[idx].turn_in_round > 0
+                                          ? damage_log[idx].turn_in_round : 1),
+                             player_names[damage_log[idx].turn_player]);
+                }
             }
 
             lv_label_set_text(header_lbl, header);
-            lv_obj_set_style_text_color(header_lbl, lv_color_hex(0x8A8A8A), 0);
+            lv_obj_set_style_text_color(header_lbl, lv_color_hex(0xB0B0B0), 0);
             lv_obj_set_style_text_font(header_lbl, &lv_font_montserrat_14, 0);
-            lv_obj_align(header_lbl, LV_ALIGN_TOP_LEFT, 0, 0);
+            lv_obj_align(header_lbl, LV_ALIGN_TOP_LEFT, 0, (i != first) ? 20 : 2);
         }
 
         if (damage_log[idx].event_type != LOG_EVT_TURN_END) {
@@ -522,14 +536,15 @@ static void refresh_damage_log_ui(void)
             lv_obj_set_style_text_color(event_lbl, event_color, 0);
             lv_obj_set_style_text_font(event_lbl, &lv_font_montserrat_14, 0);
             lv_obj_set_width(event_lbl, (i == undo_offset) ? 245 : 272);
-            lv_obj_align(event_lbl, LV_ALIGN_TOP_LEFT, 0, new_group ? 36 : 1);
+            lv_obj_align(event_lbl, LV_ALIGN_TOP_LEFT, 0,
+                         new_group ? ((i != first) ? 42 : 26) : 1);
         }
 
         if (i == undo_offset && damage_log[idx].event_type != LOG_EVT_TURN_END) {
             lv_obj_t *undo = lv_btn_create(row);
             lv_obj_remove_style_all(undo);
             lv_obj_set_size(undo, 26, 26);
-            lv_obj_align(undo, LV_ALIGN_RIGHT_MID, 0, new_group ? 15 : 0);
+            lv_obj_align(undo, LV_ALIGN_RIGHT_MID, 0, new_group ? 18 : 0);
             lv_obj_set_style_bg_opa(undo, LV_OPA_TRANSP, 0);
             lv_obj_set_style_border_width(undo, 0, 0);
             lv_obj_set_ext_click_area(undo, 8);
