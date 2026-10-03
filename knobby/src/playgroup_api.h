@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,6 +15,7 @@ extern "C" {
 #define PG_NAME_LEN 40
 #define PG_DECK_NAME_LEN 64
 #define PG_COMMANDER_NAME_LEN 64
+#define PG_IMAGE_URL_LEN 192
 
 typedef struct {
     long id;
@@ -35,6 +37,7 @@ typedef struct {
     char name[PG_DECK_NAME_LEN];
     char commander[PG_COMMANDER_NAME_LEN];
     char partner[PG_COMMANDER_NAME_LEN];
+    char art_crop_url[PG_IMAGE_URL_LEN];
 } playgroup_deck_t;
 
 /* USB/Serial provisioning + diagnostics. */
@@ -54,6 +57,11 @@ const playgroup_member_t *playgroup_cached_member(int index);
 bool playgroup_refresh_decks(long user_id);
 int playgroup_cached_deck_count(void);
 const playgroup_deck_t *playgroup_cached_deck(int index);
+
+/* Fetch one public commander image into PSRAM. Caller owns the returned
+   buffer and must release it with playgroup_free_image(). */
+bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_size);
+void playgroup_free_image(uint8_t *data);
 
 #ifdef __cplusplus
 }
