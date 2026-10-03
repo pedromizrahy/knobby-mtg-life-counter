@@ -33,6 +33,7 @@ uint32_t get_turn_elapsed_ms(void);
 uint32_t get_current_turn_elapsed_ms(void);
 void turn_advance(void);
 void turn_reminder_reconcile_after_setting_change(void);
+bool turn_life_input_blocked(void);
 
 // event callbacks used in screen builders
 void event_tool_timer(lv_event_t *e);
