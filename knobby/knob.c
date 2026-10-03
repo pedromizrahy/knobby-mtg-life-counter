@@ -535,6 +535,11 @@ static void handle_knob_event(knob_event_t k)
         if (k == KNOB_LEFT)       pregame_change_player_count(-1);
         else if (k == KNOB_RIGHT) pregame_change_player_count(+1);
     }
+    else if (lv_scr_act() == screen_pregame_playgroup)
+    {
+        if (k == KNOB_LEFT)       pregame_change_playgroup(-1);
+        else if (k == KNOB_RIGHT) pregame_change_playgroup(+1);
+    }
     else if (lv_scr_act() == screen_1p)
     {
         if (turn_life_input_blocked()) return;
