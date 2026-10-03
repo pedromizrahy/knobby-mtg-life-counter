@@ -107,11 +107,9 @@ static void wedge_compute_geometry(const mp_panel_spec_t *panels, int panel_coun
         const mp_panel_spec_t *spec = &panels[i];
         int16_t bis = wedge_bisector_deg(spec);
 
-        int label_radius = (panel_count >= 5) ? 104 : WEDGE_LABEL_RADIUS;
-
         wedge_geom[i].bis_deg = bis;
-        wedge_geom[i].label_dx = wedge_polar(lv_trigo_cos(bis), label_radius);
-        wedge_geom[i].label_dy = wedge_polar(lv_trigo_sin(bis), label_radius);
+        wedge_geom[i].label_dx = wedge_polar(lv_trigo_cos(bis), WEDGE_LABEL_RADIUS);
+        wedge_geom[i].label_dy = wedge_polar(lv_trigo_sin(bis), WEDGE_LABEL_RADIUS);
 
         /* One boundary per panel covers every separator exactly once */
         wedge_sep_ends[i].x = WEDGE_CX + wedge_polar(lv_trigo_cos(spec->wedge_start), 180);
@@ -282,9 +280,7 @@ static void refresh_commander_markers(const mp_panel_spec_t *spec,
 
         if (spec_is_wedge(spec)) {
             const int radius = 158;
-            const int step_deg =
-                (mp_state.layout != NULL && mp_state.layout->panel_count >= 5)
-                    ? 9 : 14;
+            const int step_deg = 14;
             int angle = (wedge_geom[panel_index].bis_deg
                          + ((total - 1) * step_deg / 2)
                          - (slot * step_deg) + 360) % 360;
@@ -402,25 +398,13 @@ static int16_t get_3p_orientation_angle(int mode, int panel_index)
 
 static int16_t get_4p_orientation_angle(int mode, int panel_index)
 {
-    static const int16_t angled_rot[4] = {450, 1350, 2250, 3150};
+    static const int16_t angled_rot[MULTIPLAYER_COUNT] = {450, 1350, 2250, 3150};
 
     switch (mode) {
         case ORIENTATION_MODE_CENTRIC:
             return angled_rot[panel_index];
         case ORIENTATION_MODE_TABLETOP:
             return (panel_index == 1 || panel_index == 2) ? 1800 : 0;
-        default:
-            return 0;
-    }
-}
-
-static int16_t get_radial_orientation_angle(int mode, int panel_index)
-{
-    switch (mode) {
-        case ORIENTATION_MODE_CENTRIC:
-            return (int16_t)(((wedge_geom[panel_index].bis_deg + 270) % 360) * 10);
-        case ORIENTATION_MODE_TABLETOP:
-            return (wedge_geom[panel_index].label_dy < 0) ? 1800 : 0;
         default:
             return 0;
     }
@@ -449,23 +433,6 @@ static const mp_panel_spec_t panels_4p[] = {
     {180, 180, 180, 180, -10, 3, 3},
 };
 
-/* Equal radial seats with P1 centered at the bottom. */
-static const mp_panel_spec_t panels_5p[] = {
-    {0, 0, 360, 360, 0, 0, 0,  54, 126},
-    {0, 0, 360, 360, 0, 1, 1, 126, 198},
-    {0, 0, 360, 360, 0, 2, 2, 198, 270},
-    {0, 0, 360, 360, 0, 3, 3, 270, 342},
-    {0, 0, 360, 360, 0, 4, 4, 342,  54},
-};
-static const mp_panel_spec_t panels_6p[] = {
-    {0, 0, 360, 360, 0, 0, 0,  60, 120},
-    {0, 0, 360, 360, 0, 1, 1, 120, 180},
-    {0, 0, 360, 360, 0, 2, 2, 180, 240},
-    {0, 0, 360, 360, 0, 3, 3, 240, 300},
-    {0, 0, 360, 360, 0, 4, 4, 300,   0},
-    {0, 0, 360, 360, 0, 5, 5,   0,  60},
-};
-
 static const mp_layout_spec_t layout_2p = {
     .panel_count = 2,
     .panels = panels_2p,
@@ -486,26 +453,12 @@ static const mp_layout_spec_t layout_4p = {
     .angle_fn = get_4p_orientation_angle,
     .switch_font_by_orientation = true,
 };
-static const mp_layout_spec_t layout_5p = {
-    .panel_count = 5,
-    .panels = panels_5p,
-    .angle_fn = get_radial_orientation_angle,
-    .switch_font_by_orientation = true,
-};
-static const mp_layout_spec_t layout_6p = {
-    .panel_count = 6,
-    .panels = panels_6p,
-    .angle_fn = get_radial_orientation_angle,
-    .switch_font_by_orientation = true,
-};
 
 static const mp_layout_spec_t *get_layout(int track)
 {
     if (track == 2) return &layout_2p;
     if (track == 3) return &layout_3p;
-    if (track == 4) return &layout_4p;
-    if (track == 5) return &layout_5p;
-    return &layout_6p;
+    return &layout_4p;
 }
 
 /* Snap a player's seat angle to upright-or-flipped (display-rotation step
@@ -573,9 +526,7 @@ static void refresh_counter_rows(const mp_panel_spec_t *spec, int16_t wedge_bis,
 
         if (spec_is_wedge(spec)) {
             const int radius = 158;
-            const int step_deg =
-                (mp_state.layout != NULL && mp_state.layout->panel_count >= 5)
-                    ? 9 : 14;
+            const int step_deg = 14;
             int angle = (wedge_bis + ((total - 1) * step_deg / 2)
                          - (type * step_deg) + 360) % 360;
             local_x = wedge_polar(lv_trigo_cos((int16_t)angle), radius);
@@ -884,9 +835,7 @@ void refresh_multiplayer_ui(void)
                    orientation; drop to the smaller one only when the
                    value is too wide and would reach into the counter
                    arc beside the number (3+ digits). */
-                life_font = (layout->panel_count >= 5)
-                          ? &lv_font_montserrat_bold_44
-                          : &lv_font_montserrat_bold_56;
+                life_font = &lv_font_montserrat_bold_56;
                 if (life_lbl != NULL) {
                     lv_point_t ts;
                     lv_txt_get_size(&ts, lv_label_get_text(life_lbl),
@@ -909,11 +858,9 @@ void refresh_multiplayer_ui(void)
             }
             if (name_lbl != NULL) {
                 lv_obj_clear_flag(name_lbl, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_align(name_lbl, LV_ALIGN_CENTER, bx,
-                             by + ((layout->panel_count >= 5) ? 24 : 30));
+                lv_obj_align(name_lbl, LV_ALIGN_CENTER, bx, by + 30);
             }
-            apply_label_rotation(life_lbl, name_lbl, angle, life_pivot_y,
-                                 (layout->panel_count >= 5) ? -24 : -30);
+            apply_label_rotation(life_lbl, name_lbl, angle, life_pivot_y, -30);
         } else {
             apply_label_rotation(life_lbl, name_lbl, angle, 10, -30);
         }
@@ -1398,9 +1345,7 @@ void rebuild_multiplayer_layout(int track)
         name_lbl = lv_label_create(panel);
         lv_label_set_text(name_lbl, player_names[p]);
         lv_obj_set_style_text_color(name_lbl, lv_color_white(), 0);
-        lv_obj_set_style_text_font(name_lbl,
-            (layout->panel_count >= 5) ? &lv_font_montserrat_14
-                                       : &lv_font_montserrat_22, 0);
+        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_22, 0);
         lv_obj_align(name_lbl, LV_ALIGN_CENTER, 0, 30);
         mp_state.name_labels[i] = name_lbl;
 

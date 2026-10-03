@@ -14,7 +14,7 @@
    builders/appliers live in game.c and must only run on the main
    (LVGL) task. */
 
-#define NET_SYNC_MAX_PLAYERS 6  /* == MAX_DISPLAY_PLAYERS */
+#define NET_SYNC_MAX_PLAYERS 4  /* == MAX_DISPLAY_PLAYERS */
 #define NET_SYNC_MAX_SOURCES 8  /* == MAX_GAME_PLAYERS    */
 
 #define NET_SYNC_ELIM      0x01 /* eliminated flag bits */
