@@ -19,12 +19,22 @@ int active_turn_player = -1;
 int round_number = 0;
 bool turn_reminder_active = false;
 bool turn_reminder_flash_on = false;
+bool turn_hold_active = false;
+int turn_hold_progress = 0;
+
+#define TURN_HOLD_MS 1000U
+#define TURN_REMINDER_FLASH_STEPS 8
 
 static uint32_t current_turn_started_ms = 0;
+static uint32_t turn_hold_started_ms = 0;
+static bool turn_hold_completed = false;
 static uint8_t turn_blink_steps_remaining = 0;
+static uint8_t turn_reminder_flash_steps_remaining = 0;
 
 static lv_timer_t *turn_timer = NULL;
 static lv_timer_t *turn_blink_timer = NULL;
+static lv_timer_t *turn_hold_timer = NULL;
+static lv_timer_t *turn_reminder_flash_timer = NULL;
 
 // ---------- functions ----------
 uint32_t get_turn_elapsed_ms(void)
@@ -63,6 +73,10 @@ void turn_timer_start_for_player(int player)
     turn_blink_steps_remaining = 10;
     turn_reminder_active = false;
     turn_reminder_flash_on = false;
+    turn_reminder_flash_steps_remaining = 0;
+    turn_hold_active = false;
+    turn_hold_progress = 0;
+    turn_hold_completed = false;
 
     game_event_add_turn(GAME_EVENT_TURN_START, active_turn_player,
                         (uint16_t)turn_number, (uint16_t)round_number, 0);
@@ -93,9 +107,19 @@ void turn_timer_reset(void)
     turn_blink_steps_remaining = 0;
     turn_reminder_active = false;
     turn_reminder_flash_on = false;
+    turn_reminder_flash_steps_remaining = 0;
+    turn_hold_active = false;
+    turn_hold_progress = 0;
+    turn_hold_completed = false;
 
     if (turn_blink_timer != NULL) {
         lv_timer_pause(turn_blink_timer);
+    }
+    if (turn_hold_timer != NULL) {
+        lv_timer_pause(turn_hold_timer);
+    }
+    if (turn_reminder_flash_timer != NULL) {
+        lv_timer_pause(turn_reminder_flash_timer);
     }
 
     refresh_turn_ui();
@@ -149,6 +173,14 @@ void turn_advance(void)
     current_turn_started_ms = lv_tick_get();
     turn_reminder_active = false;
     turn_reminder_flash_on = false;
+    turn_reminder_flash_steps_remaining = 0;
+    turn_hold_active = false;
+    turn_hold_progress = 0;
+    turn_hold_completed = false;
+
+    if (turn_reminder_flash_timer != NULL) {
+        lv_timer_pause(turn_reminder_flash_timer);
+    }
 
     game_event_add_turn(GAME_EVENT_TURN_START, active_turn_player,
                         (uint16_t)turn_number, (uint16_t)round_number, 0);
@@ -161,22 +193,33 @@ static void turn_timer_tick_cb(lv_timer_t *timer)
 {
     uint32_t reminder_ms;
     int reminder_minutes;
+    bool reminder_crossed;
     (void)timer;
 
     reminder_minutes = nvs_get_turn_reminder_minutes();
     reminder_ms = (uint32_t)reminder_minutes * 60U * 1000U;
+    reminder_crossed =
+        turn_timer_enabled &&
+        reminder_minutes > 0 &&
+        get_current_turn_elapsed_ms() >= reminder_ms;
 
-    if (turn_timer_enabled && reminder_minutes > 0 &&
-        get_current_turn_elapsed_ms() >= reminder_ms) {
+    if (reminder_crossed && !turn_reminder_active) {
         turn_reminder_active = true;
         if (nvs_get_turn_visual_alert()) {
-            turn_reminder_flash_on = !turn_reminder_flash_on;
-        } else {
-            turn_reminder_flash_on = false;
+            turn_reminder_flash_steps_remaining = TURN_REMINDER_FLASH_STEPS;
+            turn_reminder_flash_on = true;
+            if (turn_reminder_flash_timer != NULL) {
+                lv_timer_reset(turn_reminder_flash_timer);
+                lv_timer_resume(turn_reminder_flash_timer);
+            }
         }
-    } else {
+    } else if (!reminder_crossed) {
         turn_reminder_active = false;
         turn_reminder_flash_on = false;
+        turn_reminder_flash_steps_remaining = 0;
+        if (turn_reminder_flash_timer != NULL) {
+            lv_timer_pause(turn_reminder_flash_timer);
+        }
     }
 
     refresh_turn_ui();
@@ -200,6 +243,49 @@ static void turn_blink_timer_cb(lv_timer_t *timer)
     refresh_turn_ui();
 }
 
+static void turn_hold_timer_cb(lv_timer_t *timer)
+{
+    uint32_t elapsed;
+    (void)timer;
+
+    if (!turn_hold_active) {
+        lv_timer_pause(turn_hold_timer);
+        return;
+    }
+
+    elapsed = lv_tick_elaps(turn_hold_started_ms);
+    if (elapsed >= TURN_HOLD_MS) {
+        turn_hold_progress = 1000;
+        refresh_turn_ui();
+
+        turn_hold_active = false;
+        turn_hold_completed = true;
+        lv_timer_pause(turn_hold_timer);
+        turn_advance();
+        return;
+    }
+
+    turn_hold_progress = (int)((elapsed * 1000U) / TURN_HOLD_MS);
+    refresh_turn_ui();
+}
+
+static void turn_reminder_flash_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+
+    if (turn_reminder_flash_steps_remaining == 0) {
+        turn_reminder_flash_on = false;
+        lv_timer_pause(turn_reminder_flash_timer);
+        refresh_turn_ui();
+        return;
+    }
+
+    turn_reminder_flash_on = !turn_reminder_flash_on;
+    turn_reminder_flash_steps_remaining--;
+    refresh_turn_ui();
+}
+
+
 // ---------- event callbacks ----------
 void event_tool_timer(lv_event_t *e)
 {
@@ -211,7 +297,42 @@ void event_tool_timer(lv_event_t *e)
 void event_turn_tap(lv_event_t *e)
 {
     (void)e;
-    turn_advance();
+    /* Kept for compatibility with older screens. Turn passing now uses
+       event_turn_hold() so a stray tap cannot advance game history. */
+}
+
+void event_turn_hold(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (code == LV_EVENT_PRESSED) {
+        if (!turn_timer_enabled || active_turn_player < 0) return;
+
+        turn_hold_started_ms = lv_tick_get();
+        turn_hold_active = true;
+        turn_hold_completed = false;
+        turn_hold_progress = 0;
+
+        if (turn_hold_timer != NULL) {
+            lv_timer_reset(turn_hold_timer);
+            lv_timer_resume(turn_hold_timer);
+        }
+        refresh_turn_ui();
+        return;
+    }
+
+    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        if (!turn_hold_completed) {
+            turn_hold_active = false;
+            turn_hold_progress = 0;
+            if (turn_hold_timer != NULL) {
+                lv_timer_pause(turn_hold_timer);
+            }
+            refresh_turn_ui();
+        } else {
+            turn_hold_completed = false;
+        }
+    }
 }
 
 // ---------- init ----------
@@ -225,5 +346,15 @@ void knob_timer_init(void)
     turn_blink_timer = lv_timer_create(turn_blink_timer_cb, 500, NULL);
     if (turn_blink_timer != NULL) {
         lv_timer_pause(turn_blink_timer);
+    }
+
+    turn_hold_timer = lv_timer_create(turn_hold_timer_cb, 50, NULL);
+    if (turn_hold_timer != NULL) {
+        lv_timer_pause(turn_hold_timer);
+    }
+
+    turn_reminder_flash_timer = lv_timer_create(turn_reminder_flash_timer_cb, 250, NULL);
+    if (turn_reminder_flash_timer != NULL) {
+        lv_timer_pause(turn_reminder_flash_timer);
     }
 }
