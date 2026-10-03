@@ -18,6 +18,9 @@ static int cached_life_total = DEFAULT_LIFE_TOTAL;
 static int cached_auto_eliminate = 1; /* 1=ON (default), 0=OFF */
 static int cached_random_first = 1; /* 1=ON (default): random first-player pick on reset */
 static int cached_turn_timer_enabled = 1; /* 1=ON: start turn tracking with a new game */
+static int cached_turn_show_name = 0; /* compact timer by default */
+static int cached_turn_reminder_minutes = 10; /* 0 disables reminder */
+static int cached_turn_visual_alert = 1;
 static int cached_multi_select = 0; /* 0=OFF (default), 1=ON */
 static char cached_name_list[NAME_LIST_COUNT][NAME_LIST_LEN];
 
@@ -77,8 +80,19 @@ void knob_nvs_init(void)
         cached_random_first = (rf_val != 0) ? 1 : 0;
 
         int8_t tt_val = 1;
+        int8_t tn_val = 0;
+        int8_t tr_val = 10;
+        int8_t tv_val = 1;
         nvs_get_i8(handle, "turn_timer", &tt_val);
+        nvs_get_i8(handle, "turn_name", &tn_val);
+        nvs_get_i8(handle, "turn_rem", &tr_val);
+        nvs_get_i8(handle, "turn_visual", &tv_val);
         cached_turn_timer_enabled = (tt_val != 0) ? 1 : 0;
+        cached_turn_show_name = (tn_val != 0) ? 1 : 0;
+        cached_turn_reminder_minutes =
+            (tr_val == 0 || tr_val == 5 || tr_val == 10 || tr_val == 15 || tr_val == 20)
+                ? tr_val : 10;
+        cached_turn_visual_alert = (tv_val != 0) ? 1 : 0;
 
         int8_t ms_val = 0;
         nvs_get_i8(handle, "multi_sel", &ms_val);
@@ -249,6 +263,41 @@ void nvs_set_turn_timer_enabled(int value)
     settings_dirty = true;
 }
 
+int nvs_get_turn_show_name(void)
+{
+    return cached_turn_show_name;
+}
+
+void nvs_set_turn_show_name(int value)
+{
+    cached_turn_show_name = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
+int nvs_get_turn_reminder_minutes(void)
+{
+    return cached_turn_reminder_minutes;
+}
+
+void nvs_set_turn_reminder_minutes(int value)
+{
+    if (value != 0 && value != 5 && value != 10 && value != 15 && value != 20)
+        value = 10;
+    cached_turn_reminder_minutes = value;
+    settings_dirty = true;
+}
+
+int nvs_get_turn_visual_alert(void)
+{
+    return cached_turn_visual_alert;
+}
+
+void nvs_set_turn_visual_alert(int value)
+{
+    cached_turn_visual_alert = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
 // ---------- multi-select ----------
 int nvs_get_multi_select(void)
 {
@@ -291,6 +340,9 @@ void settings_save(void)
         nvs_set_i8(handle, "auto_elim", (int8_t)cached_auto_eliminate);
         nvs_set_i8(handle, "rand_first", (int8_t)cached_random_first);
         nvs_set_i8(handle, "turn_timer", (int8_t)cached_turn_timer_enabled);
+        nvs_set_i8(handle, "turn_name", (int8_t)cached_turn_show_name);
+        nvs_set_i8(handle, "turn_rem", (int8_t)cached_turn_reminder_minutes);
+        nvs_set_i8(handle, "turn_visual", (int8_t)cached_turn_visual_alert);
         nvs_set_i8(handle, "multi_sel", (int8_t)cached_multi_select);
         nvs_set_i8(handle, "menu_face", (int8_t)cached_menu_facing);
         nvs_set_blob(handle, "name_list", cached_name_list, sizeof(cached_name_list));
