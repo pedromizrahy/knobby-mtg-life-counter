@@ -46,7 +46,13 @@ static lv_obj_t *pregame_button(lv_obj_t *parent, const char *text,
 
 static void event_track_new_game(lv_event_t *e)
 {
+    int i;
     (void)e;
+
+    /* Generic roster until Playgroup supplies real members/decks. */
+    for (i = 0; i < MAX_DISPLAY_PLAYERS; i++)
+        snprintf(player_names[i], sizeof(player_names[i]), "P%d", i + 1);
+
     pregame_player_count = nvs_get_players_to_track();
     if (pregame_player_count < 1 || pregame_player_count > MAX_DISPLAY_PLAYERS)
         pregame_player_count = 4;
@@ -115,6 +121,15 @@ static void event_mulligan_cycle(lv_event_t *e)
 
     if (player < 0 || player >= pregame_player_count) return;
     mulligans[player] = (uint8_t)((mulligans[player] + 1U) % 8U);
+    refresh_mulligans();
+}
+
+static void event_mulligan_decrement(lv_event_t *e)
+{
+    int player = (int)(intptr_t)lv_event_get_user_data(e);
+
+    if (player < 0 || player >= pregame_player_count) return;
+    if (mulligans[player] > 0) mulligans[player]--;
     refresh_mulligans();
 }
 
@@ -247,13 +262,24 @@ void build_pregame_screens(void)
         lv_label_set_text(title, "MULLIGANS");
         lv_obj_set_style_text_color(title, lv_color_white(), 0);
         lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
-        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 26);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 22);
+
+        {
+            lv_obj_t *hint = lv_label_create(screen_pregame_mulligans);
+            lv_label_set_text(hint, "Tap +1   |   Hold -1");
+            lv_obj_set_style_text_color(hint, lv_color_hex(0x6F7A85), 0);
+            lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+            lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 50);
+        }
 
         for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
             lv_obj_t *btn = pregame_button(screen_pregame_mulligans, "", 206, 38,
                                            event_mulligan_cycle,
                                            (void *)(intptr_t)i);
-            lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 70 + (i * 44));
+            lv_obj_add_event_cb(btn, event_mulligan_decrement,
+                                LV_EVENT_LONG_PRESSED,
+                                (void *)(intptr_t)i);
+            lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 76 + (i * 42));
             mulligan_labels[i] = lv_obj_get_child(btn, 0);
         }
 
