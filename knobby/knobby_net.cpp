@@ -92,6 +92,7 @@ static uint32_t pair_window_end_ms = 0;
 static volatile bool net_active = false;
 static volatile int sync_status = NET_SYNC_OFF;
 static volatile uint32_t session_id = 0;
+static volatile bool session_peer_seen = false;
 
 static void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, int len)
 {
@@ -107,9 +108,11 @@ static void on_data_recv(const esp_now_recv_info_t *info, const uint8_t *data, i
        matches nothing: senders never broadcast a zero session). */
     if (len != (int)KNOBBY_NET_STATE_LEN) return;
     if (session_id == 0 || pkt.session != session_id) return;
+    session_peer_seen = true;
   } else if (pkt.type == KNOBBY_PKT_NAMES) {
     if (len != (int)KNOBBY_NET_NAMES_LEN) return;
     if (session_id == 0 || pkt.session != session_id) return;
+    session_peer_seen = true;
   } else if (pkt.type == KNOBBY_PKT_INVITE) {
     if (len != (int)KNOBBY_NET_HDR_LEN) return;
     if (sync_status != NET_SYNC_JOINING || pkt.session == 0) return;
@@ -239,6 +242,12 @@ void knobby_net_process(void)
   now = millis();
   if (sync_status == NET_SYNC_HOSTING) {
     if ((int32_t)(now - pair_window_end_ms) >= 0) {
+      if (!session_peer_seen) {
+        /* Nobody joined the initial invite window: shut Wi-Fi/ESP-NOW back
+           down instead of paying the radio/battery cost for an empty table. */
+        net_sync_leave_game();
+        return;
+      }
       sync_status = NET_SYNC_IN_GAME;
       /* One last roster push for anyone who joined late in the window. */
       knobby_net_send(KNOBBY_PKT_NAMES);
@@ -303,6 +312,7 @@ extern "C" int net_sync_start_game(void)
   xQueueReset(rx_queue); /* radio may already be up (e.g. was JOINING) */
   net_sync_begin_game();
   session_id = id;
+  session_peer_seen = false;
   sync_status = NET_SYNC_HOSTING;
   pair_window_end_ms = millis() + KNOBBY_NET_PAIR_WINDOW_MS;
   knobby_net_send(KNOBBY_PKT_INVITE);
@@ -315,6 +325,7 @@ extern "C" int net_sync_join_game(void)
 {
   if (!knobby_net_radio_up()) return 0;
   session_id = 0; /* joining implies leaving the previous game */
+  session_peer_seen = false;
   xQueueReset(rx_queue);
   /* Versions/bookkeeping are wiped at invite ADOPTION, not here — see
      knobby_net_process. */
@@ -327,6 +338,7 @@ extern "C" void net_sync_leave_game(void)
 {
   knobby_net_radio_down();
   session_id = 0;
+  session_peer_seen = false;
   sync_status = NET_SYNC_OFF;
 }
 
