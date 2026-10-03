@@ -520,6 +520,16 @@ static void handle_knob_event(knob_event_t k)
     }
     else if (lv_scr_act() == screen_multiplayer)
     {
+        /* Direct life changes are deliberately turn-scoped. A tap on a
+           different panel may still be used for menus/inspection, but a
+           stray tap must never redirect the physical dial to that player. */
+        if (active_turn_player < 0 ||
+            active_turn_player >= nvs_get_players_to_track() ||
+            player_eliminated[active_turn_player]) {
+            return;
+        }
+
+        selection_set_single(active_turn_player);
         if (k == KNOB_LEFT)      change_player_life(-1);
         else if (k == KNOB_RIGHT) change_player_life(+1);
     }
