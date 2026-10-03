@@ -3,6 +3,7 @@
 #include <NetworkClientSecure.h>
 #include <WiFi.h>
 #include <nvs.h>
+#include <esp_heap_caps.h>
 
 #include "playgroup_api.h"
 #include "../knobby_net.h"
@@ -202,6 +203,26 @@ static bool json_extract_string(const String &json, const char *key,
     return true;
 }
 
+static void print_heap_diagnostics(void)
+{
+    size_t internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    size_t internal_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    size_t psram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+
+    Serial.print("[Playgroup] Internal heap free: ");
+    Serial.print((unsigned)internal_free);
+    Serial.print(" bytes; largest block: ");
+    Serial.print((unsigned)internal_largest);
+    Serial.println(" bytes");
+
+    Serial.print("[Playgroup] PSRAM free: ");
+    Serial.print((unsigned)psram_free);
+    Serial.print(" bytes; largest block: ");
+    Serial.print((unsigned)psram_largest);
+    Serial.println(" bytes");
+}
+
 static bool diagnose_https_path(void)
 {
     IPAddress resolved;
@@ -225,6 +246,8 @@ static bool diagnose_https_path(void)
     }
     Serial.println("OK");
     tcp.stop();
+
+    print_heap_diagnostics();
 
     Serial.print("[Playgroup] TLS handshake ... ");
     tls.useBuiltinCACertBundle();
