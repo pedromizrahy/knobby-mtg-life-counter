@@ -1,6 +1,7 @@
 #include "timer.h"
 #include "game_event.h"
 #include "storage.h"
+#include "game.h"
 
 // Forward declaration
 extern void refresh_turn_ui(void);
@@ -106,10 +107,26 @@ void turn_advance(void)
     player_count = nvs_get_players_to_track();
     if (player_count < 1) player_count = 1;
 
-    active_turn_player++;
-    if (active_turn_player >= player_count) {
-        active_turn_player = 0;
-        round_number++;
+    {
+        int previous_player = active_turn_player;
+        int attempts = 0;
+
+        do {
+            active_turn_player++;
+            if (active_turn_player >= player_count) {
+                active_turn_player = 0;
+                round_number++;
+            }
+            attempts++;
+        } while (attempts < player_count &&
+                 player_eliminated[active_turn_player]);
+
+        /* If every tracked opponent is eliminated, keep the current seat
+           instead of spinning forever. Game-end/winner handling will own
+           this state in a later milestone. */
+        if (attempts >= player_count && player_eliminated[active_turn_player]) {
+            active_turn_player = previous_player;
+        }
     }
 
     turn_number++;
