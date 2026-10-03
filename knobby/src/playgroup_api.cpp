@@ -366,6 +366,56 @@ static int json_collect_top_level_ids(const String &json, long *ids, int max_ids
     return count;
 }
 
+static bool playgroup_discover_my_decks(void)
+{
+    String me;
+    String decks;
+    char user_id[24];
+    int status;
+
+    if (!wifi_connect_saved())
+        return false;
+
+    Serial.println("[Playgroup] GET /me ...");
+    if (!playgroup_https_get("/me", me, status) || status != HTTP_CODE_OK) {
+        Serial.print("[Playgroup] /me failed, HTTP ");
+        Serial.println(status);
+        wifi_power_down();
+        Serial.println("[Playgroup] Wi-Fi off.");
+        return false;
+    }
+
+    if (!json_extract_number_token(me, "id", user_id, sizeof(user_id))) {
+        Serial.println("[Playgroup] Could not read user id from /me response.");
+        wifi_power_down();
+        Serial.println("[Playgroup] Wi-Fi off.");
+        return false;
+    }
+
+    String path = String("/users/") + user_id + "/decks";
+    Serial.print("[Playgroup] GET decks for user ");
+    Serial.print(user_id);
+    Serial.println(" ...");
+
+    if (!playgroup_https_get(path, decks, status)) {
+        Serial.println("[Playgroup] Decks request failed.");
+        wifi_power_down();
+        Serial.println("[Playgroup] Wi-Fi off.");
+        return false;
+    }
+
+    Serial.print("[Playgroup] Decks HTTP ");
+    Serial.println(status);
+    if (decks.length() > 0) {
+        Serial.println("[Playgroup] Decks response:");
+        Serial.println(decks);
+    }
+
+    wifi_power_down();
+    Serial.println("[Playgroup] Wi-Fi off.");
+    return status == HTTP_CODE_OK;
+}
+
 static bool playgroup_discover(void)
 {
     String me;
@@ -556,6 +606,7 @@ static void print_help(void)
     Serial.println("  PG STATUS");
     Serial.println("  PG TEST");
     Serial.println("  PG DISCOVER");
+    Serial.println("  PG MYDECKS");
     Serial.println("  PG CLEAR");
     Serial.println("  PG HELP");
     Serial.println("Secrets are stored in NVS and are never echoed back.");
@@ -585,6 +636,11 @@ static void handle_command(char *line)
 
     if (strcmp(line, "PG DISCOVER") == 0) {
         playgroup_discover();
+        return;
+    }
+
+    if (strcmp(line, "PG MYDECKS") == 0) {
+        playgroup_discover_my_decks();
         return;
     }
 
