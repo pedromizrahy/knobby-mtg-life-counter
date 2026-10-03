@@ -18,6 +18,8 @@ extern int active_turn_player;
 extern int round_number;
 extern bool turn_reminder_active;
 extern bool turn_reminder_flash_on;
+extern bool turn_hold_active;
+extern int turn_hold_progress;
 
 // ---------- functions ----------
 void knob_timer_init(void);
@@ -31,5 +33,6 @@ void turn_advance(void);
 // event callbacks used in screen builders
 void event_tool_timer(lv_event_t *e);
 void event_turn_tap(lv_event_t *e);
+void event_turn_hold(lv_event_t *e);
 
 #endif // _TIMER_H
