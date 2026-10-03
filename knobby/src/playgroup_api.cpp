@@ -8,7 +8,7 @@
 #include "../knobby_net.h"
 
 #define PG_NVS_NAMESPACE "playgroup"
-#define PG_API_BASE "https://playgroup.gg/api/public/v1"
+#define PG_API_HOST "playgroup.gg"\n#define PG_API_BASE "https://" PG_API_HOST "/api/public/v1"
 #define PG_WIFI_TIMEOUT_MS 15000UL
 #define PG_HTTP_TIMEOUT_MS 10000U
 #define PG_TIME_TIMEOUT_MS 10000UL
