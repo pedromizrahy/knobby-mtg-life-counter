@@ -680,6 +680,13 @@ bool pregame_handle_back(lv_obj_t *screen)
                                             : screen_pregame_players);
         return true;
     }
+    if (screen == screen_pregame_deck) {
+        clear_deck_art();
+        if (deck_art_timer != NULL)
+            lv_timer_pause(deck_art_timer);
+        lv_scr_load(screen_pregame_roster);
+        return true;
+    }
     if (screen == screen_pregame_mulligans) {
         lv_scr_load(screen_pregame_roster);
         return true;
@@ -867,7 +874,7 @@ void build_pregame_screens(void)
 
         {
             lv_obj_t *hint = lv_label_create(screen_pregame_roster);
-            lv_label_set_text(hint, "Tap a seat to change player");
+            lv_label_set_text(hint, "Tap player   |   Hold for deck");
             lv_obj_set_style_text_color(hint, lv_color_hex(0x778391), 0);
             lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
             lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 48);
@@ -876,8 +883,11 @@ void build_pregame_screens(void)
         for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
             lv_obj_t *btn = pregame_button(screen_pregame_roster, "", 230, 34,
                                            event_roster_member_cycle,
-                                           LV_EVENT_CLICKED,
+                                           LV_EVENT_SHORT_CLICKED,
                                            (void *)(intptr_t)i);
+            lv_obj_add_event_cb(btn, event_roster_open_decks,
+                                LV_EVENT_LONG_PRESSED,
+                                (void *)(intptr_t)i);
             lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 62 + (i * 37));
             roster_labels[i] = lv_obj_get_child(btn, 0);
             lv_obj_set_style_text_font(roster_labels[i], &lv_font_montserrat_14, 0);
@@ -886,6 +896,74 @@ void build_pregame_screens(void)
         lv_obj_t *next = pregame_button(screen_pregame_roster, "MULLIGANS", 142, 42,
                                         event_roster_continue, LV_EVENT_CLICKED, NULL);
         lv_obj_align(next, LV_ALIGN_BOTTOM_MID, 0, -30);
+    }
+
+    screen_pregame_deck = lv_obj_create(NULL);
+    lv_obj_set_size(screen_pregame_deck, 360, 360);
+    lv_obj_set_style_bg_color(screen_pregame_deck, lv_color_black(), 0);
+    lv_obj_set_style_border_width(screen_pregame_deck, 0, 0);
+
+    {
+        lv_obj_t *hint;
+        lv_obj_t *minus;
+        lv_obj_t *plus;
+        lv_obj_t *select;
+
+        deck_title_label = lv_label_create(screen_pregame_deck);
+        lv_label_set_text(deck_title_label, "SELECT DECK");
+        lv_obj_set_width(deck_title_label, 260);
+        lv_obj_set_style_text_align(deck_title_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(deck_title_label, lv_color_white(), 0);
+        lv_obj_set_style_text_font(deck_title_label, &lv_font_montserrat_16, 0);
+        lv_obj_align(deck_title_label, LV_ALIGN_TOP_MID, 0, 22);
+
+        hint = lv_label_create(screen_pregame_deck);
+        lv_label_set_text(hint, "Turn dial to browse");
+        lv_obj_set_style_text_color(hint, lv_color_hex(0x778391), 0);
+        lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+        lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 47);
+
+        deck_image = lv_img_create(screen_pregame_deck);
+        lv_obj_add_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(deck_image, LV_OBJ_FLAG_CLICKABLE);
+
+        minus = pregame_button(screen_pregame_deck, "<", 42, 42,
+                               event_deck_adjust, LV_EVENT_CLICKED,
+                               (void *)(intptr_t)-1);
+        lv_obj_align(minus, LV_ALIGN_CENTER, -137, -35);
+
+        plus = pregame_button(screen_pregame_deck, ">", 42, 42,
+                              event_deck_adjust, LV_EVENT_CLICKED,
+                              (void *)(intptr_t)1);
+        lv_obj_align(plus, LV_ALIGN_CENTER, 137, -35);
+
+        deck_name_label = lv_label_create(screen_pregame_deck);
+        lv_label_set_text(deck_name_label, "Deck");
+        lv_obj_set_width(deck_name_label, 270);
+        lv_label_set_long_mode(deck_name_label, LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_align(deck_name_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(deck_name_label, lv_color_white(), 0);
+        lv_obj_set_style_text_font(deck_name_label, &lv_font_montserrat_16, 0);
+        lv_obj_align(deck_name_label, LV_ALIGN_BOTTOM_MID, 0, -88);
+
+        deck_commander_label = lv_label_create(screen_pregame_deck);
+        lv_label_set_text(deck_commander_label, "");
+        lv_obj_set_width(deck_commander_label, 280);
+        lv_label_set_long_mode(deck_commander_label, LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_align(deck_commander_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(deck_commander_label, lv_color_hex(0x9CA8B5), 0);
+        lv_obj_set_style_text_font(deck_commander_label, &lv_font_montserrat_14, 0);
+        lv_obj_align(deck_commander_label, LV_ALIGN_BOTTOM_MID, 0, -62);
+
+        deck_position_label = lv_label_create(screen_pregame_deck);
+        lv_label_set_text(deck_position_label, "");
+        lv_obj_set_style_text_color(deck_position_label, lv_color_hex(0x778391), 0);
+        lv_obj_set_style_text_font(deck_position_label, &lv_font_montserrat_14, 0);
+        lv_obj_align(deck_position_label, LV_ALIGN_BOTTOM_MID, 0, -40);
+
+        select = pregame_button(screen_pregame_deck, "SELECT", 132, 38,
+                                event_deck_select, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(select, LV_ALIGN_BOTTOM_MID, 0, -4);
     }
 
     screen_pregame_mulligans = lv_obj_create(NULL);
@@ -927,6 +1005,9 @@ void build_pregame_screens(void)
 
     multiplayer_status_timer = lv_timer_create(multiplayer_status_timer_cb, 500, NULL);
     lv_timer_pause(multiplayer_status_timer);
+
+    deck_art_timer = lv_timer_create(deck_art_timer_cb, 350, NULL);
+    lv_timer_pause(deck_art_timer);
 
     refresh_roster();
     refresh_mulligans();
