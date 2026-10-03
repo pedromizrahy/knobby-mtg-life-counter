@@ -10,11 +10,14 @@ static lv_obj_t *target_buttons[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *target_labels[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *resolver_title = NULL;
 static lv_obj_t *resolver_amount = NULL;
+static lv_obj_t *resolver_mode_label = NULL;
 static lv_obj_t *resolver_type_buttons[3] = {0};
+static lv_obj_t *resolver_more_button = NULL;
 
 static int resolver_source = -1;
 static int resolver_target = -1;
 static int resolver_amount_value = 0;
+static bool resolver_advanced = false;
 static game_damage_type_t resolver_damage_type = DAMAGE_TYPE_NORMAL;
 
 static void refresh_target_screen(void)
@@ -76,17 +79,39 @@ void refresh_damage_resolver_ui(void)
         lv_label_set_text(resolver_amount, buf);
     }
 
+    if (resolver_mode_label != NULL) {
+        lv_label_set_text(resolver_mode_label,
+                          resolver_advanced
+                              ? "Choose type"
+                              : damage_type_label(resolver_damage_type));
+    }
+
     for (i = 0; i < 3; i++) {
-        if (resolver_type_buttons[i] == NULL) continue;
         game_damage_type_t type = (i == 0) ? DAMAGE_TYPE_NORMAL :
                                   (i == 1) ? DAMAGE_TYPE_COMMANDER :
                                              DAMAGE_TYPE_POISON;
+        if (resolver_type_buttons[i] == NULL) continue;
+
+        if (resolver_advanced) {
+            lv_obj_clear_flag(resolver_type_buttons[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(resolver_type_buttons[i], LV_OBJ_FLAG_HIDDEN);
+        }
+
         lv_obj_set_style_border_width(resolver_type_buttons[i],
                                       (type == resolver_damage_type) ? 3 : 1, 0);
         lv_obj_set_style_border_color(resolver_type_buttons[i],
                                       (type == resolver_damage_type)
                                           ? lv_color_white()
                                           : lv_color_hex(0x555555), 0);
+    }
+
+    if (resolver_more_button != NULL) {
+        if (resolver_advanced) {
+            lv_obj_add_flag(resolver_more_button, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(resolver_more_button, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 }
 
@@ -98,6 +123,23 @@ void damage_resolver_change_amount(int delta)
     refresh_damage_resolver_ui();
 }
 
+void open_damage_resolver_for_target(int source_player, int target_player,
+                                     bool advanced)
+{
+    if (source_player < 0 || source_player >= MAX_DISPLAY_PLAYERS) return;
+    if (target_player < 0 || target_player >= MAX_DISPLAY_PLAYERS) return;
+    if (source_player == target_player) return;
+    if (player_eliminated[source_player] || player_eliminated[target_player]) return;
+
+    resolver_source = source_player;
+    resolver_target = target_player;
+    resolver_amount_value = 0;
+    resolver_advanced = advanced;
+    resolver_damage_type = DAMAGE_TYPE_NORMAL;
+    refresh_damage_resolver_ui();
+    load_screen_if_needed(screen_damage_resolver);
+}
+
 static void event_target_select(lv_event_t *e)
 {
     int target = (int)(intptr_t)lv_event_get_user_data(e);
@@ -105,11 +147,7 @@ static void event_target_select(lv_event_t *e)
     if (target < 0 || target >= MAX_DISPLAY_PLAYERS) return;
     if (target == resolver_source || player_eliminated[target]) return;
 
-    resolver_target = target;
-    resolver_amount_value = 0;
-    resolver_damage_type = DAMAGE_TYPE_NORMAL;
-    refresh_damage_resolver_ui();
-    load_screen_if_needed(screen_damage_resolver);
+    open_damage_resolver_for_target(resolver_source, target, false);
 }
 
 static void event_type_select(lv_event_t *e)
@@ -118,6 +156,13 @@ static void event_type_select(lv_event_t *e)
 
     if (type < DAMAGE_TYPE_NORMAL || type > DAMAGE_TYPE_POISON) return;
     resolver_damage_type = (game_damage_type_t)type;
+    refresh_damage_resolver_ui();
+}
+
+static void event_show_more(lv_event_t *e)
+{
+    (void)e;
+    resolver_advanced = true;
     refresh_damage_resolver_ui();
 }
 
@@ -140,6 +185,7 @@ void open_damage_resolver(int source_player)
     resolver_source = source_player;
     resolver_target = -1;
     resolver_amount_value = 0;
+    resolver_advanced = false;
     resolver_damage_type = DAMAGE_TYPE_NORMAL;
     refresh_target_screen();
     load_screen_if_needed(screen_damage_target);
@@ -150,7 +196,7 @@ static lv_obj_t *make_type_button(lv_obj_t *parent, const char *text,
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, 94, 42);
-    lv_obj_set_pos(btn, x, 228);
+    lv_obj_set_pos(btn, x, 222);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_bg_color(btn, lv_color_hex(0x202020), 0);
     lv_obj_set_style_border_width(btn, 1, 0);
@@ -208,19 +254,23 @@ void build_damage_resolver_screens(void)
     lv_label_set_text(resolver_title, "P1 > P2");
     lv_obj_set_style_text_color(resolver_title, lv_color_white(), 0);
     lv_obj_set_style_text_font(resolver_title, &lv_font_montserrat_20, 0);
-    lv_obj_align(resolver_title, LV_ALIGN_TOP_MID, 0, 34);
+    lv_obj_align(resolver_title, LV_ALIGN_TOP_MID, 0, 30);
 
-    lv_obj_t *type_label = lv_label_create(screen_damage_resolver);
-    lv_label_set_text(type_label, "Turn knob");
-    lv_obj_set_style_text_color(type_label, lv_color_hex(0x7A7A7A), 0);
-    lv_obj_set_style_text_font(type_label, &lv_font_montserrat_14, 0);
-    lv_obj_align(type_label, LV_ALIGN_TOP_MID, 0, 74);
+    resolver_mode_label = lv_label_create(screen_damage_resolver);
+    lv_label_set_text(resolver_mode_label, "Damage");
+    lv_obj_set_style_text_color(resolver_mode_label, lv_color_hex(0x8A8A8A), 0);
+    lv_obj_set_style_text_font(resolver_mode_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(resolver_mode_label, LV_ALIGN_TOP_MID, 0, 66);
 
     resolver_amount = lv_label_create(screen_damage_resolver);
     lv_label_set_text(resolver_amount, "0");
     lv_obj_set_style_text_color(resolver_amount, lv_color_white(), 0);
     lv_obj_set_style_text_font(resolver_amount, &lv_font_montserrat_bold_56, 0);
-    lv_obj_align(resolver_amount, LV_ALIGN_CENTER, 0, -28);
+    lv_obj_align(resolver_amount, LV_ALIGN_CENTER, 0, -38);
+
+    resolver_more_button = make_button(screen_damage_resolver, "More", 100, 40,
+                                       event_show_more);
+    lv_obj_align(resolver_more_button, LV_ALIGN_CENTER, 0, 42);
 
     resolver_type_buttons[0] =
         make_type_button(screen_damage_resolver, "Damage", 24, DAMAGE_TYPE_NORMAL);
@@ -231,7 +281,7 @@ void build_damage_resolver_screens(void)
 
     lv_obj_t *apply_btn = make_button(screen_damage_resolver, "Apply", 126, 46,
                                       event_apply_damage);
-    lv_obj_align(apply_btn, LV_ALIGN_BOTTOM_MID, 0, -34);
+    lv_obj_align(apply_btn, LV_ALIGN_BOTTOM_MID, 0, -30);
 
     refresh_damage_resolver_ui();
 }
