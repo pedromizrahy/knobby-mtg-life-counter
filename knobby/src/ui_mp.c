@@ -33,6 +33,7 @@ static int drag_source_player = -1;
 static int drag_target_player = -1;
 static bool drag_active = false;
 static bool drag_center_ready = false;
+static bool drag_edge_navigation = false;
 static uint32_t drag_target_enter_ms = 0;
 static uint32_t drag_release_ms = 0;
 static lv_point_t drag_start_point = {0, 0};
@@ -307,7 +308,7 @@ static void get_counter_equator_anchor(lv_obj_t *panel,
     lv_coord_t parent_h;
     lv_coord_t panel_center_y;
     lv_coord_t target_world_y;
-    const lv_coord_t equator_gap = 44;
+    const lv_coord_t equator_gap = 18;
     const lv_coord_t edge_margin = 24;
 
     if (anchor_x == NULL || anchor_y == NULL) return;
@@ -339,9 +340,12 @@ static void get_counter_equator_anchor(lv_obj_t *panel,
            shift could clip the first counter (notably Infect) when several
            commander markers were present. */
         if (panel_w < parent_w) {
-            *anchor_x = (panel_center_x < (parent_w / 2)) ? 28 : -28;
+            /* 4P quadrants: hug the center divider vertically, but keep the
+               whole row on the outer side of the center timer. */
+            *anchor_x = (panel_center_x < (parent_w / 2)) ? -20 : 20;
         } else {
-            *anchor_x = 0;
+            /* 2P: alternate sides of the center timer for the two rows. */
+            *anchor_x = (panel_center_y < (parent_h / 2)) ? 72 : -72;
         }
     }
     *anchor_y = target_world_y - panel_center_y;
@@ -941,8 +945,19 @@ static void damage_drag_reset(void)
     drag_target_player = -1;
     drag_active = false;
     drag_center_ready = false;
+    drag_edge_navigation = false;
     drag_target_enter_ms = 0;
     drag_hint_hide();
+}
+
+void multiplayer_cancel_damage_drag(void)
+{
+    damage_drag_reset();
+}
+
+bool multiplayer_damage_drag_active(void)
+{
+    return drag_active && !drag_edge_navigation;
 }
 
 static void event_multiplayer_drag(lv_event_t *e)
@@ -966,6 +981,13 @@ static void event_multiplayer_drag(lv_event_t *e)
         drag_target_enter_ms = 0;
         drag_start_point = point;
         drag_hint_hide();
+
+        /* Edge-origin straight swipes belong to table navigation/menu, not
+           damage. Reserving this thin rim prevents the menu gesture from
+           arming "Hold for targets" underneath it. */
+        drag_edge_navigation =
+            point.x <= 34 || point.x >= 326 ||
+            point.y <= 34 || point.y >= 326;
         return;
     }
 
@@ -979,6 +1001,11 @@ static void event_multiplayer_drag(lv_event_t *e)
         int dx = point.x - drag_start_point.x;
         int dy = point.y - drag_start_point.y;
         int target;
+        int center_dx = point.x - WEDGE_CX;
+        int center_dy = point.y - WEDGE_CY;
+        int center_dist2 = (center_dx * center_dx) + (center_dy * center_dy);
+
+        if (drag_edge_navigation) return;
 
         if (!drag_active &&
             (dx * dx) + (dy * dy) >=
@@ -987,7 +1014,13 @@ static void event_multiplayer_drag(lv_event_t *e)
         }
         if (!drag_active) return;
 
-        target = player_at_screen_point(point.x, point.y);
+        /* Once the finger enters the center, keep a slightly larger sticky
+           hold zone so normal touch jitter cannot drop the target just before
+           the 600 ms multi-target hold completes. */
+        if (drag_target_player == -2 && center_dist2 < (82 * 82))
+            target = -2;
+        else
+            target = player_at_screen_point(point.x, point.y);
         if (target == drag_source_player) target = -1;
 
         if (target != drag_target_player) {
