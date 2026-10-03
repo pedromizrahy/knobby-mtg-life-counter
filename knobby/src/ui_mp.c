@@ -538,13 +538,34 @@ void refresh_multiplayer_turn_ui(void)
         name = "P?";
     }
 
-    snprintf(buf, sizeof(buf), "%s  %lu:%02lu\nR%d",
-             name,
-             (unsigned long)minutes,
-             (unsigned long)seconds,
-             round_number);
+    if (nvs_get_turn_show_name()) {
+        snprintf(buf, sizeof(buf), "%s  %lu:%02lu\nR%d",
+                 name,
+                 (unsigned long)minutes,
+                 (unsigned long)seconds,
+                 round_number);
+    } else {
+        snprintf(buf, sizeof(buf), "%lu:%02lu\nR%d",
+                 (unsigned long)minutes,
+                 (unsigned long)seconds,
+                 round_number);
+    }
 
     lv_label_set_text(mp_turn_label, buf);
+
+    if (turn_reminder_active && nvs_get_turn_visual_alert()) {
+        lv_obj_set_style_text_color(mp_turn_label, lv_palette_main(LV_PALETTE_RED), 0);
+        lv_obj_set_style_border_color(mp_turn_badge, lv_palette_main(LV_PALETTE_RED), 0);
+        lv_obj_set_style_border_width(mp_turn_badge, turn_reminder_flash_on ? 4 : 2, 0);
+        lv_obj_set_style_bg_color(mp_turn_badge,
+            turn_reminder_flash_on ? lv_color_hex(0x3A0909) : lv_color_hex(0x111111), 0);
+    } else {
+        lv_obj_set_style_text_color(mp_turn_label, lv_color_white(), 0);
+        lv_obj_set_style_border_color(mp_turn_badge, lv_color_hex(0x777777), 0);
+        lv_obj_set_style_border_width(mp_turn_badge, 1, 0);
+        lv_obj_set_style_bg_color(mp_turn_badge, lv_color_hex(0x111111), 0);
+    }
+
     lv_obj_clear_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
 }
 
