@@ -13,6 +13,7 @@
 #include "ui_1p.h"
 #include "ui_mp.h"
 #include "ui_player_menu.h"
+#include "pregame.h"
 
 // Forward declarations for cross-module calls
 extern void reset_all_values(void);
@@ -785,7 +786,7 @@ static void event_quad_tools(lv_event_t *e)
     lv_scr_load(screen_tools_menu);
 }
 
-static void event_general_game_mode(lv_event_t *e)
+static void event_general_game_settings(lv_event_t *e)
 {
     (void)e;
     open_game_mode_menu();
@@ -804,11 +805,18 @@ static void event_open_turn_timer_settings(lv_event_t *e)
     turn_settings_from_tools = true;
 }
 
-static void event_general_reset(lv_event_t *e)
+static void event_start_new_game(lv_event_t *e)
 {
     (void)e;
+
+    /* This is the only destructive "new match" action in the main HUD.
+       Clear the current game, stop any roulette/timer that reset_all_values
+       would otherwise start, then return to the pregame flow. */
+    net_sync_leave_game();
     reset_all_values();
-    back_to_main();
+    stop_player_selection_animation();
+    turn_timer_reset();
+    open_pregame_home();
     lv_indev_wait_release(lv_indev_get_act());
 }
 
@@ -817,9 +825,9 @@ void build_quad_menus(void)
 {
     quad_item_t main_items[4] = {
         {"Settings", event_quad_screen_settings, true, LV_EVENT_CLICKED},
-        {"Game\nMode", event_general_game_mode, true, LV_EVENT_CLICKED},
+        {"Game\nSettings", event_general_game_settings, true, LV_EVENT_CLICKED},
         {"Tools",             event_quad_tools, true, LV_EVENT_CLICKED},
-        {"Reset\n(Hold)", event_general_reset, true, LV_EVENT_LONG_PRESSED},
+        {"Start New\nGame (Hold)", event_start_new_game, true, LV_EVENT_LONG_PRESSED},
     };
     build_quad_screen(&screen_quad_menu, main_items);
 
