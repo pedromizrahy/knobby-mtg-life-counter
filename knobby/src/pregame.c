@@ -291,6 +291,8 @@ static void event_roster_member_cycle(lv_event_t *e)
         return;
 
     selected_member_index[seat] = (selected_member_index[seat] + 1) % member_count;
+    selected_deck_id[seat] = 0;
+    selected_deck_name[seat][0] = '\0';
     refresh_roster();
 }
 
@@ -502,7 +504,7 @@ static void event_deck_select(lv_event_t *e)
 static void refresh_roster(void)
 {
     int i;
-    char buf[72];
+    char buf[96];
     int member_count = playgroup_cached_member_count();
 
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
@@ -514,15 +516,22 @@ static void refresh_roster(void)
                     playgroup_cached_member(selected_member_index[i] % member_count);
                 if (member != NULL) {
                     snprintf(player_names[i], sizeof(player_names[i]), "%s", member->username);
-                    snprintf(buf, sizeof(buf), "P%d   %s", i + 1, member->username);
+                    if (selected_deck_id[i] != 0 && selected_deck_name[i][0] != '\0')
+                        snprintf(buf, sizeof(buf), "P%d  %s | %s",
+                                 i + 1, member->username, selected_deck_name[i]);
+                    else
+                        snprintf(buf, sizeof(buf), "P%d  %s | Choose deck",
+                                 i + 1, member->username);
                 } else {
-                    snprintf(buf, sizeof(buf), "P%d   Select player", i + 1);
+                    snprintf(buf, sizeof(buf), "P%d  Select player", i + 1);
                 }
             } else {
-                snprintf(buf, sizeof(buf), "P%d   Local player", i + 1);
+                snprintf(buf, sizeof(buf), "P%d  Local player", i + 1);
             }
 
             lv_label_set_text(roster_labels[i], buf);
+            lv_label_set_long_mode(roster_labels[i], LV_LABEL_LONG_DOT);
+            lv_obj_set_width(roster_labels[i], 214);
             lv_obj_clear_flag(lv_obj_get_parent(roster_labels[i]), LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(lv_obj_get_parent(roster_labels[i]), LV_OBJ_FLAG_HIDDEN);
