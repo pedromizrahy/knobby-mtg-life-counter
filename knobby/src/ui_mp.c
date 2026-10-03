@@ -1258,7 +1258,7 @@ void rebuild_multiplayer_layout(int track)
     mp_turn_round_label = lv_label_create(mp_turn_badge);
     lv_label_set_text(mp_turn_round_label, "R1");
     lv_obj_set_style_text_color(mp_turn_round_label, lv_color_hex(0xB8B8B8), 0);
-    lv_obj_set_style_text_font(mp_turn_round_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(mp_turn_round_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_align(mp_turn_round_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(mp_turn_round_label, LV_ALIGN_BOTTOM_MID, 0, -6);
 
