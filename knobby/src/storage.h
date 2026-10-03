@@ -35,6 +35,9 @@ void nvs_set_auto_eliminate(int value);
 int nvs_get_random_first(void);
 void nvs_set_random_first(int value);
 
+int nvs_get_turn_timer_enabled(void);
+void nvs_set_turn_timer_enabled(int value);
+
 int nvs_get_multi_select(void);
 void nvs_set_multi_select(int value);
 
