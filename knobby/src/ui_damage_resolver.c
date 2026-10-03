@@ -55,7 +55,22 @@ static void refresh_target_screen(void)
         selected = (resolver_target_mask & (1U << player)) != 0;
 
         lv_label_set_text(target_labels[player], player_names[player]);
-        lv_obj_set_pos(target_buttons[player], 70, 70 + slot * 58);
+        {
+            int target_slots = track - 1;
+            if (target_slots <= 3) {
+                lv_obj_set_size(target_buttons[player], 208, 44);
+                lv_obj_set_style_radius(target_buttons[player], 22, 0);
+                lv_obj_set_pos(target_buttons[player], 76, 76 + slot * 56);
+            } else {
+                int col = slot % 2;
+                int row = slot / 2;
+                lv_obj_set_size(target_buttons[player], 124, 40);
+                lv_obj_set_style_radius(target_buttons[player], 20, 0);
+                lv_obj_set_pos(target_buttons[player],
+                               col == 0 ? 48 : 188,
+                               82 + row * 50);
+            }
+        }
         lv_obj_clear_flag(target_buttons[player], LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_border_width(target_buttons[player], selected ? 3 : 1, 0);
         lv_obj_set_style_border_color(target_buttons[player],
@@ -306,8 +321,8 @@ void build_damage_resolver_screens(void)
         lv_obj_t *title = lv_label_create(screen_damage_target);
         lv_label_set_text(title, "MULTIPLE TARGETS");
         lv_obj_set_style_text_color(title, lv_color_hex(0xDDE7F0), 0);
-        lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
-        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 28);
+        lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 32);
     }
 
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {

@@ -110,13 +110,13 @@ void refresh_turn_ui(void)
             lv_obj_set_style_shadow_color(turn_container, alert, 0);
             lv_obj_set_style_shadow_width(
                 turn_container,
-                8 + (turn_reminder_pulse_level * 14U) / 100U, 0);
+                10 + (turn_reminder_pulse_level * 18U) / 100U, 0);
             lv_obj_set_style_shadow_spread(
                 turn_container,
-                1 + (turn_reminder_pulse_level * 3U) / 100U, 0);
+                2 + (turn_reminder_pulse_level * 4U) / 100U, 0);
             lv_obj_set_style_shadow_opa(
                 turn_container,
-                (lv_opa_t)(40U + (turn_reminder_pulse_level * 120U) / 100U), 0);
+                (lv_opa_t)(55U + (turn_reminder_pulse_level * 165U) / 100U), 0);
         }
         if (turn_hold_arc != NULL)
             lv_obj_set_style_arc_color(turn_hold_arc, alert, LV_PART_INDICATOR);

@@ -38,6 +38,8 @@ static lv_obj_t *delete_btn = NULL;
 static lv_obj_t *page_label = NULL;
 static int damage_log_selected = -1;  // index into the log, 0 = newest
 static int damage_log_page = 0;       // rendered page, derived from selection
+static int rendered_offsets[LOG_PAGE_SIZE] = {0};
+static int rendered_count = 0;
 static lv_style_t log_label_style;    // shared by all entry labels
 
 // ---------- log operations ----------
@@ -147,45 +149,91 @@ static void refresh_damage_log_ui(void);
 static bool damage_log_offset_undoable(int offset)
 {
     int idx;
-
     if (offset < 0 || offset >= damage_log_count) return false;
     idx = (damage_log_head - 1 - offset + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
     return damage_log[idx].event_type != LOG_EVT_TURN_END;
 }
 
-static int find_undoable_offset(int start, int dir)
+static bool same_turn(const damage_log_entry_t *a,
+                      const damage_log_entry_t *b)
 {
-    int offset = start;
+    return a->turn_number == b->turn_number &&
+           a->round_number == b->round_number &&
+           a->turn_player == b->turn_player;
+}
 
-    while (offset >= 0 && offset < damage_log_count) {
-        if (damage_log_offset_undoable(offset))
-            return offset;
-        offset += dir;
+/* Newest turn first; actions inside each turn read oldest -> newest. */
+static int build_visual_action_offsets(int *out, int max_out)
+{
+    int raw = 0;
+    int count = 0;
+
+    while (raw < damage_log_count && count < max_out) {
+        int group_start = raw;
+        int first_idx =
+            (damage_log_head - 1 - group_start + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+        int group_end = group_start + 1;
+
+        while (group_end < damage_log_count) {
+            int idx =
+                (damage_log_head - 1 - group_end + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+            if (!same_turn(&damage_log[first_idx], &damage_log[idx])) break;
+            group_end++;
+        }
+
+        for (int pos = group_end - 1;
+             pos >= group_start && count < max_out; pos--) {
+            int idx =
+                (damage_log_head - 1 - pos + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+            if (damage_log[idx].event_type != LOG_EVT_TURN_END)
+                out[count++] = pos;
+        }
+        raw = group_end;
     }
+    return count;
+}
+
+static int visual_index_for_offset(const int *offsets, int count, int offset)
+{
+    for (int i = 0; i < count; i++)
+        if (offsets[i] == offset) return i;
     return -1;
+}
+
+static int newest_undoable_offset(void)
+{
+    int offsets[DAMAGE_LOG_MAX];
+    int count = build_visual_action_offsets(offsets, DAMAGE_LOG_MAX);
+    return (count > 0) ? offsets[0] : -1;
 }
 
 void damage_log_select_next(void)
 {
-    int next;
+    int offsets[DAMAGE_LOG_MAX];
+    int count = build_visual_action_offsets(offsets, DAMAGE_LOG_MAX);
+    int pos;
 
-    if (damage_log_count == 0) return;
-    next = find_undoable_offset(damage_log_selected + 1, +1);
-    if (next < 0) return;
+    if (count == 0) return;
+    pos = visual_index_for_offset(offsets, count, damage_log_selected);
+    if (pos < 0) pos = 0;
+    else if (pos + 1 < count) pos++;
+    else return;
 
-    damage_log_selected = next;
+    damage_log_selected = offsets[pos];
     refresh_damage_log_ui();
 }
 
 void damage_log_select_prev(void)
 {
-    int prev;
+    int offsets[DAMAGE_LOG_MAX];
+    int count = build_visual_action_offsets(offsets, DAMAGE_LOG_MAX);
+    int pos;
 
-    if (damage_log_count == 0) return;
-    prev = find_undoable_offset(damage_log_selected - 1, -1);
-    if (prev < 0) return;
+    if (count == 0) return;
+    pos = visual_index_for_offset(offsets, count, damage_log_selected);
+    if (pos <= 0) return;
 
-    damage_log_selected = prev;
+    damage_log_selected = offsets[pos - 1];
     refresh_damage_log_ui();
 }
 
@@ -247,16 +295,9 @@ void damage_log_undo_selected(void)
     if (damage_log_count == 0) {
         damage_log_selected = -1;
     } else {
-        int preferred = damage_log_selected;
-        int next;
-
-        if (preferred >= damage_log_count)
-            preferred = damage_log_count - 1;
-
-        next = find_undoable_offset(preferred, +1);
-        if (next < 0)
-            next = find_undoable_offset(preferred, -1);
-        damage_log_selected = next;
+        int offsets[DAMAGE_LOG_MAX];
+        int count = build_visual_action_offsets(offsets, DAMAGE_LOG_MAX);
+        damage_log_selected = (count > 0) ? offsets[0] : -1;
     }
 
     refresh_damage_log_ui();
@@ -326,11 +367,6 @@ static void format_log_line(damage_log_entry_t *entry, char *buf, size_t buf_sz)
     }
 }
 
-static int newest_undoable_offset(void)
-{
-    return find_undoable_offset(0, +1);
-}
-
 static void event_undo_selected_row(lv_event_t *e)
 {
     int offset = (int)(intptr_t)lv_event_get_user_data(e);
@@ -344,61 +380,93 @@ static void event_undo_selected_row(lv_event_t *e)
 
 static void update_selection_highlight(void)
 {
-    int i;
-    int first = damage_log_page * LOG_PAGE_SIZE;
-    int sel_child = damage_log_selected - first;
     uint32_t child_count = lv_obj_get_child_cnt(damage_log_container);
 
-    for (i = 0; i < (int)child_count && first + i < damage_log_count; i++) {
-        lv_obj_t *lbl = lv_obj_get_child(damage_log_container, i);
+    for (int i = 0; i < (int)child_count && i < rendered_count; i++) {
+        lv_obj_t *row = lv_obj_get_child(damage_log_container, i);
+        bool selected = rendered_offsets[i] == damage_log_selected;
 
-        lv_obj_set_style_bg_opa(lbl, LV_OPA_TRANSP, 0);
-        if (i == sel_child) {
-            lv_obj_set_style_border_width(lbl, 3, 0);
-            lv_obj_set_style_border_side(lbl, LV_BORDER_SIDE_LEFT, 0);
-            lv_obj_set_style_border_color(lbl, lv_color_hex(0xB0B0B0), 0);
-        } else {
-            lv_obj_set_style_border_width(lbl, 0, 0);
+        lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(row, selected ? 3 : 0, 0);
+        if (selected) {
+            lv_obj_set_style_border_side(row, LV_BORDER_SIDE_LEFT, 0);
+            lv_obj_set_style_border_color(row, lv_color_hex(0xB0B0B0), 0);
+            lv_obj_update_layout(damage_log_container);
+            lv_obj_scroll_to_view(row, LV_ANIM_ON);
         }
     }
 
-    /* Scroll selected item into view. Force the flex layout first: rows
-       recreated this pass still have {0,0,0,0} coords until LVGL lays them
-       out, which would scroll to the wrong place. */
-    if (sel_child >= 0 && sel_child < (int)child_count) {
-        lv_obj_t *sel = lv_obj_get_child(damage_log_container, sel_child);
-        lv_obj_update_layout(damage_log_container);
-        lv_coord_t sel_y = lv_obj_get_y(sel);
-        lv_coord_t sel_h = lv_obj_get_height(sel);
-        lv_coord_t cont_h = lv_obj_get_height(damage_log_container);
-        lv_coord_t scroll_y = lv_obj_get_scroll_y(damage_log_container);
-
-        if (sel_y - scroll_y < 0) {
-            lv_obj_scroll_to_y(damage_log_container, sel_y, LV_ANIM_ON);
-        } else if (sel_y + sel_h - scroll_y > cont_h) {
-            lv_obj_scroll_to_y(damage_log_container, sel_y + sel_h - cont_h, LV_ANIM_ON);
-        }
-    }
-
-    /* Show/hide delete button */
     if (delete_btn != NULL) {
-        if (damage_log_selected >= 0) {
+        if (damage_log_selected >= 0)
             lv_obj_clear_flag(delete_btn, LV_OBJ_FLAG_HIDDEN);
-        } else {
+        else
             lv_obj_add_flag(delete_btn, LV_OBJ_FLAG_HIDDEN);
-        }
     }
+}
+
+static void draw_undo_icon(lv_event_t *e)
+{
+    lv_obj_t *obj = lv_event_get_target(e);
+    lv_draw_ctx_t *draw_ctx = lv_event_get_draw_ctx(e);
+    lv_area_t a;
+    lv_draw_line_dsc_t dsc;
+    lv_point_t p[7];
+
+    lv_obj_get_coords(obj, &a);
+    lv_draw_line_dsc_init(&dsc);
+    dsc.color = lv_color_hex(0xC7C7C7);
+    dsc.width = 2;
+
+    p[0] = (lv_point_t){a.x1 + 20, a.y1 + 7};
+    p[1] = (lv_point_t){a.x1 + 14, a.y1 + 7};
+    p[2] = (lv_point_t){a.x1 + 10, a.y1 + 9};
+    p[3] = (lv_point_t){a.x1 + 8,  a.y1 + 13};
+    p[4] = (lv_point_t){a.x1 + 10, a.y1 + 18};
+    p[5] = (lv_point_t){a.x1 + 14, a.y1 + 20};
+    p[6] = (lv_point_t){a.x1 + 20, a.y1 + 20};
+    for (int i = 0; i < 6; i++)
+        lv_draw_line(draw_ctx, &dsc, &p[i], &p[i + 1]);
+
+    {
+        lv_point_t tip = {a.x1 + 8, a.y1 + 10};
+        lv_point_t up  = {a.x1 + 8, a.y1 + 4};
+        lv_point_t out = {a.x1 + 14, a.y1 + 10};
+        lv_draw_line(draw_ctx, &dsc, &tip, &up);
+        lv_draw_line(draw_ctx, &dsc, &tip, &out);
+    }
+}
+
+static uint32_t duration_for_turn(const damage_log_entry_t *entry)
+{
+    uint32_t fallback = 0;
+
+    for (int raw = 0; raw < damage_log_count; raw++) {
+        int idx = (damage_log_head - 1 - raw + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+        if (!same_turn(entry, &damage_log[idx])) continue;
+        if (damage_log[idx].event_type == LOG_EVT_TURN_END)
+            return damage_log[idx].duration_ms;
+        if (damage_log[idx].turn_elapsed_ms > fallback)
+            fallback = damage_log[idx].turn_elapsed_ms;
+    }
+
+    if ((int)entry->turn_number == turn_number &&
+        entry->turn_player == active_turn_player)
+        return get_current_turn_elapsed_ms();
+
+    return fallback;
 }
 
 static void refresh_damage_log_ui(void)
 {
-    int i, idx, first, last;
-    int undo_offset = damage_log_offset_undoable(damage_log_selected)
-                    ? damage_log_selected : -1;
+    int visual[DAMAGE_LOG_MAX];
+    int visual_count = build_visual_action_offsets(visual, DAMAGE_LOG_MAX);
+    int selected_visual;
+    int first, last;
 
     lv_obj_clean(damage_log_container);
+    rendered_count = 0;
 
-    if (damage_log_count == 0) {
+    if (visual_count == 0) {
         lv_obj_t *lbl = lv_label_create(damage_log_container);
         lv_label_set_text(lbl, "No events yet");
         lv_obj_set_style_text_color(lbl, lv_color_hex(0x7A7A7A), 0);
@@ -410,169 +478,114 @@ static void refresh_damage_log_ui(void)
         return;
     }
 
-    if (!damage_log_offset_undoable(damage_log_selected))
-        damage_log_selected = newest_undoable_offset();
+    selected_visual =
+        visual_index_for_offset(visual, visual_count, damage_log_selected);
+    if (selected_visual < 0) {
+        damage_log_selected = visual[0];
+        selected_visual = 0;
+    }
 
-    damage_log_page = (damage_log_selected >= 0)
-                    ? damage_log_selected / LOG_PAGE_SIZE : 0;
+    damage_log_page = selected_visual / LOG_PAGE_SIZE;
     first = damage_log_page * LOG_PAGE_SIZE;
     last = first + LOG_PAGE_SIZE;
-    if (last > damage_log_count) last = damage_log_count;
+    if (last > visual_count) last = visual_count;
 
-    for (i = first; i < last; i++) {
+    for (int i = first; i < last; i++) {
+        int raw = visual[i];
+        int idx = (damage_log_head - 1 - raw + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+        damage_log_entry_t *entry = &damage_log[idx];
+        bool new_group =
+            (i == first) ||
+            !same_turn(entry,
+                &damage_log[(damage_log_head - 1 - visual[i - 1] +
+                             DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX]);
         char line[96];
         char header[96];
-        bool new_group = false;
-        bool new_round = false;
-        int newer_idx;
         lv_color_t event_color = lv_color_hex(0xB8B8B8);
-        lv_obj_t *row;
-        lv_obj_t *event_lbl = NULL;
+        lv_obj_t *row = lv_obj_create(damage_log_container);
+        int event_y = new_group ? 22 : 1;
 
-        idx = (damage_log_head - 1 - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+        rendered_offsets[rendered_count++] = raw;
 
-        if (i == first) {
-            new_group = true;
-        } else {
-            newer_idx = (damage_log_head - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
-            if (damage_log[newer_idx].turn_number != damage_log[idx].turn_number ||
-                damage_log[newer_idx].round_number != damage_log[idx].round_number ||
-                damage_log[newer_idx].turn_player != damage_log[idx].turn_player) {
-                new_group = true;
-                new_round =
-                    damage_log[newer_idx].round_number !=
-                    damage_log[idx].round_number;
-            }
-        }
-
-        row = lv_obj_create(damage_log_container);
         lv_obj_remove_style_all(row);
         lv_obj_set_width(row, 280);
-        lv_obj_set_height(row, new_group ? 62 : 24);
+        lv_obj_set_height(row, new_group ? 47 : 24);
         lv_obj_set_style_pad_left(row, 4, 0);
         lv_obj_set_style_pad_right(row, 4, 0);
         lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
         lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
-        if (new_group && damage_log[idx].turn_number > 0 &&
-            damage_log[idx].turn_player >= 0 &&
-            damage_log[idx].turn_player < MAX_GAME_PLAYERS) {
+        if (new_group) {
             lv_obj_t *header_lbl = lv_label_create(row);
-            uint32_t duration_ms = 0;
-            int scan;
+            uint32_t duration_ms = duration_for_turn(entry);
+            unsigned long total_s = (unsigned long)(duration_ms / 1000U);
 
-            /* The turn-end marker is normally the newest entry in a completed
-               block. Scan this block so headers still show duration after
-               pagination or when actions were appended before the turn ended. */
-            for (scan = i; scan < damage_log_count; scan++) {
-                int scan_idx = (damage_log_head - 1 - scan + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
-                if (damage_log[scan_idx].turn_number != damage_log[idx].turn_number)
-                    break;
-                if (damage_log[scan_idx].event_type == LOG_EVT_TURN_END) {
-                    duration_ms = damage_log[scan_idx].duration_ms;
-                    break;
-                }
-            }
-
-            if (new_round) {
-                lv_obj_t *sep = lv_label_create(row);
-                lv_label_set_text(sep, "---------------------------");
-                lv_obj_set_style_text_color(sep, lv_color_hex(0x565656), 0);
-                lv_obj_set_style_text_font(sep, &lv_font_montserrat_14, 0);
+            if (i != first) {
+                lv_obj_t *sep = lv_obj_create(row);
+                lv_obj_remove_style_all(sep);
+                lv_obj_set_size(sep, 272, 1);
+                lv_obj_set_style_bg_color(sep, lv_color_hex(0x555555), 0);
+                lv_obj_set_style_bg_opa(sep, LV_OPA_COVER, 0);
                 lv_obj_align(sep, LV_ALIGN_TOP_LEFT, 0, 0);
+                lv_obj_clear_flag(sep, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+                event_y = 24;
             }
 
-            if (duration_ms > 0) {
-                unsigned long total_s = (unsigned long)(duration_ms / 1000U);
-                snprintf(header, sizeof(header), "R%u | T%u | %s | %lu:%02lu",
-                         (unsigned)damage_log[idx].round_number,
-                         (unsigned)(damage_log[idx].turn_in_round > 0
-                                      ? damage_log[idx].turn_in_round : 1),
-                         player_names[damage_log[idx].turn_player],
-                         total_s / 60UL, total_s % 60UL);
-            } else {
-                uint32_t live_ms = 0;
-                if ((int)damage_log[idx].turn_number == turn_number)
-                    live_ms = get_current_turn_elapsed_ms();
-                if (live_ms > 0) {
-                    unsigned long total_s = (unsigned long)(live_ms / 1000U);
-                    snprintf(header, sizeof(header), "R%u | T%u | %s | %lu:%02lu",
-                             (unsigned)damage_log[idx].round_number,
-                             (unsigned)(damage_log[idx].turn_in_round > 0
-                                          ? damage_log[idx].turn_in_round : 1),
-                             player_names[damage_log[idx].turn_player],
-                             total_s / 60UL, total_s % 60UL);
-                } else {
-                    snprintf(header, sizeof(header), "R%u | T%u | %s",
-                             (unsigned)damage_log[idx].round_number,
-                             (unsigned)(damage_log[idx].turn_in_round > 0
-                                          ? damage_log[idx].turn_in_round : 1),
-                             player_names[damage_log[idx].turn_player]);
-                }
-            }
-
+            snprintf(header, sizeof(header), "R%u | T%u | %s | %lu:%02lu",
+                     (unsigned)entry->round_number,
+                     (unsigned)(entry->turn_in_round > 0 ? entry->turn_in_round : 1),
+                     (entry->turn_player >= 0 &&
+                      entry->turn_player < MAX_GAME_PLAYERS)
+                         ? player_names[entry->turn_player] : "P?",
+                     total_s / 60UL, total_s % 60UL);
             lv_label_set_text(header_lbl, header);
             lv_obj_set_style_text_color(header_lbl, lv_color_hex(0xB0B0B0), 0);
             lv_obj_set_style_text_font(header_lbl, &lv_font_montserrat_14, 0);
-            lv_obj_align(header_lbl, LV_ALIGN_TOP_LEFT, 0,
-                         new_round ? 20 : (i != first ? 10 : 2));
+            lv_obj_align(header_lbl, LV_ALIGN_TOP_LEFT, 0, (i != first) ? 2 : 0);
         }
 
-        if (damage_log[idx].event_type != LOG_EVT_TURN_END) {
-            format_log_line(&damage_log[idx], line, sizeof(line));
-
-            if (damage_log[idx].event_type == LOG_EVT_DAMAGE ||
-                damage_log[idx].event_type == LOG_EVT_CMD_DAMAGE ||
-                damage_log[idx].event_type == LOG_EVT_CMD_INFECT ||
-                damage_log[idx].event_type == LOG_EVT_POISON) {
-                event_color = lv_color_hex(0xFF5252);
-            } else if (damage_log[idx].event_type == LOG_EVT_LIFE) {
-                event_color = (damage_log[idx].delta > 0)
-                            ? lv_color_hex(0x4CAF50)
-                            : lv_color_hex(0xFF5252);
-            } else if (damage_log[idx].event_type == LOG_EVT_COUNTER) {
-                event_color = (damage_log[idx].delta > 0)
-                            ? lv_color_hex(0xFFB74D)
-                            : lv_color_hex(0xB8B8B8);
-            }
-
-            event_lbl = lv_label_create(row);
-            lv_label_set_text(event_lbl, line);
-            lv_obj_set_style_text_color(event_lbl, event_color, 0);
-            lv_obj_set_style_text_font(event_lbl, &lv_font_montserrat_14, 0);
-            lv_obj_set_width(event_lbl, (i == undo_offset) ? 245 : 272);
-            lv_obj_align(event_lbl, LV_ALIGN_TOP_LEFT, 0,
-                         new_group
-                             ? (new_round ? 42 : (i != first ? 32 : 26))
-                             : 1);
+        format_log_line(entry, line, sizeof(line));
+        if (entry->event_type == LOG_EVT_DAMAGE ||
+            entry->event_type == LOG_EVT_CMD_DAMAGE ||
+            entry->event_type == LOG_EVT_CMD_INFECT ||
+            entry->event_type == LOG_EVT_POISON) {
+            event_color = lv_color_hex(0xFF5252);
+        } else if (entry->event_type == LOG_EVT_LIFE) {
+            event_color = (entry->delta > 0)
+                        ? lv_color_hex(0x4CAF50)
+                        : lv_color_hex(0xFF5252);
+        } else if (entry->event_type == LOG_EVT_COUNTER) {
+            event_color = (entry->delta > 0)
+                        ? lv_color_hex(0xFFB74D)
+                        : lv_color_hex(0xB8B8B8);
         }
 
-        if (i == undo_offset && damage_log[idx].event_type != LOG_EVT_TURN_END) {
+        lv_obj_t *event_lbl = lv_label_create(row);
+        lv_label_set_text(event_lbl, line);
+        lv_obj_set_style_text_color(event_lbl, event_color, 0);
+        lv_obj_set_style_text_font(event_lbl, &lv_font_montserrat_14, 0);
+        lv_obj_set_width(event_lbl, raw == damage_log_selected ? 244 : 272);
+        lv_obj_align(event_lbl, LV_ALIGN_TOP_LEFT, 0, event_y);
+
+        if (raw == damage_log_selected) {
             lv_obj_t *undo = lv_btn_create(row);
             lv_obj_remove_style_all(undo);
-            lv_obj_set_size(undo, 26, 26);
-            lv_obj_align(undo, LV_ALIGN_RIGHT_MID, 0, new_group ? 18 : 0);
+            lv_obj_set_size(undo, 28, 28);
+            lv_obj_align(undo, LV_ALIGN_RIGHT_MID, 0, new_group ? 10 : 0);
             lv_obj_set_style_bg_opa(undo, LV_OPA_TRANSP, 0);
             lv_obj_set_style_border_width(undo, 0, 0);
             lv_obj_set_ext_click_area(undo, 8);
+            lv_obj_add_event_cb(undo, draw_undo_icon, LV_EVENT_DRAW_MAIN, NULL);
             lv_obj_add_event_cb(undo, event_undo_selected_row,
-                                LV_EVENT_CLICKED, (void *)(intptr_t)i);
-
-            {
-                lv_obj_t *icon = lv_label_create(undo);
-                lv_label_set_text(icon, LV_SYMBOL_REFRESH);
-                lv_obj_set_style_text_color(icon, lv_color_hex(0xA8A8A8), 0);
-                lv_obj_set_style_text_font(icon, &lv_font_montserrat_14, 0);
-                lv_obj_center(icon);
-            }
+                                LV_EVENT_CLICKED, (void *)(intptr_t)raw);
         }
     }
 
     if (page_label != NULL) {
-        if (damage_log_count > LOG_PAGE_SIZE) {
+        if (visual_count > LOG_PAGE_SIZE) {
             char page_buf[24];
             snprintf(page_buf, sizeof(page_buf), "%d-%d of %d",
-                     first + 1, last, damage_log_count);
+                     first + 1, last, visual_count);
             lv_label_set_text(page_label, page_buf);
             lv_obj_clear_flag(page_label, LV_OBJ_FLAG_HIDDEN);
         } else {
@@ -659,7 +672,7 @@ void build_damage_log_screen(void)
     lv_obj_set_size(damage_log_container, 300, 174);
     lv_obj_align(damage_log_container, LV_ALIGN_TOP_MID, 0, 76);
     lv_obj_set_flex_flow(damage_log_container, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(damage_log_container, 2, 0);
+    lv_obj_set_style_pad_row(damage_log_container, 0, 0);
     lv_obj_set_scrollbar_mode(damage_log_container, LV_SCROLLBAR_MODE_OFF);
 
     /* Delete / Undo button */
