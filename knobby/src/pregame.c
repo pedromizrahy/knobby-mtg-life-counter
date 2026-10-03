@@ -294,6 +294,211 @@ static void event_roster_member_cycle(lv_event_t *e)
     refresh_roster();
 }
 
+static void clear_deck_art(void)
+{
+    if (deck_image != NULL)
+        lv_obj_add_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
+
+    if (deck_art_data != NULL) {
+        playgroup_free_image(deck_art_data);
+        deck_art_data = NULL;
+    }
+
+    memset(&deck_art_dsc, 0, sizeof(deck_art_dsc));
+}
+
+static void deck_art_timer_cb(lv_timer_t *timer)
+{
+    const playgroup_deck_t *deck;
+    uint8_t *data = NULL;
+    size_t data_size = 0;
+    lv_img_header_t header;
+    uint16_t zoom = 256;
+
+    lv_timer_pause(timer);
+
+    if (lv_scr_act() != screen_pregame_deck)
+        return;
+
+    deck = playgroup_cached_deck(deck_picker_index);
+    if (deck == NULL || deck->art_crop_url[0] == '\0')
+        return;
+
+    if (deck_commander_label != NULL) {
+        lv_label_set_text(deck_commander_label, "Loading commander art...");
+        lv_refr_now(NULL);
+    }
+
+    if (!playgroup_download_image(deck->art_crop_url, &data, &data_size)) {
+        if (deck_commander_label != NULL) {
+            char buf[96];
+            snprintf(buf, sizeof(buf), "%s\nArt unavailable",
+                     deck->commander[0] ? deck->commander : "Commander");
+            lv_label_set_text(deck_commander_label, buf);
+        }
+        return;
+    }
+
+    clear_deck_art();
+    deck_art_data = data;
+    memset(&deck_art_dsc, 0, sizeof(deck_art_dsc));
+    deck_art_dsc.header.cf = LV_IMG_CF_RAW;
+    deck_art_dsc.data_size = (uint32_t)data_size;
+    deck_art_dsc.data = deck_art_data;
+
+    if (lv_img_decoder_get_info(&deck_art_dsc, &header) == LV_RES_OK &&
+        header.w > 0 && header.h > 0) {
+        uint32_t zoom_w = (190U * 256U) / header.w;
+        uint32_t zoom_h = (130U * 256U) / header.h;
+        zoom = (uint16_t)((zoom_w < zoom_h) ? zoom_w : zoom_h);
+        if (zoom > 256U) zoom = 256U;
+        if (zoom < 32U) zoom = 32U;
+    }
+
+    lv_img_set_src(deck_image, &deck_art_dsc);
+    lv_img_set_zoom(deck_image, zoom);
+    lv_obj_align(deck_image, LV_ALIGN_CENTER, 0, -40);
+    lv_obj_clear_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
+
+    if (deck_commander_label != NULL) {
+        char buf[96];
+        if (deck->partner[0])
+            snprintf(buf, sizeof(buf), "%s + %s", deck->commander, deck->partner);
+        else
+            snprintf(buf, sizeof(buf), "%s", deck->commander);
+        lv_label_set_text(deck_commander_label, buf);
+    }
+}
+
+static void schedule_deck_art(void)
+{
+    clear_deck_art();
+
+    if (deck_art_timer == NULL)
+        return;
+
+    lv_timer_reset(deck_art_timer);
+    lv_timer_resume(deck_art_timer);
+}
+
+static void refresh_deck_picker(bool schedule_art)
+{
+    const playgroup_deck_t *deck;
+    int count = playgroup_cached_deck_count();
+    char pos[24];
+    char commander[96];
+
+    if (count <= 0) {
+        if (deck_name_label != NULL) lv_label_set_text(deck_name_label, "No decks");
+        if (deck_commander_label != NULL) lv_label_set_text(deck_commander_label, "");
+        if (deck_position_label != NULL) lv_label_set_text(deck_position_label, "0 / 0");
+        clear_deck_art();
+        return;
+    }
+
+    if (deck_picker_index < 0) deck_picker_index = count - 1;
+    if (deck_picker_index >= count) deck_picker_index = 0;
+
+    deck = playgroup_cached_deck(deck_picker_index);
+    if (deck == NULL) return;
+
+    if (deck_name_label != NULL)
+        lv_label_set_text(deck_name_label, deck->name);
+
+    if (deck_commander_label != NULL) {
+        if (deck->partner[0])
+            snprintf(commander, sizeof(commander), "%s + %s",
+                     deck->commander, deck->partner);
+        else
+            snprintf(commander, sizeof(commander), "%s", deck->commander);
+        lv_label_set_text(deck_commander_label, commander);
+    }
+
+    if (deck_position_label != NULL) {
+        snprintf(pos, sizeof(pos), "%d / %d", deck_picker_index + 1, count);
+        lv_label_set_text(deck_position_label, pos);
+    }
+
+    if (schedule_art)
+        schedule_deck_art();
+}
+
+void pregame_change_deck(int delta)
+{
+    int count = playgroup_cached_deck_count();
+    if (count <= 0 || delta == 0 || lv_scr_act() != screen_pregame_deck)
+        return;
+
+    deck_picker_index += (delta < 0) ? -1 : 1;
+    if (deck_picker_index < 0) deck_picker_index = count - 1;
+    if (deck_picker_index >= count) deck_picker_index = 0;
+    refresh_deck_picker(true);
+}
+
+static void event_deck_adjust(lv_event_t *e)
+{
+    int delta = (int)(intptr_t)lv_event_get_user_data(e);
+    pregame_change_deck(delta);
+}
+
+static void event_roster_open_decks(lv_event_t *e)
+{
+    int seat = (int)(intptr_t)lv_event_get_user_data(e);
+    const playgroup_member_t *member;
+    char title[64];
+
+    if (!playgroup_roster_active || seat < 0 || seat >= pregame_player_count)
+        return;
+
+    member = playgroup_cached_member(selected_member_index[seat]);
+    if (member == NULL)
+        return;
+
+    deck_picker_seat = seat;
+    deck_picker_index = 0;
+
+    if (deck_title_label != NULL) {
+        snprintf(title, sizeof(title), "P%d  %s", seat + 1, member->username);
+        lv_label_set_text(deck_title_label, title);
+    }
+
+    if (!playgroup_refresh_decks(member->user_id)) {
+        if (deck_name_label != NULL) lv_label_set_text(deck_name_label, "Could not load decks");
+        if (deck_commander_label != NULL) lv_label_set_text(deck_commander_label, "");
+        if (deck_position_label != NULL) lv_label_set_text(deck_position_label, "");
+        clear_deck_art();
+        lv_scr_load(screen_pregame_deck);
+        return;
+    }
+
+    refresh_deck_picker(false);
+    lv_scr_load(screen_pregame_deck);
+    schedule_deck_art();
+}
+
+static void event_deck_select(lv_event_t *e)
+{
+    const playgroup_deck_t *deck;
+    (void)e;
+
+    if (deck_picker_seat < 0 || deck_picker_seat >= pregame_player_count)
+        return;
+
+    deck = playgroup_cached_deck(deck_picker_index);
+    if (deck != NULL) {
+        selected_deck_id[deck_picker_seat] = deck->id;
+        snprintf(selected_deck_name[deck_picker_seat],
+                 sizeof(selected_deck_name[deck_picker_seat]),
+                 "%s", deck->name);
+    }
+
+    clear_deck_art();
+    if (deck_art_timer != NULL)
+        lv_timer_pause(deck_art_timer);
+    refresh_roster();
+    lv_scr_load(screen_pregame_roster);
+}
+
 static void refresh_roster(void)
 {
     int i;
