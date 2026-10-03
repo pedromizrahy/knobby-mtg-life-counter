@@ -18,6 +18,7 @@ int turn_number = 0;
 
 int active_turn_player = -1;
 int round_number = 0;
+int turn_in_round = 0;
 bool turn_reminder_active = false;
 bool turn_reminder_flash_on = false;
 bool turn_hold_active = false;
@@ -64,6 +65,7 @@ void turn_timer_start_for_player(int player)
 
     turn_number = 1;
     round_number = 1;
+    turn_in_round = 1;
     active_turn_player = player;
     turn_elapsed_ms = 0;
     turn_started_ms = lv_tick_get();
@@ -106,6 +108,7 @@ void turn_timer_reset(void)
     current_turn_started_ms = 0;
     turn_number = 0;
     round_number = 0;
+    turn_in_round = 0;
     active_turn_player = -1;
     turn_indicator_visible = true;
     turn_ui_visible = false;
@@ -155,12 +158,18 @@ void turn_advance(void)
     {
         int previous_player = active_turn_player;
         int attempts = 0;
+        int active_players = 0;
+        int i;
+
+        for (i = 0; i < player_count; i++) {
+            if (!player_eliminated[i]) active_players++;
+        }
+        if (active_players < 1) active_players = 1;
 
         do {
             active_turn_player++;
             if (active_turn_player >= player_count) {
                 active_turn_player = 0;
-                round_number++;
             }
             attempts++;
         } while (attempts < player_count &&
@@ -171,6 +180,12 @@ void turn_advance(void)
            this state in a later milestone. */
         if (attempts >= player_count && player_eliminated[active_turn_player]) {
             active_turn_player = previous_player;
+        }
+
+        turn_in_round++;
+        if (turn_in_round > active_players) {
+            round_number++;
+            turn_in_round = 1;
         }
     }
 
@@ -189,6 +204,10 @@ void turn_advance(void)
 
     game_event_add_turn(GAME_EVENT_TURN_START, active_turn_player,
                         (uint16_t)turn_number, (uint16_t)round_number, 0);
+
+    /* A life-selection highlight must not outlive a turn change, otherwise
+       it visually overrides the new active player. */
+    selection_clear();
 
     /* Turn ownership affects panel vibrancy, so refresh the player UI when
        the active seat changes. Timer ticks still use the lightweight
