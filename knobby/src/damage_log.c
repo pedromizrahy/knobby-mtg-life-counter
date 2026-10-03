@@ -1,5 +1,6 @@
 #include "damage_log.h"
 #include "game.h"
+#include "timer.h"
 
 // ---------- data ----------
 typedef struct {
@@ -8,6 +9,9 @@ typedef struct {
     int8_t   source;       // source for cmd damage or counter type, -1 if N/A
     uint8_t  event_type;   // log_event_type_t
     int16_t  delta;
+    uint16_t turn_number;
+    uint16_t round_number;
+    int8_t   turn_player;
 } damage_log_entry_t;
 
 static damage_log_entry_t damage_log[DAMAGE_LOG_MAX];
@@ -37,6 +41,12 @@ void damage_log_add(int player, int delta, uint8_t event_type, int source)
     damage_log[damage_log_head].source     = (int8_t)source;
     damage_log[damage_log_head].event_type = event_type;
     damage_log[damage_log_head].delta      = (int16_t)delta;
+    damage_log[damage_log_head].turn_number = (uint16_t)(turn_number > 0 ? turn_number : 0);
+    damage_log[damage_log_head].round_number = (uint16_t)(round_number > 0 ? round_number : 0);
+    damage_log[damage_log_head].turn_player =
+        (int8_t)((active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS)
+                     ? active_turn_player
+                     : GAME_EVENT_NO_PLAYER);
     damage_log_head = (damage_log_head + 1) % DAMAGE_LOG_MAX;
     if (damage_log_count < DAMAGE_LOG_MAX) damage_log_count++;
 }
@@ -247,7 +257,7 @@ static void update_selection_highlight(void)
 static void refresh_damage_log_ui(void)
 {
     int i, idx, first, last;
-    char buf[80];
+    char buf[128];
 
     lv_obj_clean(damage_log_container);
 
@@ -275,7 +285,35 @@ static void refresh_damage_log_ui(void)
     for (i = first; i < last; i++) {
         idx = (damage_log_head - 1 - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
 
-        format_log_line(&damage_log[idx], buf, sizeof(buf));
+        {
+            char line[88];
+            bool new_group = false;
+            int newer_idx;
+
+            format_log_line(&damage_log[idx], line, sizeof(line));
+
+            if (i == first) {
+                new_group = true;
+            } else {
+                newer_idx = (damage_log_head - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+                if (damage_log[newer_idx].turn_number != damage_log[idx].turn_number ||
+                    damage_log[newer_idx].round_number != damage_log[idx].round_number ||
+                    damage_log[newer_idx].turn_player != damage_log[idx].turn_player) {
+                    new_group = true;
+                }
+            }
+
+            if (new_group && damage_log[idx].turn_number > 0 &&
+                damage_log[idx].turn_player >= 0 &&
+                damage_log[idx].turn_player < MAX_GAME_PLAYERS) {
+                snprintf(buf, sizeof(buf), "R%u · %s\n----------------\n%s",
+                         (unsigned)damage_log[idx].round_number,
+                         player_names[damage_log[idx].turn_player],
+                         line);
+            } else {
+                snprintf(buf, sizeof(buf), "%s", line);
+            }
+        }
 
         lv_obj_t *lbl = lv_label_create(damage_log_container);
         lv_label_set_text(lbl, buf);
