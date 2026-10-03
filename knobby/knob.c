@@ -131,6 +131,13 @@ knob_swipe_direction_t knob_classify_swipe_direction(lv_obj_t *screen,
             return KNOB_SWIPE_UP;
         }
     } else {
+        /* Menus/settings can be used from any side of the table: accept a
+           straight inward swipe from whichever edge the finger started on. */
+        if (start_x <= KNOB_SWIPE_LEFT_EDGE_ZONE &&
+            dx > 0 &&
+            is_axis_dominant(dx, abs_dy, min_travel)) {
+            return KNOB_SWIPE_RIGHT;
+        }
         if (start_x >= (width - KNOB_SWIPE_RIGHT_EDGE_ZONE) &&
             dx < 0 &&
             is_axis_dominant(-dx, abs_dy, min_travel)) {
@@ -140,6 +147,11 @@ knob_swipe_direction_t knob_classify_swipe_direction(lv_obj_t *screen,
             dy > 0 &&
             is_axis_dominant(dy, abs_dx, min_travel)) {
             return KNOB_SWIPE_DOWN;
+        }
+        if (start_y >= (height - KNOB_SWIPE_BOTTOM_EDGE_ZONE) &&
+            dy < 0 &&
+            is_axis_dominant(-dy, abs_dx, min_travel)) {
+            return KNOB_SWIPE_UP;
         }
     }
 
@@ -312,9 +324,15 @@ static void handle_swipe_navigation(knob_swipe_direction_t direction, lv_obj_t *
 
     if (is_player_screen(screen)) {
         open_menu_for_screen(screen);
-    } else if (direction == KNOB_SWIPE_LEFT || direction == KNOB_SWIPE_DOWN) {
+    } else {
         handle_back_navigation(screen);
     }
+
+    /* Once an edge swipe wins gesture arbitration, consume the rest of the
+       physical touch so RELEASED/CLICKED cannot toggle the setting that
+       happened to be underneath the finger. */
+    if (lv_indev_get_act() != NULL)
+        lv_indev_wait_release(lv_indev_get_act());
 }
 
 static void handle_back_navigation(lv_obj_t *screen)
