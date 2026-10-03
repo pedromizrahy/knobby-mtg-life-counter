@@ -1,6 +1,7 @@
 #include "game.h"
 #include "storage.h"
 #include "damage_log.h"
+#include "game_event.h"
 #include "esp_random.h"
 #include "net_sync.h"
 // Forward declarations for UI refresh (defined in screen modules)
@@ -105,6 +106,7 @@ void net_sync_reset_versions(void)
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++)
         clear_player_elimination_action(i);
     damage_log_reset();
+    game_event_reset();
 }
 
 #define MANA_ICON_COMMANDER "\xEE\xA7\x86"
@@ -749,6 +751,7 @@ void knob_life_reset(void)
     if (active_enemy_count > MAX_ENEMY_COUNT) active_enemy_count = MAX_ENEMY_COUNT;
 
     damage_log_reset();
+    game_event_reset();
 
     pending_life_delta = 0;
     selection_clear();
