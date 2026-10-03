@@ -56,6 +56,7 @@ static void event_choose_players(lv_event_t *e)
 
     if (count < 1 || count > MAX_DISPLAY_PLAYERS) return;
     pregame_player_count = count;
+    refresh_roster();
     lv_scr_load(screen_pregame_roster);
 }
 
@@ -82,6 +83,7 @@ static void event_roster_continue(lv_event_t *e)
     (void)e;
 
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) mulligans[i] = 0;
+    refresh_mulligans();
     lv_scr_load(screen_pregame_mulligans);
 }
 
