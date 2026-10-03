@@ -734,6 +734,7 @@ bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_s
     }
 
     http.addHeader("User-Agent", "DialDosPrimos/0.1 (ESP32-S3)");
+    http.addHeader("Accept", "image/jpeg,image/*;q=0.9,*/*;q=0.8");
     status = http.GET();
     if (status != HTTP_CODE_OK) {
         Serial.print("[Playgroup] Commander art HTTP ");
