@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <string.h>
+#include <lvgl.h>
 
 #define STBI_ONLY_JPEG
 #define STBI_NO_STDIO
