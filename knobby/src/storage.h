@@ -37,6 +37,12 @@ void nvs_set_random_first(int value);
 
 int nvs_get_turn_timer_enabled(void);
 void nvs_set_turn_timer_enabled(int value);
+int nvs_get_turn_show_name(void);
+void nvs_set_turn_show_name(int value);
+int nvs_get_turn_reminder_minutes(void);
+void nvs_set_turn_reminder_minutes(int value);
+int nvs_get_turn_visual_alert(void);
+void nvs_set_turn_visual_alert(int value);
 
 int nvs_get_multi_select(void);
 void nvs_set_multi_select(int value);
