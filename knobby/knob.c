@@ -14,6 +14,7 @@
 #include "src/rename.h"
 #include "src/mana.h"
 #include "src/ui_damage_resolver.h"
+#include "src/pregame.h"
 
 // ---------- swipe state ----------
 static lv_obj_t *previous_screen = NULL;
@@ -338,6 +339,8 @@ static void handle_back_navigation(lv_obj_t *screen)
         back_to_main();
     } else if (screen == screen_damage_target) {
         back_to_main();
+    } else if (pregame_handle_back(screen)) {
+        /* pregame stack */
     } else if (screen == screen_game_mode_menu) {
         lv_scr_load(screen_quad_menu);
     } else if (screen == screen_custom_life) {
@@ -432,6 +435,7 @@ void knob_gui(void)
     ensure_swipe_hint();
 
     build_intro_screen();
+    build_pregame_screens();
     lv_scr_load(screen_intro);
     lv_refr_now(NULL);
     scr_display_on();
