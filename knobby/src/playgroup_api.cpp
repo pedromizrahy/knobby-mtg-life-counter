@@ -32,6 +32,39 @@ static int cached_member_count = 0;
 static playgroup_deck_t cached_decks[PG_MAX_DECKS];
 static int cached_deck_count = 0;
 
+class PsramBufferStream : public Stream {
+public:
+    PsramBufferStream(uint8_t *buffer, size_t capacity)
+        : buffer_(buffer), capacity_(capacity), pos_(0) {}
+
+    int available() override { return 0; }
+    int read() override { return -1; }
+    int peek() override { return -1; }
+    void flush() override {}
+
+    size_t write(uint8_t value) override {
+        if (pos_ >= capacity_) return 0;
+        buffer_[pos_++] = value;
+        return 1;
+    }
+
+    size_t write(const uint8_t *data, size_t size) override {
+        if (data == NULL || size == 0 || pos_ >= capacity_) return 0;
+        size_t room = capacity_ - pos_;
+        size_t count = size < room ? size : room;
+        memcpy(buffer_ + pos_, data, count);
+        pos_ += count;
+        return count;
+    }
+
+    size_t size() const { return pos_; }
+
+private:
+    uint8_t *buffer_;
+    size_t capacity_;
+    size_t pos_;
+};
+
 static bool nvs_read_string(const char *key, char *out, size_t out_size)
 {
     nvs_handle_t handle;
@@ -749,11 +782,11 @@ bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_
 {
     NetworkClientSecure tls;
     HTTPClient http;
-    NetworkClient *stream;
     uint8_t *data;
     int status;
     int content_length;
     size_t received;
+    int stream_result;
     uint32_t request_started;
     uint32_t download_started;
     String url;
@@ -827,15 +860,21 @@ bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_
     Serial.print(content_length);
     Serial.println(" bytes");
 
-    stream = http.getStreamPtr();
-    download_started = millis();
-    received = stream->readBytes((char *)data, (size_t)content_length);
+    {
+        PsramBufferStream sink(data, (size_t)content_length);
 
-    Serial.print("[Playgroup] Commander art downloaded ");
-    Serial.print((unsigned)received);
-    Serial.print(" bytes in ");
-    Serial.print((unsigned long)(millis() - download_started));
-    Serial.println(" ms");
+        download_started = millis();
+        stream_result = http.writeToStream(&sink);
+        received = sink.size();
+
+        Serial.print("[Playgroup] Commander art stream result ");
+        Serial.print(stream_result);
+        Serial.print("; received ");
+        Serial.print((unsigned)received);
+        Serial.print(" bytes in ");
+        Serial.print((unsigned long)(millis() - download_started));
+        Serial.println(" ms");
+    }
 
     if (received >= 4) {
         Serial.print("[Playgroup] Commander art signature: ");
@@ -849,8 +888,8 @@ bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_
 
     http.end();
 
-    if (received != (size_t)content_length) {
-        Serial.print("[Playgroup] Commander art short read: ");
+    if (stream_result < 0 || received != (size_t)content_length) {
+        Serial.print("[Playgroup] Commander art body read failed: ");
         Serial.print((unsigned)received);
         Serial.print("/");
         Serial.println(content_length);
