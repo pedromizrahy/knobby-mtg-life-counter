@@ -64,6 +64,11 @@ const playgroup_deck_t *playgroup_cached_deck(int index);
    buffer and must release it with playgroup_free_image(). */
 bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_t *out_size);
 void playgroup_free_image(uint8_t *data);
+
+/* Start a low-priority background prefetch for the currently cached deck list.
+   Images are kept compressed in PSRAM and reused by the deck picker. */
+void playgroup_prefetch_deck_images(void);
+
 void playgroup_end_session(void);
 
 #ifdef __cplusplus
