@@ -43,6 +43,8 @@ int nvs_get_turn_reminder_minutes(void);
 void nvs_set_turn_reminder_minutes(int value);
 int nvs_get_turn_visual_alert(void);
 void nvs_set_turn_visual_alert(int value);
+int nvs_get_timer_face_player(void);
+void nvs_set_timer_face_player(int value);
 
 int nvs_get_cmd_marker_mode(void);
 void nvs_set_cmd_marker_mode(int value);
