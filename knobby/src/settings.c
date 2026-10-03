@@ -362,6 +362,12 @@ static const char *menu_facing_label(int val)
     return val ? "Menus\nFace\nPlayer" : "Menus\nFixed";
 }
 
+static const char *timer_facing_label(int val)
+{
+    return val ? "Timer\nFaces\nPlayer" : "Timer\nFixed";
+}
+
+
 static const char *multi_select_label(int val)
 {
     return val ? "Multi-\nSelect\nON" : "Multi-\nSelect\nOFF";
@@ -614,6 +620,7 @@ static const setting_item_t settings_items[] = {
     { .id = "auto-eliminate", .label = auto_eliminate_label,   .color = toggle_color,      .get = nvs_get_auto_eliminate,   .set = nvs_set_auto_eliminate,   .count = 2 },
     { .id = "random-first",   .label = random_first_label,     .color = toggle_color,      .get = nvs_get_random_first,     .set = nvs_set_random_first,     .count = 2 },
     { .id = "turn-timer",     .fixed_label = "Timer\nSettings", .navigate = open_turn_timer_settings, .nav_screen = &screen_turn_timer_settings },
+    { .id = "timer-facing",   .label = timer_facing_label,      .color = toggle_color,      .get = nvs_get_timer_face_player, .set = nvs_set_timer_face_player, .count = 2 },
     { .id = "table-sync",     .fixed_label = "Table Sync\n(Experimental)", .navigate = open_table_sync_screen, .nav_screen = &screen_table_sync },
     { .id = "rotate",         .fixed_label = "Rotate\nScreen", .navigate = open_rotate_screen, .nav_screen = &screen_rotate },
     { .id = "menu-facing",    .label = menu_facing_label,      .color = toggle_color,      .get = nvs_get_menu_facing,      .set = nvs_set_menu_facing,      .count = 2 },
