@@ -722,13 +722,15 @@ void refresh_multiplayer_turn_ui(void)
            the short reminder sequence; the red text/border remain until
            the turn changes. */
         lv_obj_set_style_shadow_color(mp_turn_badge, alert, 0);
-        lv_obj_set_style_shadow_width(mp_turn_badge,
-                                      turn_reminder_flash_on ? 22 : 8, 0);
-        lv_obj_set_style_shadow_spread(mp_turn_badge,
-                                       turn_reminder_flash_on ? 4 : 1, 0);
-        lv_obj_set_style_shadow_opa(mp_turn_badge,
-                                    turn_reminder_flash_on ? LV_OPA_60
-                                                           : LV_OPA_20, 0);
+        lv_obj_set_style_shadow_width(
+            mp_turn_badge,
+            8 + (turn_reminder_pulse_level * 14U) / 100U, 0);
+        lv_obj_set_style_shadow_spread(
+            mp_turn_badge,
+            1 + (turn_reminder_pulse_level * 3U) / 100U, 0);
+        lv_obj_set_style_shadow_opa(
+            mp_turn_badge,
+            (lv_opa_t)(40U + (turn_reminder_pulse_level * 120U) / 100U), 0);
 
         if (mp_turn_hold_arc != NULL)
             lv_obj_set_style_arc_color(mp_turn_hold_arc, alert,
@@ -754,10 +756,7 @@ void refresh_multiplayer_turn_ui(void)
 
             snprintf(alert_buf, sizeof(alert_buf), "%d MIN", reminder_minutes);
             lv_label_set_text(mp_reminder_overlay_label, alert_buf);
-            lv_obj_set_style_bg_opa(
-                mp_reminder_overlay,
-                turn_reminder_flash_on ? LV_OPA_90 : LV_OPA_70,
-                0);
+            lv_obj_set_style_bg_opa(mp_reminder_overlay, LV_OPA_90, 0);
             lv_obj_clear_flag(mp_reminder_overlay, LV_OBJ_FLAG_HIDDEN);
             lv_obj_move_foreground(mp_reminder_overlay);
         } else {
@@ -1411,7 +1410,7 @@ void rebuild_multiplayer_layout(int track)
     mp_reminder_overlay_label = lv_label_create(mp_reminder_overlay);
     lv_label_set_text(mp_reminder_overlay_label, "5 MIN");
     lv_obj_set_style_text_color(mp_reminder_overlay_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(mp_reminder_overlay_label, &lv_font_montserrat_bold_44, 0);
+    lv_obj_set_style_text_font(mp_reminder_overlay_label, &lv_font_montserrat_32, 0);
     lv_obj_set_style_text_letter_space(mp_reminder_overlay_label, 2, 0);
     lv_obj_center(mp_reminder_overlay_label);
 
