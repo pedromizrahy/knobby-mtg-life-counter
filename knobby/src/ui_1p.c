@@ -22,6 +22,8 @@ static lv_obj_t *label_turn = NULL;
 static lv_obj_t *label_turn_meta = NULL;
 static lv_obj_t *turn_live_dot = NULL;
 static lv_obj_t *turn_hold_arc = NULL;
+static lv_obj_t *reminder_overlay_1p = NULL;
+static lv_obj_t *reminder_overlay_label_1p = NULL;
 
 // ---------- 1p counter widgets ----------
 static lv_obj_t *counter_row_1p[COUNTER_TYPE_COUNT];
@@ -149,6 +151,24 @@ void refresh_turn_ui(void)
             lv_obj_set_style_bg_color(turn_live_dot, active_color, 0);
         } else {
             lv_obj_add_flag(turn_live_dot, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (reminder_overlay_1p != NULL && reminder_overlay_label_1p != NULL) {
+        if (turn_reminder_overlay_active && nvs_get_turn_visual_alert()) {
+            char alert_buf[24];
+            int reminder_minutes = nvs_get_turn_reminder_minutes();
+
+            snprintf(alert_buf, sizeof(alert_buf), "%d MIN", reminder_minutes);
+            lv_label_set_text(reminder_overlay_label_1p, alert_buf);
+            lv_obj_set_style_bg_opa(
+                reminder_overlay_1p,
+                turn_reminder_flash_on ? LV_OPA_90 : LV_OPA_70,
+                0);
+            lv_obj_clear_flag(reminder_overlay_1p, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(reminder_overlay_1p);
+        } else {
+            lv_obj_add_flag(reminder_overlay_1p, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -583,6 +603,22 @@ void build_main_screen(void)
         lv_obj_align(batt, LV_ALIGN_TOP_MID, 0, 28);
         battery_icon_register(batt);
     }
+
+    reminder_overlay_1p = lv_obj_create(screen_1p);
+    lv_obj_remove_style_all(reminder_overlay_1p);
+    lv_obj_set_size(reminder_overlay_1p, 360, 360);
+    lv_obj_set_pos(reminder_overlay_1p, 0, 0);
+    lv_obj_set_style_bg_color(reminder_overlay_1p, lv_color_hex(0xC62828), 0);
+    lv_obj_set_style_bg_opa(reminder_overlay_1p, LV_OPA_80, 0);
+    lv_obj_clear_flag(reminder_overlay_1p, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(reminder_overlay_1p, LV_OBJ_FLAG_HIDDEN);
+
+    reminder_overlay_label_1p = lv_label_create(reminder_overlay_1p);
+    lv_label_set_text(reminder_overlay_label_1p, "5 MIN");
+    lv_obj_set_style_text_color(reminder_overlay_label_1p, lv_color_white(), 0);
+    lv_obj_set_style_text_font(reminder_overlay_label_1p, &lv_font_montserrat_bold_44, 0);
+    lv_obj_set_style_text_letter_space(reminder_overlay_label_1p, 2, 0);
+    lv_obj_center(reminder_overlay_label_1p);
 }
 
 void build_select_screen(void)
