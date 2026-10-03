@@ -60,5 +60,6 @@ void change_display_rotation(int dir);
 void menu_facing_refresh(void);
 void open_table_sync_screen(void);
 void open_turn_timer_settings(void);
+void open_turn_timer_settings_from_game(void);
 
 #endif // _SETTINGS_H
