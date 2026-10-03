@@ -130,6 +130,7 @@ static struct {
     lv_obj_t *name_labels[MULTIPLAYER_COUNT];
     lv_obj_t *counter_rows[MULTIPLAYER_COUNT][COUNTER_TYPE_COUNT];
     lv_obj_t *counter_values[MULTIPLAYER_COUNT][COUNTER_TYPE_COUNT];
+    lv_obj_t *cmd_labels[MULTIPLAYER_COUNT][MAX_DISPLAY_PLAYERS];
     const mp_layout_spec_t *layout;
 } mp_state;
 
@@ -201,6 +202,60 @@ static void apply_label_rotation(lv_obj_t *life_lbl, lv_obj_t *name_lbl,
     apply_object_rotation(life_lbl, angle, 0, life_pivot_y);
     apply_object_rotation(name_lbl, angle, 0, name_pivot_y);
 }
+
+static void refresh_commander_markers(const mp_panel_spec_t *spec,
+                                      lv_obj_t *panel,
+                                      lv_obj_t **labels,
+                                      int panel_index,
+                                      int target_player,
+                                      int16_t row_angle)
+{
+    int source;
+    int visible = 0;
+    int sources[MAX_DISPLAY_PLAYERS];
+
+    for (source = 0; source < MAX_DISPLAY_PLAYERS; source++) {
+        if (labels[source] == NULL) continue;
+        if (source == target_player || cmd_damage_totals[source][target_player] <= 0) {
+            lv_obj_add_flag(labels[source], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        sources[visible++] = source;
+    }
+
+    for (source = 0; source < visible; source++) {
+        int src = sources[source];
+        char buf[12];
+        lv_obj_t *lbl = labels[src];
+        lv_coord_t xoff = 0;
+        lv_coord_t yoff = 0;
+
+        snprintf(buf, sizeof(buf), "●%d", cmd_damage_totals[src][target_player]);
+        lv_label_set_text(lbl, buf);
+        lv_obj_set_style_text_color(
+            lbl, get_effective_player_color(src, src, LIFE_VIB_VIV), 0);
+
+        if (spec_is_wedge(spec)) {
+            const int radius = 118;
+            const int step_deg = 15;
+            int a = (wedge_geom[panel_index].bis_deg
+                     + ((visible - 1) * step_deg / 2)
+                     - (source * step_deg) + 360) % 360;
+            xoff = wedge_polar(lv_trigo_cos(a), radius);
+            yoff = wedge_polar(lv_trigo_sin(a), radius);
+        } else if (panel != NULL) {
+            const lv_coord_t step = 34;
+            xoff = (lv_coord_t)((source * step) - ((visible - 1) * step / 2));
+            yoff = ((lv_obj_get_y(panel) + lv_obj_get_height(panel) / 2) < 180)
+                     ? 68 : -68;
+        }
+
+        lv_obj_align(lbl, LV_ALIGN_CENTER, xoff, yoff);
+        apply_object_rotation(lbl, row_angle, 0, 0);
+        lv_obj_clear_flag(lbl, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 
 static void get_counter_equator_anchor(lv_obj_t *panel,
                                        lv_coord_t *anchor_x, lv_coord_t *anchor_y)
@@ -664,6 +719,9 @@ void refresh_multiplayer_ui(void)
         refresh_counter_rows(spec, wedge_geom[i].bis_deg, panel,
                              mp_state.counter_rows[i], mp_state.counter_values[i],
                              spec->player_index, text_color, angle, counter_angle);
+
+        refresh_commander_markers(spec, panel, mp_state.cmd_labels[i], i,
+                                  spec->player_index, counter_angle);
     }
 
     refresh_multiplayer_turn_ui();
@@ -1016,6 +1074,7 @@ void rebuild_multiplayer_layout(int track)
     }
     mp_turn_badge = NULL;
     mp_turn_label = NULL;
+    mp_turn_hold_arc = NULL;
     drag_hint = NULL;
     drag_hint_label = NULL;
     damage_drag_reset();
@@ -1098,6 +1157,18 @@ void rebuild_multiplayer_layout(int track)
         create_counter_row(panel, COUNTER_TYPE_EXPERIENCE,
             &mp_state.counter_rows[i][COUNTER_TYPE_EXPERIENCE],
             &mp_state.counter_values[i][COUNTER_TYPE_EXPERIENCE], p);
+
+        {
+            int source;
+            for (source = 0; source < MAX_DISPLAY_PLAYERS; source++) {
+                lv_obj_t *lbl = lv_label_create(panel);
+                lv_label_set_text(lbl, "");
+                lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+                lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
+                lv_obj_add_flag(lbl, LV_OBJ_FLAG_HIDDEN);
+                mp_state.cmd_labels[i][source] = lbl;
+            }
+        }
     }
 
     if (layout->panel_count > 0 && spec_is_wedge(&layout->panels[0])) {
@@ -1151,7 +1222,9 @@ void rebuild_multiplayer_layout(int track)
     lv_obj_set_style_bg_opa(mp_turn_badge, LV_OPA_90, 0);
     lv_obj_set_style_border_width(mp_turn_badge, 1, 0);
     lv_obj_set_style_border_color(mp_turn_badge, lv_color_hex(0x777777), 0);
-    lv_obj_add_event_cb(mp_turn_badge, event_turn_hold, LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(mp_turn_badge, event_turn_hold, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(mp_turn_badge, event_turn_hold, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(mp_turn_badge, event_turn_hold, LV_EVENT_PRESS_LOST, NULL);
     lv_obj_add_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
 
     mp_turn_label = lv_label_create(mp_turn_badge);
