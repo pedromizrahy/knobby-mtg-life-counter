@@ -664,13 +664,22 @@ void refresh_multiplayer_turn_ui(void)
         lv_obj_set_style_text_color(mp_turn_label, alert, 0);
         lv_obj_set_style_text_color(mp_turn_round_label, alert, 0);
         lv_obj_set_style_border_color(mp_turn_badge, alert, 0);
-        lv_obj_set_style_border_width(mp_turn_badge,
-                                      turn_reminder_flash_on ? 4 : 2, 0);
-        lv_obj_set_style_bg_color(
-            mp_turn_badge,
-            turn_reminder_flash_on ? lv_color_hex(0x4A0808)
-                                   : lv_color_hex(0x101010),
-            0);
+        lv_obj_set_style_border_width(mp_turn_badge, 2, 0);
+        lv_obj_set_style_bg_color(mp_turn_badge, lv_color_hex(0x101010), 0);
+
+        /* Threshold alert: pulse a soft red halo around the timer instead
+           of flashing the whole card/screen. The halo only animates during
+           the short reminder sequence; the red text/border remain until
+           the turn changes. */
+        lv_obj_set_style_shadow_color(mp_turn_badge, alert, 0);
+        lv_obj_set_style_shadow_width(mp_turn_badge,
+                                      turn_reminder_flash_on ? 22 : 8, 0);
+        lv_obj_set_style_shadow_spread(mp_turn_badge,
+                                       turn_reminder_flash_on ? 4 : 1, 0);
+        lv_obj_set_style_shadow_opa(mp_turn_badge,
+                                    turn_reminder_flash_on ? LV_OPA_60
+                                                           : LV_OPA_20, 0);
+
         if (mp_turn_hold_arc != NULL)
             lv_obj_set_style_arc_color(mp_turn_hold_arc, alert,
                                        LV_PART_INDICATOR);
@@ -681,6 +690,9 @@ void refresh_multiplayer_turn_ui(void)
         lv_obj_set_style_border_color(mp_turn_badge, active_color, 0);
         lv_obj_set_style_border_width(mp_turn_badge, 2, 0);
         lv_obj_set_style_bg_color(mp_turn_badge, lv_color_hex(0x0C0C0C), 0);
+        lv_obj_set_style_shadow_width(mp_turn_badge, 0, 0);
+        lv_obj_set_style_shadow_spread(mp_turn_badge, 0, 0);
+        lv_obj_set_style_shadow_opa(mp_turn_badge, LV_OPA_TRANSP, 0);
     }
 
     lv_obj_clear_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
