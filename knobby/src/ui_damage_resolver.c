@@ -160,20 +160,25 @@ void refresh_damage_resolver_ui(void)
         }
 
         lv_obj_set_style_border_width(resolver_effect_buttons[i],
-                                      selected ? 3 : 1, 0);
+                                      selected ? 2 : 1, 0);
         lv_obj_set_style_border_color(resolver_effect_buttons[i],
-                                      selected ? lv_color_white()
-                                               : lv_color_hex(0x555555), 0);
+                                      selected ? lv_color_hex(0x66D9FF)
+                                               : lv_color_hex(0x4A4F58), 0);
         lv_obj_set_style_bg_color(resolver_effect_buttons[i],
-                                  selected ? lv_color_hex(0x37474F)
-                                           : lv_color_hex(0x202020), 0);
+                                  selected ? lv_color_hex(0x16313A)
+                                           : lv_color_hex(0x17191D), 0);
     }
 
     if (resolver_more_button != NULL) {
         if (resolver_advanced) {
             lv_obj_add_flag(resolver_more_button, LV_OBJ_FLAG_HIDDEN);
+            if (resolver_targets_button != NULL)
+                lv_obj_align(resolver_targets_button, LV_ALIGN_CENTER, 0, 30);
         } else {
             lv_obj_clear_flag(resolver_more_button, LV_OBJ_FLAG_HIDDEN);
+            if (resolver_targets_button != NULL)
+                lv_obj_align(resolver_targets_button, LV_ALIGN_CENTER, -54, 34);
+            lv_obj_align(resolver_more_button, LV_ALIGN_CENTER, 54, 34);
         }
     }
 }
@@ -280,12 +285,14 @@ static lv_obj_t *make_effect_button(lv_obj_t *parent, const char *text,
                                     lv_coord_t x, uint8_t effect)
 {
     lv_obj_t *btn = lv_btn_create(parent);
-    lv_obj_set_size(btn, 94, 42);
-    lv_obj_set_pos(btn, x, 222);
-    lv_obj_set_style_radius(btn, 10, 0);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(0x202020), 0);
+    lv_obj_remove_style_all(btn);
+    lv_obj_set_size(btn, 84, 38);
+    lv_obj_set_pos(btn, x, 226);
+    lv_obj_set_style_radius(btn, 19, 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x17191D), 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(btn, 1, 0);
-    lv_obj_set_style_border_color(btn, lv_color_hex(0x555555), 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(0x4A4F58), 0);
     lv_obj_add_event_cb(btn, event_effect_toggle, LV_EVENT_CLICKED,
                         (void *)(uintptr_t)effect);
 
@@ -347,45 +354,67 @@ void build_damage_resolver_screens(void)
 
     resolver_title = lv_label_create(screen_damage_resolver);
     lv_label_set_text(resolver_title, "P1 > P2");
-    lv_obj_set_style_text_color(resolver_title, lv_color_white(), 0);
+    lv_obj_set_style_text_color(resolver_title, lv_color_hex(0xDDE7F0), 0);
     lv_obj_set_style_text_font(resolver_title, &lv_font_montserrat_22, 0);
-    lv_obj_align(resolver_title, LV_ALIGN_TOP_MID, 0, 28);
-
-    resolver_targets_button =
-        make_button(screen_damage_resolver, "Targets", 82, 32, event_edit_targets);
-    lv_obj_align(resolver_targets_button, LV_ALIGN_TOP_RIGHT, -18, 62);
+    lv_obj_set_style_text_align(resolver_title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(resolver_title, LV_ALIGN_TOP_MID, 0, 26);
 
     resolver_mode_label = lv_label_create(screen_damage_resolver);
     lv_label_set_text(resolver_mode_label, "Damage");
-    lv_obj_set_style_text_color(resolver_mode_label, lv_color_hex(0x8A8A8A), 0);
+    lv_obj_set_style_text_color(resolver_mode_label, lv_color_hex(0x7F8A96), 0);
     lv_obj_set_style_text_font(resolver_mode_label, &lv_font_montserrat_14, 0);
-    lv_obj_align(resolver_mode_label, LV_ALIGN_TOP_MID, 0, 72);
+    lv_obj_align(resolver_mode_label, LV_ALIGN_TOP_MID, 0, 61);
 
     resolver_amount = lv_label_create(screen_damage_resolver);
     lv_label_set_text(resolver_amount, "0");
     lv_obj_set_style_text_color(resolver_amount, lv_color_white(), 0);
     lv_obj_set_style_text_font(resolver_amount, &lv_font_montserrat_bold_56, 0);
-    lv_obj_align(resolver_amount, LV_ALIGN_CENTER, 0, -35);
+    lv_obj_align(resolver_amount, LV_ALIGN_CENTER, 0, -50);
+
+    resolver_targets_button =
+        make_button(screen_damage_resolver, "Targets", 94, 38, event_edit_targets);
+    lv_obj_remove_style_all(resolver_targets_button);
+    lv_obj_set_size(resolver_targets_button, 94, 38);
+    lv_obj_set_style_radius(resolver_targets_button, 19, 0);
+    lv_obj_set_style_bg_color(resolver_targets_button, lv_color_hex(0x17191D), 0);
+    lv_obj_set_style_bg_opa(resolver_targets_button, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(resolver_targets_button, 1, 0);
+    lv_obj_set_style_border_color(resolver_targets_button, lv_color_hex(0x4A4F58), 0);
+    lv_obj_align(resolver_targets_button, LV_ALIGN_CENTER, -54, 34);
 
     resolver_more_button =
-        make_button(screen_damage_resolver, "Effects", 100, 40, event_show_more);
-    lv_obj_align(resolver_more_button, LV_ALIGN_CENTER, 0, 42);
+        make_button(screen_damage_resolver, "Effects", 94, 38, event_show_more);
+    lv_obj_remove_style_all(resolver_more_button);
+    lv_obj_set_size(resolver_more_button, 94, 38);
+    lv_obj_set_style_radius(resolver_more_button, 19, 0);
+    lv_obj_set_style_bg_color(resolver_more_button, lv_color_hex(0x17191D), 0);
+    lv_obj_set_style_bg_opa(resolver_more_button, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(resolver_more_button, 1, 0);
+    lv_obj_set_style_border_color(resolver_more_button, lv_color_hex(0x4A4F58), 0);
+    lv_obj_align(resolver_more_button, LV_ALIGN_CENTER, 54, 34);
 
     resolver_effect_buttons[0] =
-        make_effect_button(screen_damage_resolver, "Commander", 24,
+        make_effect_button(screen_damage_resolver, "Commander", 42,
                            ATTACK_EFFECT_COMMANDER);
     resolver_effect_buttons[1] =
-        make_effect_button(screen_damage_resolver, "Infect", 133,
+        make_effect_button(screen_damage_resolver, "Infect", 138,
                            ATTACK_EFFECT_INFECT);
     resolver_effect_buttons[2] =
-        make_effect_button(screen_damage_resolver, "Lifelink", 242,
+        make_effect_button(screen_damage_resolver, "Lifelink", 234,
                            ATTACK_EFFECT_LIFELINK);
 
     {
         lv_obj_t *apply_btn =
-            make_button(screen_damage_resolver, "Apply", 126, 46,
+            make_button(screen_damage_resolver, "Apply", 128, 44,
                         event_apply_damage);
-        lv_obj_align(apply_btn, LV_ALIGN_BOTTOM_MID, 0, -30);
+        lv_obj_remove_style_all(apply_btn);
+        lv_obj_set_size(apply_btn, 128, 44);
+        lv_obj_set_style_radius(apply_btn, 22, 0);
+        lv_obj_set_style_bg_color(apply_btn, lv_color_hex(0x0D47A1), 0);
+        lv_obj_set_style_bg_opa(apply_btn, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(apply_btn, 1, 0);
+        lv_obj_set_style_border_color(apply_btn, lv_color_hex(0x66D9FF), 0);
+        lv_obj_align(apply_btn, LV_ALIGN_BOTTOM_MID, 0, -34);
     }
 
     refresh_damage_resolver_ui();
