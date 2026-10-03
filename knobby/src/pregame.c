@@ -8,7 +8,11 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_heap_caps.h"
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+#include "esp32s3/rom/tjpgd.h"
+#else
 #include "rom/tjpgd.h"
+#endif
 
 extern void reset_all_values(void);
 extern void back_to_main(void);
