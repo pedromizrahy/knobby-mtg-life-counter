@@ -584,6 +584,27 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
     return text_color;
 }
 
+static int16_t timer_facing_angle_for_player(int player)
+{
+    int i;
+
+    if (!nvs_get_timer_face_player() || mp_state.layout == NULL) return 0;
+
+    for (i = 0; i < mp_state.layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &mp_state.layout->panels[i];
+
+        if (spec->player_index != player) continue;
+
+        if (spec_is_wedge(spec)) {
+            return (wedge_geom[i].label_dy < 0) ? 1800 : 0;
+        }
+
+        return (spec->y + spec->h / 2 < 180) ? 1800 : 0;
+    }
+
+    return 0;
+}
+
 void refresh_multiplayer_turn_ui(void)
 {
     char time_buf[24];
@@ -593,6 +614,7 @@ void refresh_multiplayer_turn_ui(void)
     uint32_t seconds;
     const char *name;
     lv_color_t active_color;
+    int16_t timer_angle = timer_facing_angle_for_player(active_turn_player);
 
     if (mp_turn_badge == NULL || mp_turn_label == NULL ||
         mp_turn_round_label == NULL) return;
@@ -648,6 +670,11 @@ void refresh_multiplayer_turn_ui(void)
                  round_number, turn_in_round);
     }
     lv_label_set_text(mp_turn_round_label, round_buf);
+
+    apply_object_rotation(mp_turn_badge, timer_angle, 0, 0);
+    if (mp_reminder_overlay_label != NULL) {
+        apply_object_rotation(mp_reminder_overlay_label, timer_angle, 0, 0);
+    }
 
     if (mp_turn_hold_arc != NULL) {
         lv_obj_set_style_arc_color(mp_turn_hold_arc, active_color,
