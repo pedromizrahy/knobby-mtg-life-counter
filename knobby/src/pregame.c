@@ -676,11 +676,52 @@ static void event_deck_select(lv_event_t *e)
 static void refresh_roster(void)
 {
     int i;
-    char buf[96];
+    char buf[112];
     int member_count = playgroup_cached_member_count();
+    int button_h;
+    int button_w;
+    int gap;
+    int total_h;
+    int top_y;
+    const lv_font_t *font;
+
+    switch (pregame_player_count) {
+        case 1:
+            button_h = 82; button_w = 258; gap = 0;
+            font = &lv_font_montserrat_22;
+            break;
+        case 2:
+            button_h = 68; button_w = 252; gap = 14;
+            font = &lv_font_montserrat_16;
+            break;
+        case 3:
+            button_h = 56; button_w = 246; gap = 10;
+            font = &lv_font_montserrat_16;
+            break;
+        case 4:
+            button_h = 46; button_w = 242; gap = 8;
+            font = &lv_font_montserrat_14;
+            break;
+        case 5:
+            button_h = 38; button_w = 236; gap = 5;
+            font = &lv_font_montserrat_14;
+            break;
+        default:
+            button_h = 33; button_w = 228; gap = 3;
+            font = &lv_font_montserrat_14;
+            break;
+    }
+
+    total_h = (pregame_player_count * button_h) +
+              ((pregame_player_count - 1) * gap);
+    top_y = 72 + ((202 - total_h) / 2);
+    if (top_y < 68) top_y = 68;
 
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
+        lv_obj_t *btn;
+
         if (roster_labels[i] == NULL) continue;
+        btn = lv_obj_get_parent(roster_labels[i]);
 
         if (i < pregame_player_count) {
             if (playgroup_roster_active && member_count > 0) {
@@ -689,10 +730,10 @@ static void refresh_roster(void)
                 if (member != NULL) {
                     snprintf(player_names[i], sizeof(player_names[i]), "%s", member->username);
                     if (selected_deck_id[i] != 0 && selected_deck_name[i][0] != '\0')
-                        snprintf(buf, sizeof(buf), "P%d  %s | %s",
+                        snprintf(buf, sizeof(buf), "P%d  %s\n%s",
                                  i + 1, member->username, selected_deck_name[i]);
                     else
-                        snprintf(buf, sizeof(buf), "P%d  %s | Choose deck",
+                        snprintf(buf, sizeof(buf), "P%d  %s\nChoose deck",
                                  i + 1, member->username);
                 } else {
                     snprintf(buf, sizeof(buf), "P%d  Select player", i + 1);
@@ -703,10 +744,16 @@ static void refresh_roster(void)
 
             lv_label_set_text(roster_labels[i], buf);
             lv_label_set_long_mode(roster_labels[i], LV_LABEL_LONG_DOT);
-            lv_obj_set_width(roster_labels[i], 214);
-            lv_obj_clear_flag(lv_obj_get_parent(roster_labels[i]), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_width(roster_labels[i], button_w - 24);
+            lv_obj_set_style_text_align(roster_labels[i], LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_style_text_font(roster_labels[i], font, 0);
+            lv_obj_set_size(btn, button_w, button_h);
+            lv_obj_set_style_radius(btn, button_h / 2, 0);
+            lv_obj_align(btn, LV_ALIGN_TOP_MID, 0,
+                         top_y + i * (button_h + gap));
+            lv_obj_clear_flag(btn, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(lv_obj_get_parent(roster_labels[i]), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
         }
     }
 }
@@ -1111,14 +1158,14 @@ void build_pregame_screens(void)
         lv_label_set_text(title, "PLAYERS & DECKS");
         lv_obj_set_style_text_color(title, lv_color_white(), 0);
         lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
-        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 22);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 18);
 
         {
             lv_obj_t *hint = lv_label_create(screen_pregame_roster);
             lv_label_set_text(hint, "Review players and decks");
             lv_obj_set_style_text_color(hint, lv_color_hex(0x778391), 0);
             lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
-            lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 48);
+            lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 44);
         }
 
         for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
@@ -1136,7 +1183,7 @@ void build_pregame_screens(void)
 
         lv_obj_t *next = pregame_button(screen_pregame_roster, "MULLIGANS", 142, 42,
                                         event_roster_continue, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(next, LV_ALIGN_BOTTOM_MID, 0, -30);
+        lv_obj_align(next, LV_ALIGN_BOTTOM_MID, 0, -18);
     }
 
     screen_pregame_deck = lv_obj_create(NULL);
