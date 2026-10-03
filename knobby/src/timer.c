@@ -2,6 +2,7 @@
 #include "game_event.h"
 #include "storage.h"
 #include "game.h"
+#include "damage_log.h"
 
 // Forward declaration
 extern void refresh_turn_ui(void);
@@ -164,6 +165,8 @@ void turn_advance(void)
     game_event_add_turn(GAME_EVENT_TURN_END, active_turn_player,
                         (uint16_t)turn_number, (uint16_t)round_number,
                         duration_ms);
+    damage_log_add_turn_end(active_turn_player, round_number, turn_in_round,
+                            duration_ms);
 
     /* Preserve the original total-game timer semantics. */
     turn_elapsed_ms = get_turn_elapsed_ms();
@@ -234,6 +237,58 @@ void turn_advance(void)
        the active seat changes. Timer ticks still use the lightweight
        refresh_turn_ui() path to avoid redrawing every panel each second. */
     refresh_player_ui();
+}
+
+void turn_reminder_reconcile_after_setting_change(void)
+{
+    int reminder_minutes = nvs_get_turn_reminder_minutes();
+    uint32_t reminder_ms =
+        (uint32_t)(reminder_minutes > 0 ? reminder_minutes : 0) * 60U * 1000U;
+    bool crossed =
+        turn_timer_enabled &&
+        active_turn_player >= 0 &&
+        reminder_minutes > 0 &&
+        get_current_turn_elapsed_ms() >= reminder_ms;
+
+    /*
+     * Changing the threshold is configuration, not a new threshold-crossing
+     * event. If the new value is already behind the running turn, enter the
+     * persistent breathing state directly and skip the big MIN overlay.
+     */
+    if (crossed) {
+        turn_reminder_active = true;
+        turn_reminder_flash_on = true;
+        turn_reminder_overlay_active = false;
+        turn_reminder_flash_steps_remaining = 0;
+        if (turn_reminder_pulse_level < 24)
+            turn_reminder_pulse_level = 30;
+        turn_reminder_pulse_dir = 1;
+
+        if (turn_reminder_flash_timer != NULL) {
+            lv_timer_set_period(turn_reminder_flash_timer,
+                                TURN_REMINDER_PULSE_PERIOD_MS);
+            lv_timer_reset(turn_reminder_flash_timer);
+            if (nvs_get_turn_visual_alert())
+                lv_timer_resume(turn_reminder_flash_timer);
+            else
+                lv_timer_pause(turn_reminder_flash_timer);
+        }
+    } else {
+        turn_reminder_active = false;
+        turn_reminder_flash_on = false;
+        turn_reminder_overlay_active = false;
+        turn_reminder_flash_steps_remaining = 0;
+        turn_reminder_pulse_level = 0;
+        turn_reminder_pulse_dir = 1;
+
+        if (turn_reminder_flash_timer != NULL) {
+            lv_timer_set_period(turn_reminder_flash_timer,
+                                TURN_REMINDER_ALERT_PERIOD_MS);
+            lv_timer_pause(turn_reminder_flash_timer);
+        }
+    }
+
+    refresh_turn_ui();
 }
 
 // ---------- timer callbacks ----------
