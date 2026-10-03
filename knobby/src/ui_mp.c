@@ -250,18 +250,23 @@ static void refresh_commander_markers(const mp_panel_spec_t *spec,
         }
 
         if (spec_is_wedge(spec)) {
-            const int radius = 118;
-            const int step_deg = 16;
+            /* Counters live on the outer radius (~152). Commander damage
+               gets its own inner arc so the two systems never overlap. */
+            const int radius = 126;
+            const int step_deg = 17;
             int a = (wedge_geom[panel_index].bis_deg
                      + ((visible - 1) * step_deg / 2)
                      - (source * step_deg) + 360) % 360;
             xoff = wedge_polar(lv_trigo_cos(a), radius);
             yoff = wedge_polar(lv_trigo_sin(a), radius);
         } else if (panel != NULL) {
-            const lv_coord_t step = 38;
+            /* Rect layouts: counters sit next to the table equator at
+               roughly +/-66. Keep commander damage on a separate inner
+               band, closer to the player's life area. */
+            const lv_coord_t step = 32;
             xoff = (lv_coord_t)((source * step) - ((visible - 1) * step / 2));
             yoff = ((lv_obj_get_y(panel) + lv_obj_get_height(panel) / 2) < 180)
-                     ? 68 : -68;
+                     ? 34 : -34;
         }
 
         lv_obj_align(marker, LV_ALIGN_CENTER, xoff, yoff);
@@ -1270,7 +1275,7 @@ void rebuild_multiplayer_layout(int track)
         {
             int source;
             for (source = 0; source < MAX_DISPLAY_PLAYERS; source++) {
-                lv_obj_t *marker = make_plain_box(panel, 34, 18);
+                lv_obj_t *marker = make_plain_box(panel, 28, 34);
                 lv_obj_t *dot;
                 lv_obj_t *value;
 
@@ -1279,13 +1284,14 @@ void rebuild_multiplayer_layout(int track)
                 lv_obj_set_size(dot, 10, 10);
                 lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
                 lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
-                lv_obj_align(dot, LV_ALIGN_LEFT_MID, 0, 0);
+                lv_obj_align(dot, LV_ALIGN_TOP_MID, 0, 1);
 
                 value = lv_label_create(marker);
                 lv_label_set_text(value, "0");
                 lv_obj_set_style_text_font(value, &lv_font_montserrat_14, 0);
                 lv_obj_set_style_text_color(value, lv_color_white(), 0);
-                lv_obj_align(value, LV_ALIGN_RIGHT_MID, 0, 0);
+                lv_obj_set_style_text_align(value, LV_TEXT_ALIGN_CENTER, 0);
+                lv_obj_align(value, LV_ALIGN_BOTTOM_MID, 0, -1);
 
                 lv_obj_add_flag(marker, LV_OBJ_FLAG_HIDDEN);
                 mp_state.cmd_markers[i][source] = marker;
