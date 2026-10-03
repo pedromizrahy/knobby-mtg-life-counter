@@ -1221,7 +1221,9 @@ void build_pregame_screens(void)
     multiplayer_status_timer = lv_timer_create(multiplayer_status_timer_cb, 500, NULL);
     lv_timer_pause(multiplayer_status_timer);
 
-    deck_art_timer = lv_timer_create(deck_art_timer_cb, 350, NULL);
+    /* Give dial/touch selection priority. Commander art is decorative and
+       must not immediately block interaction while HTTPS/JPEG work runs. */
+    deck_art_timer = lv_timer_create(deck_art_timer_cb, 1200, NULL);
     lv_timer_pause(deck_art_timer);
 
     refresh_roster();
