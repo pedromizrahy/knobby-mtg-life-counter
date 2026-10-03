@@ -27,12 +27,12 @@ static lv_obj_t *mp_reminder_overlay = NULL;
 static lv_obj_t *mp_reminder_overlay_label = NULL;
 
 #define DAMAGE_DRAG_THRESHOLD_PX 18
-#define DAMAGE_DRAG_ADVANCED_HOLD_MS 900
+#define DAMAGE_DRAG_CENTER_HOLD_MS 700
 
 static int drag_source_player = -1;
 static int drag_target_player = -1;
 static bool drag_active = false;
-static bool drag_advanced_ready = false;
+static bool drag_center_ready = false;
 static uint32_t drag_target_enter_ms = 0;
 static uint32_t drag_release_ms = 0;
 static lv_point_t drag_start_point = {0, 0};
@@ -883,10 +883,15 @@ static void drag_hint_refresh(void)
         return;
     }
 
-    snprintf(buf, sizeof(buf), "%s > %s\n%s",
-             player_names[drag_source_player],
-             player_names[drag_target_player],
-             drag_advanced_ready ? "More options" : "Damage");
+    if (drag_target_player == -2) {
+        snprintf(buf, sizeof(buf), "%s\n%s",
+                 player_names[drag_source_player],
+                 drag_center_ready ? "Multiple targets" : "Hold for targets");
+    } else {
+        snprintf(buf, sizeof(buf), "%s > %s\nDamage",
+                 player_names[drag_source_player],
+                 player_names[drag_target_player]);
+    }
 
     lv_label_set_text(drag_hint_label, buf);
     lv_obj_clear_flag(drag_hint, LV_OBJ_FLAG_HIDDEN);
@@ -898,7 +903,7 @@ static void damage_drag_reset(void)
     drag_source_player = -1;
     drag_target_player = -1;
     drag_active = false;
-    drag_advanced_ready = false;
+    drag_center_ready = false;
     drag_target_enter_ms = 0;
     drag_hint_hide();
 }
@@ -919,7 +924,7 @@ static void event_multiplayer_drag(lv_event_t *e)
         drag_source_player = player;
         drag_target_player = -1;
         drag_active = false;
-        drag_advanced_ready = false;
+        drag_center_ready = false;
         drag_target_enter_ms = 0;
         drag_start_point = point;
         drag_hint_hide();
@@ -941,16 +946,16 @@ static void event_multiplayer_drag(lv_event_t *e)
         if (!drag_active) return;
 
         target = player_at_screen_point(point.x, point.y);
-        if (target == drag_source_player || target == -2) target = -1;
+        if (target == drag_source_player) target = -1;
 
         if (target != drag_target_player) {
             drag_target_player = target;
             drag_target_enter_ms = lv_tick_get();
-            drag_advanced_ready = false;
-        } else if (drag_target_player >= 0 && !drag_advanced_ready &&
+            drag_center_ready = false;
+        } else if (drag_target_player == -2 && !drag_center_ready &&
                    lv_tick_elaps(drag_target_enter_ms) >=
-                       DAMAGE_DRAG_ADVANCED_HOLD_MS) {
-            drag_advanced_ready = true;
+                       DAMAGE_DRAG_CENTER_HOLD_MS) {
+            drag_center_ready = true;
         }
 
         drag_hint_refresh();
@@ -959,12 +964,13 @@ static void event_multiplayer_drag(lv_event_t *e)
 
     if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
         bool was_drag = drag_active;
+        bool center_multi = drag_active && drag_target_player == -2 &&
+                            drag_center_ready;
         bool handled = drag_active && drag_target_player >= 0 &&
                        drag_target_player != drag_source_player &&
                        !player_eliminated[drag_target_player];
         int source = drag_source_player;
         int target = drag_target_player;
-        bool advanced = drag_advanced_ready;
 
         /*
          * Suppress the follow-up click only after an actual drag.
@@ -977,8 +983,10 @@ static void event_multiplayer_drag(lv_event_t *e)
         }
         damage_drag_reset();
 
-        if (handled) {
-            open_damage_resolver_for_target(source, target, advanced);
+        if (center_multi) {
+            open_damage_resolver(source);
+        } else if (handled) {
+            open_damage_resolver_for_target(source, target, false);
         }
     }
 }
