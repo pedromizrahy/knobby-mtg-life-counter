@@ -16,5 +16,7 @@ void refresh_multiplayer_turn_ui(void);
 int mp_player_seat_rotation(int player);
 
 void select_kick_timer(void);
+void multiplayer_cancel_damage_drag(void);
+bool multiplayer_damage_drag_active(void);
 
 #endif // _UI_MP_H
