@@ -17,6 +17,8 @@ int turn_number = 0;
 
 int active_turn_player = -1;
 int round_number = 0;
+bool turn_reminder_active = false;
+bool turn_reminder_flash_on = false;
 
 static uint32_t current_turn_started_ms = 0;
 static uint8_t turn_blink_steps_remaining = 0;
@@ -59,6 +61,8 @@ void turn_timer_start_for_player(int player)
     turn_indicator_visible = true;
     turn_ui_visible = true;
     turn_blink_steps_remaining = 10;
+    turn_reminder_active = false;
+    turn_reminder_flash_on = false;
 
     game_event_add_turn(GAME_EVENT_TURN_START, active_turn_player,
                         (uint16_t)turn_number, (uint16_t)round_number, 0);
@@ -87,6 +91,8 @@ void turn_timer_reset(void)
     turn_indicator_visible = true;
     turn_ui_visible = false;
     turn_blink_steps_remaining = 0;
+    turn_reminder_active = false;
+    turn_reminder_flash_on = false;
 
     if (turn_blink_timer != NULL) {
         lv_timer_pause(turn_blink_timer);
@@ -141,6 +147,8 @@ void turn_advance(void)
 
     turn_number++;
     current_turn_started_ms = lv_tick_get();
+    turn_reminder_active = false;
+    turn_reminder_flash_on = false;
 
     game_event_add_turn(GAME_EVENT_TURN_START, active_turn_player,
                         (uint16_t)turn_number, (uint16_t)round_number, 0);
@@ -151,7 +159,26 @@ void turn_advance(void)
 // ---------- timer callbacks ----------
 static void turn_timer_tick_cb(lv_timer_t *timer)
 {
+    uint32_t reminder_ms;
+    int reminder_minutes;
     (void)timer;
+
+    reminder_minutes = nvs_get_turn_reminder_minutes();
+    reminder_ms = (uint32_t)reminder_minutes * 60U * 1000U;
+
+    if (turn_timer_enabled && reminder_minutes > 0 &&
+        get_current_turn_elapsed_ms() >= reminder_ms) {
+        turn_reminder_active = true;
+        if (nvs_get_turn_visual_alert()) {
+            turn_reminder_flash_on = !turn_reminder_flash_on;
+        } else {
+            turn_reminder_flash_on = false;
+        }
+    } else {
+        turn_reminder_active = false;
+        turn_reminder_flash_on = false;
+    }
+
     refresh_turn_ui();
 }
 
