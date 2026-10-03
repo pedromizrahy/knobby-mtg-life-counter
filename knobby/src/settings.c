@@ -449,6 +449,7 @@ static void event_turn_timer_reminder(lv_event_t *e)
     else value = 0;
 
     nvs_set_turn_reminder_minutes(value);
+    turn_reminder_reconcile_after_setting_change();
     refresh_turn_timer_settings_ui();
 }
 
