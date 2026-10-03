@@ -423,6 +423,7 @@ static void refresh_damage_log_ui(void)
         char line[96];
         char header[96];
         bool new_group = false;
+        bool new_round = false;
         int newer_idx;
         lv_color_t event_color = lv_color_hex(0xB8B8B8);
         lv_obj_t *row;
@@ -438,6 +439,9 @@ static void refresh_damage_log_ui(void)
                 damage_log[newer_idx].round_number != damage_log[idx].round_number ||
                 damage_log[newer_idx].turn_player != damage_log[idx].turn_player) {
                 new_group = true;
+                new_round =
+                    damage_log[newer_idx].round_number !=
+                    damage_log[idx].round_number;
             }
         }
 
@@ -470,7 +474,7 @@ static void refresh_damage_log_ui(void)
                 }
             }
 
-            if (i != first) {
+            if (new_round) {
                 lv_obj_t *sep = lv_label_create(row);
                 lv_label_set_text(sep, "---------------------------");
                 lv_obj_set_style_text_color(sep, lv_color_hex(0x565656), 0);
@@ -510,7 +514,8 @@ static void refresh_damage_log_ui(void)
             lv_label_set_text(header_lbl, header);
             lv_obj_set_style_text_color(header_lbl, lv_color_hex(0xB0B0B0), 0);
             lv_obj_set_style_text_font(header_lbl, &lv_font_montserrat_14, 0);
-            lv_obj_align(header_lbl, LV_ALIGN_TOP_LEFT, 0, (i != first) ? 20 : 2);
+            lv_obj_align(header_lbl, LV_ALIGN_TOP_LEFT, 0,
+                         new_round ? 20 : (i != first ? 10 : 2));
         }
 
         if (damage_log[idx].event_type != LOG_EVT_TURN_END) {
@@ -537,7 +542,9 @@ static void refresh_damage_log_ui(void)
             lv_obj_set_style_text_font(event_lbl, &lv_font_montserrat_14, 0);
             lv_obj_set_width(event_lbl, (i == undo_offset) ? 245 : 272);
             lv_obj_align(event_lbl, LV_ALIGN_TOP_LEFT, 0,
-                         new_group ? ((i != first) ? 42 : 26) : 1);
+                         new_group
+                             ? (new_round ? 42 : (i != first ? 32 : 26))
+                             : 1);
         }
 
         if (i == undo_offset && damage_log[idx].event_type != LOG_EVT_TURN_END) {
