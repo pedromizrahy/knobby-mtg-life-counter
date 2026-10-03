@@ -363,9 +363,12 @@ static void handle_back_navigation(lv_obj_t *screen)
         /* pregame stack */
     } else if (screen == screen_game_mode_menu) {
         lv_scr_load(screen_quad_menu);
+    } else if (screen == screen_game_setup ||
+               screen == screen_game_player_settings) {
+        return_to_game_mode_menu();
     } else if (screen == screen_custom_life) {
         refresh_game_mode_menu_ui();
-        lv_scr_load(screen_game_mode_menu);
+        lv_scr_load(screen_game_setup);
     } else if (screen == screen_player_menu) {
         back_to_main();
     } else if (screen == screen_player_name) {
