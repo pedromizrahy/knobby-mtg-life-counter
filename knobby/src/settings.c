@@ -376,11 +376,20 @@ static const char *multi_select_label(int val)
 static const char *turn_reminder_label(int minutes)
 {
     switch (minutes) {
-        case 5:  return "Reminder\n5 min";
-        case 10: return "Reminder\n10 min";
-        case 15: return "Reminder\n15 min";
-        case 20: return "Reminder\n20 min";
-        default: return "Reminder\nOFF";
+        case 3:  return "Timer Alert\n3 min";
+        case 5:  return "Timer Alert\n5 min";
+        case 10: return "Timer Alert\n10 min";
+        case 15: return "Timer Alert\n15 min";
+        default: return "Timer Alert\nOFF";
+    }
+}
+
+static const char *turn_alert_duration_label(int seconds)
+{
+    switch (seconds) {
+        case 5:  return "Alert Duration\n5 sec";
+        case 10: return "Alert Duration\n10 sec";
+        default: return "Alert Duration\n3 sec";
     }
 }
 
@@ -396,22 +405,23 @@ static void refresh_turn_timer_settings_button(int index, const char *text, bool
 void refresh_turn_timer_settings_ui(void)
 {
     int reminder = nvs_get_turn_reminder_minutes();
+    int duration = nvs_get_turn_alert_duration_seconds();
 
     refresh_turn_timer_settings_button(
         0,
         nvs_get_turn_timer_enabled() ? "Timer\nON" : "Timer\nOFF",
         nvs_get_turn_timer_enabled() != 0);
 
-    refresh_turn_timer_settings_button(
-        1,
-        nvs_get_turn_show_name() ? "Player Name\nON" : "Player Name\nOFF",
-        nvs_get_turn_show_name() != 0);
+    if (turn_timer_lbls[1] != NULL)
+        lv_label_set_text(turn_timer_lbls[1], turn_reminder_label(reminder));
+    if (turn_timer_btns[1] != NULL)
+        set_btn_color(turn_timer_btns[1],
+                      reminder > 0 ? 0x0D47A1 : TOGGLE_OFF);
 
     if (turn_timer_lbls[2] != NULL)
-        lv_label_set_text(turn_timer_lbls[2], turn_reminder_label(reminder));
+        lv_label_set_text(turn_timer_lbls[2], turn_alert_duration_label(duration));
     if (turn_timer_btns[2] != NULL)
-        set_btn_color(turn_timer_btns[2],
-                      reminder > 0 ? 0x0D47A1 : TOGGLE_OFF);
+        set_btn_color(turn_timer_btns[2], 0x263238);
 
     refresh_turn_timer_settings_button(
         3,
@@ -426,26 +436,31 @@ static void event_turn_timer_enable(lv_event_t *e)
     refresh_turn_timer_settings_ui();
 }
 
-static void event_turn_timer_name(lv_event_t *e)
-{
-    (void)e;
-    nvs_set_turn_show_name(!nvs_get_turn_show_name());
-    refresh_turn_timer_settings_ui();
-    refresh_turn_ui();
-}
-
 static void event_turn_timer_reminder(lv_event_t *e)
 {
     int value = nvs_get_turn_reminder_minutes();
     (void)e;
 
-    if (value == 0) value = 5;
+    if (value == 0) value = 3;
+    else if (value == 3) value = 5;
     else if (value == 5) value = 10;
     else if (value == 10) value = 15;
-    else if (value == 15) value = 20;
     else value = 0;
 
     nvs_set_turn_reminder_minutes(value);
+    refresh_turn_timer_settings_ui();
+}
+
+static void event_turn_alert_duration(lv_event_t *e)
+{
+    int value = nvs_get_turn_alert_duration_seconds();
+    (void)e;
+
+    if (value == 3) value = 5;
+    else if (value == 5) value = 10;
+    else value = 3;
+
+    nvs_set_turn_alert_duration_seconds(value);
     refresh_turn_timer_settings_ui();
 }
 
@@ -467,10 +482,10 @@ void open_turn_timer_settings(void)
 void build_turn_timer_settings_screen(void)
 {
     quad_item_t items[4] = {
-        {"Timer\nON",        event_turn_timer_enable,   true, LV_EVENT_CLICKED},
-        {"Player Name\nOFF", event_turn_timer_name,     true, LV_EVENT_CLICKED},
-        {"Reminder\n10 min", event_turn_timer_reminder, true, LV_EVENT_CLICKED},
-        {"Visual Alert\nON", event_turn_timer_visual,   true, LV_EVENT_CLICKED},
+        {"Timer\nON",            event_turn_timer_enable,   true, LV_EVENT_CLICKED},
+        {"Timer Alert\n5 min",   event_turn_timer_reminder, true, LV_EVENT_CLICKED},
+        {"Alert Duration\n3 sec",event_turn_alert_duration, true, LV_EVENT_CLICKED},
+        {"Visual Alert\nON",     event_turn_timer_visual,   true, LV_EVENT_CLICKED},
     };
     int i;
 
