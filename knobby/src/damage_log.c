@@ -330,7 +330,6 @@ static void update_selection_highlight(void)
 static void refresh_damage_log_ui(void)
 {
     int i, idx, first, last;
-    char buf[192];
 
     lv_obj_clean(damage_log_container);
 
@@ -356,65 +355,84 @@ static void refresh_damage_log_ui(void)
     if (last > damage_log_count) last = damage_log_count;
 
     for (i = first; i < last; i++) {
+        char line[96];
+        char header[80];
+        bool new_group = false;
+        int newer_idx;
+        lv_color_t event_color = lv_color_hex(0xB8B8B8);
+        lv_obj_t *row;
+        lv_obj_t *event_lbl;
+
         idx = (damage_log_head - 1 - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+        format_log_line(&damage_log[idx], line, sizeof(line));
 
-        {
-            char line[96];
-            const char *event_hex = "B8B8B8";
-            bool new_group = false;
-            int newer_idx;
+        if (damage_log[idx].event_type == LOG_EVT_DAMAGE ||
+            damage_log[idx].event_type == LOG_EVT_CMD_DAMAGE ||
+            damage_log[idx].event_type == LOG_EVT_CMD_INFECT ||
+            damage_log[idx].event_type == LOG_EVT_POISON) {
+            event_color = lv_color_hex(0xFF5252);
+        } else if (damage_log[idx].event_type == LOG_EVT_LIFE) {
+            event_color = (damage_log[idx].delta > 0)
+                        ? lv_color_hex(0x4CAF50)
+                        : lv_color_hex(0xFF5252);
+        } else if (damage_log[idx].event_type == LOG_EVT_COUNTER) {
+            event_color = (damage_log[idx].delta > 0)
+                        ? lv_color_hex(0xFFB74D)
+                        : lv_color_hex(0xB8B8B8);
+        } else {
+            event_color = (damage_log[idx].delta > 0)
+                        ? lv_color_hex(0x4CAF50)
+                        : lv_color_hex(0xFF5252);
+        }
 
-            format_log_line(&damage_log[idx], line, sizeof(line));
-
-            if (damage_log[idx].event_type == LOG_EVT_DAMAGE ||
-                damage_log[idx].event_type == LOG_EVT_CMD_DAMAGE ||
-                damage_log[idx].event_type == LOG_EVT_CMD_INFECT ||
-                damage_log[idx].event_type == LOG_EVT_POISON) {
-                event_hex = "FF5252";
-            } else if (damage_log[idx].event_type == LOG_EVT_LIFE) {
-                event_hex = (damage_log[idx].delta > 0) ? "4CAF50" : "FF5252";
-            } else if (damage_log[idx].event_type == LOG_EVT_COUNTER) {
-                event_hex = (damage_log[idx].delta > 0) ? "FFB74D" : "B8B8B8";
-            } else {
-                event_hex = (damage_log[idx].delta > 0) ? "4CAF50" : "FF5252";
-            }
-
-            if (i == first) {
+        if (i == first) {
+            new_group = true;
+        } else {
+            newer_idx = (damage_log_head - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+            if (damage_log[newer_idx].turn_number != damage_log[idx].turn_number ||
+                damage_log[newer_idx].round_number != damage_log[idx].round_number ||
+                damage_log[newer_idx].turn_player != damage_log[idx].turn_player) {
                 new_group = true;
-            } else {
-                newer_idx = (damage_log_head - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
-                if (damage_log[newer_idx].turn_number != damage_log[idx].turn_number ||
-                    damage_log[newer_idx].round_number != damage_log[idx].round_number ||
-                    damage_log[newer_idx].turn_player != damage_log[idx].turn_player) {
-                    new_group = true;
-                }
-            }
-
-            if (new_group && damage_log[idx].turn_number > 0 &&
-                damage_log[idx].turn_player >= 0 &&
-                damage_log[idx].turn_player < MAX_GAME_PLAYERS) {
-                snprintf(buf, sizeof(buf),
-                         "#8A8A8A R%u · %s\n----------------#\n#%s %s#",
-                         (unsigned)damage_log[idx].round_number,
-                         player_names[damage_log[idx].turn_player],
-                         event_hex, line);
-            } else {
-                snprintf(buf, sizeof(buf), "#%s %s#", event_hex, line);
             }
         }
 
-        lv_obj_t *lbl = lv_label_create(damage_log_container);
-        lv_label_set_recolor(lbl, true);
-        lv_label_set_text(lbl, buf);
-        lv_obj_set_width(lbl, 280);
-        lv_obj_add_style(lbl, &log_label_style, 0);
-        lv_obj_set_style_text_color(lbl, lv_color_hex(0xB8B8B8), 0);
+        row = lv_obj_create(damage_log_container);
+        lv_obj_remove_style_all(row);
+        lv_obj_set_width(row, 280);
+        lv_obj_set_height(row, new_group ? 54 : 22);
+        lv_obj_set_style_pad_left(row, 4, 0);
+        lv_obj_set_style_pad_right(row, 4, 0);
+        lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+        lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+        if (new_group && damage_log[idx].turn_number > 0 &&
+            damage_log[idx].turn_player >= 0 &&
+            damage_log[idx].turn_player < MAX_GAME_PLAYERS) {
+            lv_obj_t *header_lbl = lv_label_create(row);
+
+            snprintf(header, sizeof(header), "R%u | T%u | %s\n----------------",
+                     (unsigned)damage_log[idx].round_number,
+                     (unsigned)damage_log[idx].turn_number,
+                     player_names[damage_log[idx].turn_player]);
+
+            lv_label_set_text(header_lbl, header);
+            lv_obj_set_style_text_color(header_lbl, lv_color_hex(0x8A8A8A), 0);
+            lv_obj_set_style_text_font(header_lbl, &lv_font_montserrat_14, 0);
+            lv_obj_align(header_lbl, LV_ALIGN_TOP_LEFT, 0, 0);
+        }
+
+        event_lbl = lv_label_create(row);
+        lv_label_set_text(event_lbl, line);
+        lv_obj_set_style_text_color(event_lbl, event_color, 0);
+        lv_obj_set_style_text_font(event_lbl, &lv_font_montserrat_14, 0);
+        lv_obj_align(event_lbl, LV_ALIGN_TOP_LEFT, 0, new_group ? 34 : 0);
     }
 
     if (page_label != NULL) {
         if (damage_log_count > LOG_PAGE_SIZE) {
             char page_buf[24];
-            snprintf(page_buf, sizeof(page_buf), "%d-%d of %d", first + 1, last, damage_log_count);
+            snprintf(page_buf, sizeof(page_buf), "%d-%d of %d",
+                     first + 1, last, damage_log_count);
             lv_label_set_text(page_label, page_buf);
             lv_obj_clear_flag(page_label, LV_OBJ_FLAG_HIDDEN);
         } else {
