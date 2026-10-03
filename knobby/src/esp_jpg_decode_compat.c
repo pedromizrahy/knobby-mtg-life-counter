@@ -1,15 +1,7 @@
-// Compatibility wrapper based on Espressif esp32-camera JPEG decoder.
-// SPDX-License-Identifier: Apache-2.0
+// Software JPEG wrapper for commander art.
+// Uses a vendored Tiny JPEG Decoder implementation and never calls ESP32 ROM JPEG code.
 #include "esp_jpg_decode_compat.h"
-#include "esp_system.h"
-
-#if CONFIG_IDF_TARGET_ESP32S3
-#include "esp32s3/rom/tjpgd.h"
-#elif defined(CONFIG_ESP_ROM_HAS_JPEG_DECODE)
-#include "rom/tjpgd.h"
-#else
-#include "rom/tjpgd.h"
-#endif
+#include "knobby_tjpgd.h"
 
 typedef struct {
     knobby_jpg_scale_t scale;
@@ -20,7 +12,7 @@ typedef struct {
     size_t index;
 } knobby_jpg_decoder_t;
 
-static unsigned int jpg_write(JDEC *decoder, void *bitmap, JRECT *rect)
+static int jpg_write(JDEC *decoder, void *bitmap, JRECT *rect)
 {
     knobby_jpg_decoder_t *jpeg = (knobby_jpg_decoder_t *)decoder->device;
     uint16_t x = rect->left;
@@ -30,10 +22,11 @@ static unsigned int jpg_write(JDEC *decoder, void *bitmap, JRECT *rect)
 
     if (jpeg == NULL || jpeg->writer == NULL)
         return 0;
-    return jpeg->writer(jpeg->arg, x, y, w, h, (uint8_t *)bitmap) ? 1U : 0U;
+
+    return jpeg->writer(jpeg->arg, x, y, w, h, (uint8_t *)bitmap) ? 1 : 0;
 }
 
-static unsigned int jpg_read(JDEC *decoder, uint8_t *buf, unsigned int len)
+static size_t jpg_read(JDEC *decoder, uint8_t *buf, size_t len)
 {
     knobby_jpg_decoder_t *jpeg = (knobby_jpg_decoder_t *)decoder->device;
 
@@ -41,12 +34,13 @@ static unsigned int jpg_read(JDEC *decoder, uint8_t *buf, unsigned int len)
         return 0;
 
     if (jpeg->len && len > (jpeg->len - jpeg->index))
-        len = (unsigned int)(jpeg->len - jpeg->index);
+        len = jpeg->len - jpeg->index;
 
     if (len) {
-        len = (unsigned int)jpeg->reader(jpeg->arg, jpeg->index, buf, len);
+        len = jpeg->reader(jpeg->arg, jpeg->index, buf, len);
         jpeg->index += len;
     }
+
     return len;
 }
 
@@ -55,7 +49,7 @@ esp_err_t knobby_esp_jpg_decode(size_t len, knobby_jpg_scale_t scale,
                                 knobby_jpg_writer_cb writer,
                                 void *arg)
 {
-    static uint8_t work[3100];
+    static uint8_t work[4096];
     JDEC decoder;
     knobby_jpg_decoder_t jpeg;
     JRESULT result;
@@ -72,7 +66,7 @@ esp_err_t knobby_esp_jpg_decode(size_t len, knobby_jpg_scale_t scale,
     jpeg.scale = scale;
     jpeg.index = 0;
 
-    result = jd_prepare(&decoder, jpg_read, work, sizeof(work), &jpeg);
+    result = knobby_jd_prepare(&decoder, jpg_read, work, sizeof(work), &jpeg);
     if (result != JDR_OK)
         return ESP_FAIL;
 
@@ -82,14 +76,11 @@ esp_err_t knobby_esp_jpg_decode(size_t len, knobby_jpg_scale_t scale,
     if (!writer(arg, 0, 0, output_width, output_height, NULL))
         return ESP_FAIL;
 
-    result = jd_decomp(&decoder, jpg_write, (uint8_t)jpeg.scale);
+    result = knobby_jd_decomp(&decoder, jpg_write, (uint8_t)jpeg.scale);
     if (result != JDR_OK)
         return ESP_FAIL;
 
     writer(arg, output_width, output_height, output_width, output_height, NULL);
-
-    if (len && jpeg.index < len)
-        jpg_read(&decoder, NULL, (unsigned int)(len - jpeg.index));
 
     return ESP_OK;
 }
