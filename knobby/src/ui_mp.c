@@ -120,6 +120,8 @@ typedef struct {
     bool switch_font_by_orientation;
 } mp_layout_spec_t;
 
+static bool wedge_contains_angle(const mp_panel_spec_t *spec, int angle);
+
 /* ---------- shared widget state ---------- */
 static struct {
     lv_obj_t *panels[MULTIPLAYER_COUNT];
