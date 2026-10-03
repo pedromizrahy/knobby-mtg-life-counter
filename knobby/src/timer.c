@@ -78,6 +78,10 @@ void turn_timer_start_for_player(int player)
     turn_hold_progress = 0;
     turn_hold_completed = false;
 
+    if (turn_reminder_flash_timer != NULL) {
+        lv_timer_pause(turn_reminder_flash_timer);
+    }
+
     game_event_add_turn(GAME_EVENT_TURN_START, active_turn_player,
                         (uint16_t)turn_number, (uint16_t)round_number, 0);
 
