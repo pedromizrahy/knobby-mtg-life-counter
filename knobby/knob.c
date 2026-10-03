@@ -386,6 +386,12 @@ void reset_all_values(void)
     mana_clear_all();
 
     start_player_selection_animation();
+
+    /* If there is no roulette to finish (1P or Random First is off),
+       begin turn tracking immediately at seat 0 when the feature is enabled. */
+    if (nvs_get_turn_timer_enabled() && !player_selection_animation_active()) {
+        turn_timer_start_for_player(0);
+    }
 }
 
 
