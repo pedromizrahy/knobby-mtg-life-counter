@@ -20,6 +20,7 @@ static lv_obj_t *roster_labels[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *mulligan_labels[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *multiplayer_status_label = NULL;
 static lv_timer_t *multiplayer_status_timer = NULL;
+static lv_obj_t *player_count_label = NULL;
 
 static void refresh_roster(void);
 static void refresh_mulligans(void);
@@ -64,9 +65,11 @@ static void event_local_play(lv_event_t *e)
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++)
         snprintf(player_names[i], sizeof(player_names[i]), "P%d", i + 1);
 
-    pregame_player_count = nvs_get_players_to_track();
-    if (pregame_player_count < 1 || pregame_player_count > MAX_DISPLAY_PLAYERS)
-        pregame_player_count = 4;
+    /* New games always open on the Commander-table default: four seats.
+       The user can adjust 1..6 with touch +/- or the physical dial. */
+    pregame_player_count = 4;
+    if (player_count_label != NULL)
+        lv_label_set_text(player_count_label, "4");
     lv_scr_load(screen_pregame_players);
 }
 
@@ -128,12 +131,36 @@ static void event_multiplayer_setup(lv_event_t *e)
     lv_scr_load(screen_pregame_multiplayer);
 }
 
+static void refresh_player_count_picker(void)
+{
+    char buf[4];
+
+    if (player_count_label == NULL) return;
+    snprintf(buf, sizeof(buf), "%d", pregame_player_count);
+    lv_label_set_text(player_count_label, buf);
+}
+
+void pregame_change_player_count(int delta)
+{
+    int next = pregame_player_count + delta;
+
+    if (next < 1) next = 1;
+    if (next > MAX_DISPLAY_PLAYERS) next = MAX_DISPLAY_PLAYERS;
+    if (next == pregame_player_count) return;
+
+    pregame_player_count = next;
+    refresh_player_count_picker();
+}
+
+static void event_player_count_adjust(lv_event_t *e)
+{
+    int delta = (int)(intptr_t)lv_event_get_user_data(e);
+    pregame_change_player_count(delta);
+}
+
 static void event_choose_players(lv_event_t *e)
 {
-    int count = (int)(intptr_t)lv_event_get_user_data(e);
-
-    if (count < 1 || count > MAX_DISPLAY_PLAYERS) return;
-    pregame_player_count = count;
+    (void)e;
     refresh_roster();
     lv_scr_load(screen_pregame_roster);
 }
@@ -320,22 +347,46 @@ void build_pregame_screens(void)
 
     {
         lv_obj_t *title = lv_label_create(screen_pregame_players);
+        lv_obj_t *hint;
+        lv_obj_t *minus;
+        lv_obj_t *plus;
+        lv_obj_t *select;
+
         lv_label_set_text(title, "PLAYERS");
         lv_obj_set_style_text_color(title, lv_color_white(), 0);
         lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
         lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 40);
-    }
 
-    for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
-        char buf[4];
-        lv_obj_t *btn;
-        snprintf(buf, sizeof(buf), "%d", i + 1);
-        btn = pregame_button(screen_pregame_players, buf, 64, 52,
-                             event_choose_players, LV_EVENT_CLICKED,
-                             (void *)(intptr_t)(i + 1));
-        lv_obj_align(btn, LV_ALIGN_CENTER,
-                     (i % 2 == 0) ? -42 : 42,
-                     -58 + (i / 2) * 58);
+        hint = lv_label_create(screen_pregame_players);
+        lv_label_set_text(hint, "Turn dial or tap +/-");
+        lv_obj_set_style_text_color(hint, lv_color_hex(0x778391), 0);
+        lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+        lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 76);
+
+        minus = pregame_button(screen_pregame_players, "-", 58, 58,
+                               event_player_count_adjust, LV_EVENT_CLICKED,
+                               (void *)(intptr_t)-1);
+        lv_obj_align(minus, LV_ALIGN_CENTER, -92, -10);
+        lv_obj_set_style_text_font(lv_obj_get_child(minus, 0),
+                                   &lv_font_montserrat_32, 0);
+
+        player_count_label = lv_label_create(screen_pregame_players);
+        lv_label_set_text(player_count_label, "4");
+        lv_obj_set_style_text_color(player_count_label, lv_color_white(), 0);
+        lv_obj_set_style_text_font(player_count_label,
+                                   &lv_font_montserrat_bold_56, 0);
+        lv_obj_align(player_count_label, LV_ALIGN_CENTER, 0, -12);
+
+        plus = pregame_button(screen_pregame_players, "+", 58, 58,
+                              event_player_count_adjust, LV_EVENT_CLICKED,
+                              (void *)(intptr_t)1);
+        lv_obj_align(plus, LV_ALIGN_CENTER, 92, -10);
+        lv_obj_set_style_text_font(lv_obj_get_child(plus, 0),
+                                   &lv_font_montserrat_32, 0);
+
+        select = pregame_button(screen_pregame_players, "SELECT", 150, 44,
+                                event_choose_players, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(select, LV_ALIGN_CENTER, 0, 76);
     }
 
     screen_pregame_roster = lv_obj_create(NULL);

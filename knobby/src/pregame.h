@@ -11,6 +11,7 @@ extern lv_obj_t *screen_pregame_mulligans;
 
 void build_pregame_screens(void);
 void open_pregame_home(void);
+void pregame_change_player_count(int delta);
 bool pregame_handle_back(lv_obj_t *screen);
 
 #endif // _PREGAME_H
