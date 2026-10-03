@@ -4,6 +4,7 @@
 #include "game_event.h"
 #include "esp_random.h"
 #include "net_sync.h"
+#include "timer.h"
 // Forward declarations for UI refresh (defined in screen modules)
 extern void refresh_player_ui(void);
 extern void refresh_select_ui(void);
@@ -895,6 +896,9 @@ static void player_select_anim_cb(lv_timer_t *timer)
     if (player_select_anim_steps <= 0) {
         lv_timer_pause(player_select_anim_timer);
         select_kick_timer();
+        if (nvs_get_turn_timer_enabled()) {
+            turn_timer_start_for_player(roulette_idx);
+        }
     } else {
         // Linear deceleration
         player_select_anim_period += (200 / (player_select_anim_steps + 1));
