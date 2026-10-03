@@ -277,8 +277,8 @@ void turn_reminder_reconcile_after_setting_change(void)
         turn_reminder_flash_on = true;
         turn_reminder_overlay_active = false;
         turn_reminder_flash_steps_remaining = 0;
-        if (turn_reminder_pulse_level < 24)
-            turn_reminder_pulse_level = 30;
+        if (turn_reminder_pulse_level < 35)
+            turn_reminder_pulse_level = 40;
         turn_reminder_pulse_dir = 1;
 
         if (turn_reminder_flash_timer != NULL) {
@@ -333,7 +333,7 @@ static void turn_timer_tick_cb(lv_timer_t *timer)
                 turn_reminder_flash_steps_remaining = 1;
             turn_reminder_flash_on = true;
             turn_reminder_overlay_active = true;
-            turn_reminder_pulse_level = 30;
+            turn_reminder_pulse_level = 40;
             turn_reminder_pulse_dir = 1;
             if (turn_reminder_flash_timer != NULL) {
                 lv_timer_set_period(turn_reminder_flash_timer, TURN_REMINDER_ALERT_PERIOD_MS);
@@ -418,7 +418,7 @@ static void turn_reminder_flash_timer_cb(lv_timer_t *timer)
         if (turn_reminder_flash_steps_remaining == 0) {
             turn_reminder_overlay_active = false;
             turn_reminder_flash_on = true;
-            turn_reminder_pulse_level = 30;
+            turn_reminder_pulse_level = 40;
             turn_reminder_pulse_dir = 1;
             lv_timer_set_period(timer, TURN_REMINDER_PULSE_PERIOD_MS);
             lv_timer_reset(timer);
@@ -437,8 +437,8 @@ static void turn_reminder_flash_timer_cb(lv_timer_t *timer)
             turn_reminder_pulse_level = (uint8_t)(turn_reminder_pulse_level + 2);
         }
     } else {
-        if (turn_reminder_pulse_level <= 20) {
-            turn_reminder_pulse_level = 20;
+        if (turn_reminder_pulse_level <= 35) {
+            turn_reminder_pulse_level = 35;
             turn_reminder_pulse_dir = 1;
         } else {
             turn_reminder_pulse_level = (uint8_t)(turn_reminder_pulse_level - 2);
