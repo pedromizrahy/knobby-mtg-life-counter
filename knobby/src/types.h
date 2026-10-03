@@ -27,6 +27,11 @@
 
 #define CUSTOM_COLOR_COUNT 18
 
+// ---------- commander marker modes ----------
+#define CMD_MARKER_DOT   0
+#define CMD_MARKER_ART   1
+#define CMD_MARKER_COUNT 2
+
 // ---------- orientation modes ----------
 #define ORIENTATION_MODE_ABSOLUTE 0
 #define ORIENTATION_MODE_CENTRIC  1
