@@ -536,6 +536,59 @@ void apply_life_delta(int player, int delta)
     net_sync_commit_player(player);
 }
 
+bool apply_sourced_damage(int source, int target, int amount, game_damage_type_t damage_type)
+{
+    game_event_t event = {0};
+
+    if (source < 0 || source >= MAX_GAME_PLAYERS) return false;
+    if (target < 0 || target >= MAX_DISPLAY_PLAYERS) return false;
+    if (source == target || amount <= 0 || player_eliminated[target]) return false;
+
+    event.source_player = (int8_t)source;
+    event.target_player = (int8_t)target;
+    event.target_mask = (uint8_t)(1U << target);
+    event.amount = (int16_t)amount;
+    event.damage_type = (uint8_t)damage_type;
+
+    if (damage_type == DAMAGE_TYPE_NORMAL) {
+        damage_log_add(target, -amount, LOG_EVT_DAMAGE, source);
+        player_life[target] = clamp_life(player_life[target] - amount);
+        event.type = GAME_EVENT_DAMAGE;
+
+        if (player_life[target] <= 0) {
+            set_player_elimination_action(target, LOG_EVT_DAMAGE, source, -amount);
+        }
+    } else if (damage_type == DAMAGE_TYPE_COMMANDER) {
+        cmd_damage_totals[source][target] += amount;
+        damage_log_add(target, -amount, LOG_EVT_CMD_DAMAGE, source);
+        player_life[target] = clamp_life(player_life[target] - amount);
+        event.type = GAME_EVENT_COMMANDER_DAMAGE;
+
+        if (cmd_damage_totals[source][target] >= 21 || player_life[target] <= 0) {
+            set_player_elimination_action(target, LOG_EVT_CMD_DAMAGE, source, -amount);
+        }
+    } else if (damage_type == DAMAGE_TYPE_POISON) {
+        player_counters[target][COUNTER_TYPE_POISON] =
+            clamp_counter(player_counters[target][COUNTER_TYPE_POISON] + amount);
+        damage_log_add(target, amount, LOG_EVT_POISON, source);
+        event.type = GAME_EVENT_COUNTER_CHANGE;
+        event.value = (int16_t)player_counters[target][COUNTER_TYPE_POISON];
+
+        if (player_counters[target][COUNTER_TYPE_POISON] >= 10) {
+            set_player_elimination_action(target, LOG_EVT_POISON, source, amount);
+        }
+    } else {
+        return false;
+    }
+
+    game_event_add(&event);
+    check_player_elimination(target);
+    net_sync_commit_player(target);
+    refresh_player_ui();
+    refresh_select_ui();
+    return true;
+}
+
 // ---------- life preview ----------
 void life_preview_commit_cb(lv_timer_t *timer)
 {
