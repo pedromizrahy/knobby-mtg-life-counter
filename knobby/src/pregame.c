@@ -8,11 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_heap_caps.h"
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
-#include "esp32s3/rom/tjpgd.h"
-#else
-#include "rom/tjpgd.h"
-#endif
+#include "esp_jpg_decode_compat.h"
 
 extern void reset_all_values(void);
 extern void back_to_main(void);
@@ -63,60 +59,76 @@ static lv_img_dsc_t deck_art_dsc;
 typedef struct {
     const uint8_t *src;
     size_t src_size;
-    size_t src_pos;
     uint8_t *dst;
     uint16_t width;
     uint16_t height;
 } commander_jpeg_ctx_t;
 
-static UINT commander_jpeg_input(JDEC *jd, BYTE *buf, UINT len)
+static size_t commander_jpeg_reader(void *arg, size_t index, uint8_t *buf, size_t len)
 {
-    commander_jpeg_ctx_t *ctx = (commander_jpeg_ctx_t *)jd->device;
+    commander_jpeg_ctx_t *ctx = (commander_jpeg_ctx_t *)arg;
     size_t remaining;
-    size_t count;
 
-    if (ctx == NULL || ctx->src_pos >= ctx->src_size)
+    if (ctx == NULL || index >= ctx->src_size)
         return 0;
 
-    remaining = ctx->src_size - ctx->src_pos;
-    count = len < remaining ? len : remaining;
+    remaining = ctx->src_size - index;
+    if (len > remaining)
+        len = remaining;
 
     if (buf != NULL)
-        memcpy(buf, ctx->src + ctx->src_pos, count);
+        memcpy(buf, ctx->src + index, len);
 
-    ctx->src_pos += count;
-    return (UINT)count;
+    return len;
 }
 
-static UINT commander_jpeg_output(JDEC *jd, void *bitmap, JRECT *rect)
+static bool commander_jpeg_writer(void *arg, uint16_t x, uint16_t y,
+                                  uint16_t w, uint16_t h, uint8_t *data)
 {
-    commander_jpeg_ctx_t *ctx = (commander_jpeg_ctx_t *)jd->device;
-    uint8_t *rgb = (uint8_t *)bitmap;
-    uint16_t block_w;
-    uint16_t block_h;
-    uint16_t y;
-    uint16_t x;
+    commander_jpeg_ctx_t *ctx = (commander_jpeg_ctx_t *)arg;
+    uint16_t row;
+    uint16_t col;
 
-    if (ctx == NULL || ctx->dst == NULL || bitmap == NULL || rect == NULL)
-        return 0;
+    if (ctx == NULL)
+        return false;
 
-    block_w = (uint16_t)(rect->right - rect->left + 1U);
-    block_h = (uint16_t)(rect->bottom - rect->top + 1U);
+    if (data == NULL) {
+        if (x == 0 && y == 0) {
+            size_t bytes;
 
-    for (y = 0; y < block_h; y++) {
-        for (x = 0; x < block_w; x++) {
-            uint16_t dx = (uint16_t)(rect->left + x);
-            uint16_t dy = (uint16_t)(rect->top + y);
-            size_t src_i = ((size_t)y * block_w + x) * 3U;
+            ctx->width = w;
+            ctx->height = h;
+            bytes = (size_t)w * (size_t)h * 2U;
+            ctx->dst = (uint8_t *)heap_caps_malloc(bytes,
+                                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (ctx->dst == NULL) {
+                printf("[Playgroup] Commander JPEG pixel allocation failed: %u bytes\n",
+                       (unsigned)bytes);
+                return false;
+            }
+            memset(ctx->dst, 0, bytes);
+        }
+        return true;
+    }
+
+    if (ctx->dst == NULL || ctx->width == 0 || ctx->height == 0)
+        return false;
+
+    for (row = 0; row < h; row++) {
+        for (col = 0; col < w; col++) {
+            uint16_t dx = (uint16_t)(x + col);
+            uint16_t dy = (uint16_t)(y + row);
+            size_t src_i;
             size_t dst_i;
             uint16_t color;
 
             if (dx >= ctx->width || dy >= ctx->height)
                 continue;
 
-            color = (uint16_t)(((uint16_t)(rgb[src_i] & 0xF8U) << 8) |
-                               ((uint16_t)(rgb[src_i + 1] & 0xFCU) << 3) |
-                               ((uint16_t)rgb[src_i + 2] >> 3));
+            src_i = ((size_t)row * w + col) * 3U;
+            color = (uint16_t)(((uint16_t)(data[src_i] & 0xF8U) << 8) |
+                               ((uint16_t)(data[src_i + 1] & 0xFCU) << 3) |
+                               ((uint16_t)data[src_i + 2] >> 3));
 #if LV_COLOR_16_SWAP
             color = (uint16_t)((color << 8) | (color >> 8));
 #endif
@@ -126,22 +138,15 @@ static UINT commander_jpeg_output(JDEC *jd, void *bitmap, JRECT *rect)
         }
     }
 
-    return 1;
+    return true;
 }
 
 static bool decode_commander_jpeg(const uint8_t *jpeg, size_t jpeg_size,
                                   uint8_t **out_pixels,
                                   uint16_t *out_width, uint16_t *out_height)
 {
-    JDEC decoder;
     commander_jpeg_ctx_t ctx;
-    uint8_t *work = NULL;
-    uint8_t *pixels = NULL;
-    JRESULT res;
-    const uint8_t scale = 3; /* 1/8: ideal for ~700x900 Scryfall art on 360x360 */
-    uint16_t width;
-    uint16_t height;
-    size_t pixel_bytes;
+    esp_err_t err;
 
     if (jpeg == NULL || jpeg_size == 0 || out_pixels == NULL ||
         out_width == NULL || out_height == NULL)
@@ -151,52 +156,24 @@ static bool decode_commander_jpeg(const uint8_t *jpeg, size_t jpeg_size,
     ctx.src = jpeg;
     ctx.src_size = jpeg_size;
 
-    work = (uint8_t *)heap_caps_malloc(3100, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    if (work == NULL) {
-        printf("[Playgroup] Commander JPEG work buffer allocation failed.\n");
-        return false;
-    }
-
-    res = jd_prepare(&decoder, commander_jpeg_input, work, 3100, &ctx);
-    if (res != JDR_OK) {
-        printf("[Playgroup] Commander JPEG prepare failed: %d\n", (int)res);
-        heap_caps_free(work);
-        return false;
-    }
-
-    width = (uint16_t)((decoder.width + 7U) >> scale);
-    height = (uint16_t)((decoder.height + 7U) >> scale);
-    pixel_bytes = (size_t)width * (size_t)height * 2U;
-
-    pixels = (uint8_t *)heap_caps_malloc(pixel_bytes,
-                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (pixels == NULL) {
-        printf("[Playgroup] Commander JPEG pixel allocation failed: %u bytes\n",
-               (unsigned)pixel_bytes);
-        heap_caps_free(work);
-        return false;
-    }
-
-    memset(pixels, 0, pixel_bytes);
-    ctx.dst = pixels;
-    ctx.width = width;
-    ctx.height = height;
-
-    res = jd_decomp(&decoder, commander_jpeg_output, scale);
-    heap_caps_free(work);
-
-    if (res != JDR_OK) {
-        printf("[Playgroup] Commander JPEG decode failed: %d\n", (int)res);
-        heap_caps_free(pixels);
+    err = knobby_esp_jpg_decode(jpeg_size, KNOBBY_JPG_SCALE_8X,
+                                commander_jpeg_reader,
+                                commander_jpeg_writer,
+                                &ctx);
+    if (err != ESP_OK || ctx.dst == NULL || ctx.width == 0 || ctx.height == 0) {
+        if (ctx.dst != NULL)
+            heap_caps_free(ctx.dst);
+        printf("[Playgroup] Commander JPEG wrapper decode failed: %d\n", (int)err);
         return false;
     }
 
     printf("[Playgroup] Commander JPEG decoded to %ux%u RGB565 (%u bytes)\n",
-           (unsigned)width, (unsigned)height, (unsigned)pixel_bytes);
+           (unsigned)ctx.width, (unsigned)ctx.height,
+           (unsigned)((size_t)ctx.width * ctx.height * 2U));
 
-    *out_pixels = pixels;
-    *out_width = width;
-    *out_height = height;
+    *out_pixels = ctx.dst;
+    *out_width = ctx.width;
+    *out_height = ctx.height;
     return true;
 }
 
