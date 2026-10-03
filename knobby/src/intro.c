@@ -5,124 +5,122 @@ extern void back_to_main(void);
 
 lv_obj_t *screen_intro = NULL;
 
-static lv_obj_t *intro_title = NULL;
-static lv_obj_t *intro_subtitle = NULL;
-static lv_obj_t *intro_ring = NULL;
+#define INTRO_TITLE_COUNT 4
+#define INTRO_SUB_COUNT   10
+#define INTRO_TOTAL_STEPS (INTRO_TITLE_COUNT + INTRO_SUB_COUNT)
+#define INTRO_STEP_MS     280U
+#define INTRO_HOLD_MS     650U
+
+static lv_obj_t *intro_title_letters[INTRO_TITLE_COUNT] = {0};
+static lv_obj_t *intro_sub_letters[INTRO_SUB_COUNT] = {0};
+static uint8_t intro_step = 0;
+static bool intro_holding = false;
 static lv_timer_t *intro_timer = NULL;
-static uint32_t intro_started_ms = 0;
-static bool intro_done = false;
 
-#define INTRO_DURATION_MS 3000U
-#define INTRO_TICK_MS      50U
+static const char *title_text[INTRO_TITLE_COUNT] = {"D", "I", "A", "L"};
+static const uint32_t title_colors[INTRO_TITLE_COUNT] = {
+    0x9C5CFF, 0x42A5F5, 0x06D6A0, 0xF6C945
+};
+static const lv_coord_t title_x[INTRO_TITLE_COUNT] = {98, 139, 180, 221};
 
-static lv_opa_t intro_fade(uint32_t elapsed, uint32_t start, uint32_t duration)
-{
-    uint32_t local;
-
-    if (elapsed <= start) return LV_OPA_TRANSP;
-    local = elapsed - start;
-    if (local >= duration) return LV_OPA_COVER;
-
-    return (lv_opa_t)((local * LV_OPA_COVER) / duration);
-}
+static const char *sub_text[INTRO_SUB_COUNT] = {
+    "D", "O", "S", " ", "P", "R", "I", "M", "O", "S"
+};
+static const uint32_t sub_colors[INTRO_SUB_COUNT] = {
+    0xB8B8B8, 0xB8B8B8, 0xB8B8B8, 0xB8B8B8,
+    0x66D9FF, 0x9C5CFF, 0xF6C945, 0x06D6A0, 0x42A5F5, 0xE53935
+};
+static const lv_coord_t sub_x[INTRO_SUB_COUNT] = {
+    72, 94, 116, 138, 156, 178, 200, 222, 246, 270
+};
 
 void refresh_intro_ui(void)
 {
-    uint32_t elapsed;
-    int progress;
+    int i;
 
-    if (screen_intro == NULL) return;
-
-    elapsed = lv_tick_elaps(intro_started_ms);
-    if (elapsed > INTRO_DURATION_MS) elapsed = INTRO_DURATION_MS;
-
-    /* The ring progresses through the whole splash instead of appearing
-       almost complete for a split second. */
-    progress = (int)((elapsed * 100U) / INTRO_DURATION_MS);
-    if (intro_ring != NULL) {
-        lv_arc_set_value(intro_ring, progress);
-        lv_obj_set_style_opa(intro_ring,
-                             intro_fade(elapsed, 100U, 450U), 0);
+    for (i = 0; i < INTRO_TITLE_COUNT; i++) {
+        if (intro_title_letters[i] == NULL) continue;
+        if (i < intro_step)
+            lv_obj_clear_flag(intro_title_letters[i], LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(intro_title_letters[i], LV_OBJ_FLAG_HIDDEN);
     }
 
-    if (intro_title != NULL) {
-        lv_obj_set_style_opa(intro_title,
-                             intro_fade(elapsed, 200U, 500U), 0);
-    }
-
-    if (intro_subtitle != NULL) {
-        lv_obj_set_style_opa(intro_subtitle,
-                             intro_fade(elapsed, 850U, 550U), 0);
+    for (i = 0; i < INTRO_SUB_COUNT; i++) {
+        int visible_step = INTRO_TITLE_COUNT + i;
+        if (intro_sub_letters[i] == NULL) continue;
+        if (visible_step < intro_step)
+            lv_obj_clear_flag(intro_sub_letters[i], LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(intro_sub_letters[i], LV_OBJ_FLAG_HIDDEN);
     }
 }
 
 static void intro_timer_cb(lv_timer_t *timer)
 {
-    uint32_t elapsed = lv_tick_elaps(intro_started_ms);
+    if (!intro_holding) {
+        if (intro_step < INTRO_TOTAL_STEPS) {
+            intro_step++;
+            refresh_intro_ui();
+            return;
+        }
 
-    refresh_intro_ui();
-
-    if (!intro_done && elapsed >= INTRO_DURATION_MS) {
-        intro_done = true;
-        lv_timer_pause(timer);
-        back_to_main();
+        intro_holding = true;
+        lv_timer_set_period(timer, INTRO_HOLD_MS);
+        lv_timer_reset(timer);
+        return;
     }
+
+    lv_timer_pause(timer);
+    back_to_main();
 }
 
 void build_intro_screen(void)
 {
+    int i;
+
     screen_intro = lv_obj_create(NULL);
     lv_obj_set_size(screen_intro, 360, 360);
-    lv_obj_set_style_bg_color(screen_intro, lv_color_hex(0x05070B), 0);
+    lv_obj_set_style_bg_color(screen_intro, lv_color_black(), 0);
     lv_obj_set_style_border_width(screen_intro, 0, 0);
     lv_obj_set_scrollbar_mode(screen_intro, LV_SCROLLBAR_MODE_OFF);
 
-    intro_ring = lv_arc_create(screen_intro);
-    lv_obj_set_size(intro_ring, 224, 224);
-    lv_obj_align(intro_ring, LV_ALIGN_CENTER, 0, 0);
-    lv_arc_set_rotation(intro_ring, 270);
-    lv_arc_set_bg_angles(intro_ring, 0, 360);
-    lv_arc_set_range(intro_ring, 0, 100);
-    lv_arc_set_value(intro_ring, 0);
-    lv_obj_remove_style(intro_ring, NULL, LV_PART_KNOB);
-    lv_obj_set_style_arc_width(intro_ring, 3, LV_PART_MAIN);
-    lv_obj_set_style_arc_color(intro_ring, lv_color_hex(0x202734), LV_PART_MAIN);
-    lv_obj_set_style_arc_width(intro_ring, 5, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(intro_ring, lv_color_hex(0x66D9FF), LV_PART_INDICATOR);
-    lv_obj_clear_flag(intro_ring, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_opa(intro_ring, LV_OPA_TRANSP, 0);
+    for (i = 0; i < INTRO_TITLE_COUNT; i++) {
+        intro_title_letters[i] = lv_label_create(screen_intro);
+        lv_label_set_text(intro_title_letters[i], title_text[i]);
+        lv_obj_set_style_text_color(
+            intro_title_letters[i], lv_color_hex(title_colors[i]), 0);
+        lv_obj_set_style_text_font(
+            intro_title_letters[i], &lv_font_montserrat_32, 0);
+        lv_obj_set_pos(intro_title_letters[i], title_x[i], 132);
+        lv_obj_add_flag(intro_title_letters[i], LV_OBJ_FLAG_HIDDEN);
+    }
 
-    intro_title = lv_label_create(screen_intro);
-    lv_label_set_text(intro_title, "DIAL");
-    lv_obj_set_style_text_color(intro_title, lv_color_white(), 0);
-    /* The custom bold-44 asset is numeric-only on the device, which rendered
-       letters as missing-glyph boxes. Use the built-in Montserrat text font. */
-    lv_obj_set_style_text_font(intro_title, &lv_font_montserrat_32, 0);
-    lv_obj_set_style_text_letter_space(intro_title, 7, 0);
-    lv_obj_align(intro_title, LV_ALIGN_CENTER, 3, -16);
-    lv_obj_set_style_opa(intro_title, LV_OPA_TRANSP, 0);
+    for (i = 0; i < INTRO_SUB_COUNT; i++) {
+        intro_sub_letters[i] = lv_label_create(screen_intro);
+        lv_label_set_text(intro_sub_letters[i], sub_text[i]);
+        lv_obj_set_style_text_color(
+            intro_sub_letters[i], lv_color_hex(sub_colors[i]), 0);
+        lv_obj_set_style_text_font(
+            intro_sub_letters[i], &lv_font_montserrat_16, 0);
+        lv_obj_set_pos(intro_sub_letters[i], sub_x[i], 188);
+        lv_obj_add_flag(intro_sub_letters[i], LV_OBJ_FLAG_HIDDEN);
+    }
 
-    intro_subtitle = lv_label_create(screen_intro);
-    lv_label_set_text(intro_subtitle, "DOS PRIMOS");
-    lv_obj_set_style_text_color(intro_subtitle, lv_color_hex(0xAFC2D4), 0);
-    lv_obj_set_style_text_font(intro_subtitle, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_letter_space(intro_subtitle, 3, 0);
-    lv_obj_align(intro_subtitle, LV_ALIGN_CENTER, 1, 28);
-    lv_obj_set_style_opa(intro_subtitle, LV_OPA_TRANSP, 0);
+    refresh_intro_ui();
 }
 
 void knob_intro_init(void)
 {
-    intro_started_ms = lv_tick_get();
-    intro_done = false;
+    intro_step = 0;
+    intro_holding = false;
+    refresh_intro_ui();
 
     if (intro_timer == NULL) {
-        intro_timer = lv_timer_create(intro_timer_cb, INTRO_TICK_MS, NULL);
+        intro_timer = lv_timer_create(intro_timer_cb, INTRO_STEP_MS, NULL);
     } else {
-        lv_timer_set_period(intro_timer, INTRO_TICK_MS);
+        lv_timer_set_period(intro_timer, INTRO_STEP_MS);
         lv_timer_reset(intro_timer);
         lv_timer_resume(intro_timer);
     }
-
-    refresh_intro_ui();
 }
