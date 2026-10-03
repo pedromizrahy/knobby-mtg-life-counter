@@ -19,6 +19,7 @@ static lv_obj_t *label_life_total = NULL;
 static lv_obj_t *label_life_preview_total = NULL;
 static lv_obj_t *turn_container = NULL;
 static lv_obj_t *label_turn = NULL;
+static lv_obj_t *label_turn_meta = NULL;
 static lv_obj_t *turn_live_dot = NULL;
 static lv_obj_t *turn_hold_arc = NULL;
 
@@ -63,31 +64,29 @@ static void refresh_ring(void)
 
 void refresh_turn_ui(void)
 {
-    char buf[48];
+    char time_buf[24];
+    char meta_buf[32];
     uint32_t total_seconds = get_current_turn_elapsed_ms() / 1000;
     uint32_t minutes = total_seconds / 60;
     uint32_t seconds = total_seconds % 60;
+    lv_color_t active_color = get_effective_player_color(0, 0, LIFE_VIB_VIV);
 
-    if (turn_number <= 0 || active_turn_player < 0) {
-        snprintf(buf, sizeof(buf), "0:00");
-    } else if (nvs_get_turn_show_name()) {
-        const char *name = (active_turn_player < MAX_GAME_PLAYERS)
-                               ? player_names[active_turn_player]
-                               : "P?";
-        snprintf(buf, sizeof(buf), "%s  %lu:%02lu  R%d",
-                 name,
-                 (unsigned long)minutes,
-                 (unsigned long)seconds,
-                 round_number);
+    snprintf(time_buf, sizeof(time_buf), "%lu:%02lu",
+             (unsigned long)minutes,
+             (unsigned long)seconds);
+    lv_label_set_text(label_turn, time_buf);
+
+    if (nvs_get_turn_show_name() && active_turn_player >= 0 &&
+        active_turn_player < MAX_GAME_PLAYERS) {
+        snprintf(meta_buf, sizeof(meta_buf), "%s · R%d",
+                 player_names[active_turn_player], round_number);
     } else {
-        snprintf(buf, sizeof(buf), "%lu:%02lu  R%d",
-                 (unsigned long)minutes,
-                 (unsigned long)seconds,
-                 round_number);
+        snprintf(meta_buf, sizeof(meta_buf), "R%d", round_number);
     }
-    lv_label_set_text(label_turn, buf);
+    if (label_turn_meta != NULL) lv_label_set_text(label_turn_meta, meta_buf);
 
     if (turn_hold_arc != NULL) {
+        lv_obj_set_style_arc_color(turn_hold_arc, active_color, LV_PART_INDICATOR);
         if (turn_hold_active) {
             lv_arc_set_value(turn_hold_arc, turn_hold_progress);
             lv_obj_clear_flag(turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
@@ -98,19 +97,32 @@ void refresh_turn_ui(void)
     }
 
     if (turn_reminder_active && nvs_get_turn_visual_alert()) {
-        lv_obj_set_style_text_color(label_turn, lv_palette_main(LV_PALETTE_RED), 0);
+        lv_color_t alert = lv_palette_main(LV_PALETTE_RED);
+        lv_obj_set_style_text_color(label_turn, alert, 0);
+        if (label_turn_meta != NULL)
+            lv_obj_set_style_text_color(label_turn_meta, alert, 0);
         if (turn_container != NULL) {
-            lv_obj_set_style_bg_color(turn_container,
-                turn_reminder_flash_on ? lv_color_hex(0x3A0909) : lv_color_hex(0x101010), 0);
+            lv_obj_set_style_border_color(turn_container, alert, 0);
+            lv_obj_set_style_border_width(turn_container,
+                                          turn_reminder_flash_on ? 3 : 2, 0);
+            lv_obj_set_style_bg_color(
+                turn_container,
+                turn_reminder_flash_on ? lv_color_hex(0x4A0808)
+                                       : lv_color_hex(0x101010),
+                0);
         }
+        if (turn_hold_arc != NULL)
+            lv_obj_set_style_arc_color(turn_hold_arc, alert, LV_PART_INDICATOR);
     } else {
         lv_obj_set_style_text_color(label_turn, lv_color_white(), 0);
-        if (turn_container != NULL)
+        if (label_turn_meta != NULL)
+            lv_obj_set_style_text_color(label_turn_meta,
+                                        lv_color_hex(0xA8A8A8), 0);
+        if (turn_container != NULL) {
+            lv_obj_set_style_border_color(turn_container, active_color, 0);
+            lv_obj_set_style_border_width(turn_container, 2, 0);
             lv_obj_set_style_bg_color(turn_container, lv_color_hex(0x101010), 0);
-    }
-
-    if (turn_live_dot != NULL) {
-        lv_obj_align_to(turn_live_dot, label_turn, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+        }
     }
 
     if (turn_container != NULL) {
@@ -119,18 +131,18 @@ void refresh_turn_ui(void)
         } else {
             lv_obj_add_flag(turn_container, LV_OBJ_FLAG_HIDDEN);
         }
+        lv_obj_set_style_opa(turn_container,
+                             turn_indicator_visible ? LV_OPA_COVER : LV_OPA_TRANSP,
+                             0);
     }
 
     if (turn_live_dot != NULL) {
         if (turn_timer_enabled) {
             lv_obj_clear_flag(turn_live_dot, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_bg_color(turn_live_dot, active_color, 0);
         } else {
             lv_obj_add_flag(turn_live_dot, LV_OBJ_FLAG_HIDDEN);
         }
-    }
-
-    if (turn_container != NULL) {
-        lv_obj_set_style_opa(turn_container, turn_indicator_visible ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
     }
 
     refresh_multiplayer_turn_ui();
@@ -510,17 +522,29 @@ void build_main_screen(void)
     lv_obj_clear_flag(turn_hold_arc, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
 
-    turn_container = make_plain_box(screen_1p, 240, 32);
-    lv_obj_align(turn_container, LV_ALIGN_CENTER, 0, 120);
+    turn_container = make_plain_box(screen_1p, 190, 52);
+    lv_obj_align(turn_container, LV_ALIGN_CENTER, 0, 118);
+    lv_obj_set_style_radius(turn_container, 18, 0);
+    lv_obj_set_style_bg_color(turn_container, lv_color_hex(0x101010), 0);
+    lv_obj_set_style_bg_opa(turn_container, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(turn_container, 2, 0);
     lv_obj_add_flag(turn_container, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(turn_container, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_event_cb(turn_container, event_turn_hold, LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(turn_container, event_turn_hold, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(turn_container, event_turn_hold, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(turn_container, event_turn_hold, LV_EVENT_PRESS_LOST, NULL);
 
     label_turn = lv_label_create(turn_container);
-    lv_label_set_text(label_turn, "turn  0:00");
-    lv_obj_set_style_text_color(label_turn, lv_color_hex(0xB8B8B8), 0);
+    lv_label_set_text(label_turn, "0:00");
+    lv_obj_set_style_text_color(label_turn, lv_color_white(), 0);
     lv_obj_set_style_text_font(label_turn, &lv_font_montserrat_22, 0);
-    lv_obj_align(label_turn, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(label_turn, LV_ALIGN_TOP_MID, 0, 4);
+
+    label_turn_meta = lv_label_create(turn_container);
+    lv_label_set_text(label_turn_meta, "R1");
+    lv_obj_set_style_text_color(label_turn_meta, lv_color_hex(0xA8A8A8), 0);
+    lv_obj_set_style_text_font(label_turn_meta, &lv_font_montserrat_12, 0);
+    lv_obj_align(label_turn_meta, LV_ALIGN_BOTTOM_MID, 0, -4);
 
     turn_live_dot = lv_obj_create(turn_container);
     lv_obj_remove_style_all(turn_live_dot);
@@ -528,7 +552,7 @@ void build_main_screen(void)
     lv_obj_set_style_radius(turn_live_dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(turn_live_dot, lv_palette_main(LV_PALETTE_RED), 0);
     lv_obj_set_style_bg_opa(turn_live_dot, LV_OPA_COVER, 0);
-    lv_obj_align_to(turn_live_dot, label_turn, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+    lv_obj_align(turn_live_dot, LV_ALIGN_RIGHT_MID, -10, 0);
     lv_obj_add_flag(turn_live_dot, LV_OBJ_FLAG_HIDDEN);
 
     create_counter_row_1p(screen_1p, COUNTER_TYPE_COMMANDER_TAX,
