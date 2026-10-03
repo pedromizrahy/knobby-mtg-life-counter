@@ -9,6 +9,7 @@ typedef enum {
     LOG_EVT_LIFE = 0,
     LOG_EVT_DAMAGE,
     LOG_EVT_CMD_DAMAGE,
+    LOG_EVT_CMD_INFECT,
     LOG_EVT_POISON,
     LOG_EVT_COUNTER,
 } log_event_type_t;
