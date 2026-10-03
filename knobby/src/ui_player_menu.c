@@ -5,6 +5,7 @@
 #include "settings.h"
 #include "storage.h"
 #include "ui_1p.h"
+#include "ui_damage_resolver.h"
 
 // ---------- screens ----------
 lv_obj_t *screen_player_menu = NULL;
@@ -138,6 +139,11 @@ static void event_menu_cmd_damage(lv_event_t *e) {
   (void)e;
   prepare_cmd_damage_for_player(menu_player);
   open_select_screen();
+}
+
+static void event_menu_deal_damage(lv_event_t *e) {
+  (void)e;
+  open_damage_resolver(menu_player);
 }
 
 static void event_menu_all_damage(lv_event_t *e) {
@@ -307,7 +313,7 @@ static void event_color_apply(lv_event_t *e) {
 void build_player_menu_screen(void) {
   quad_item_t items[4] = {
       {"Name/\nColor", event_menu_color, true, LV_EVENT_CLICKED},
-      {"Commander\nDamage", event_menu_cmd_damage, true, LV_EVENT_CLICKED},
+      {"Deal\nDamage", event_menu_deal_damage, true, LV_EVENT_CLICKED},
       {"All\nDamage", event_menu_all_damage, true, LV_EVENT_CLICKED},
       {"Counters", event_menu_counters, true, LV_EVENT_SHORT_CLICKED},
   };
