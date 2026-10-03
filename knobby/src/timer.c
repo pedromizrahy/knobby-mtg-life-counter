@@ -42,11 +42,16 @@ uint32_t get_current_turn_elapsed_ms(void)
     return lv_tick_elaps(current_turn_started_ms);
 }
 
-void turn_timer_start_fresh(void)
+void turn_timer_start_for_player(int player)
 {
+    int player_count = nvs_get_players_to_track();
+
+    if (player_count < 1) player_count = 1;
+    if (player < 0 || player >= player_count) player = 0;
+
     turn_number = 1;
     round_number = 1;
-    active_turn_player = 0;
+    active_turn_player = player;
     turn_elapsed_ms = 0;
     turn_started_ms = lv_tick_get();
     current_turn_started_ms = turn_started_ms;
@@ -63,6 +68,11 @@ void turn_timer_start_fresh(void)
     }
 
     refresh_turn_ui();
+}
+
+void turn_timer_start_fresh(void)
+{
+    turn_timer_start_for_player(0);
 }
 
 void turn_timer_reset(void)
