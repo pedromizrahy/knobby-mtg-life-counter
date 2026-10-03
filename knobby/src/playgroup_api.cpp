@@ -104,6 +104,11 @@ static bool sync_clock_for_tls(void)
     uint32_t started;
     time_t now;
 
+    time(&now);
+    if (now >= PG_VALID_EPOCH) {
+        return true;
+    }
+
     /* Certificate validation needs a sane wall clock. A freshly booted
        ESP32 starts near the Unix epoch, which makes valid HTTPS
        certificates look "not yet valid". Keep UTC only; timezone is
@@ -451,8 +456,9 @@ static bool json_extract_float_from_object(const String &obj, const char *key, f
     return true;
 }
 
-static bool json_extract_nested_name(const String &obj, const char *key,
-                                     char *out, size_t out_size)
+static bool json_extract_nested_string_field(const String &obj, const char *key,
+                                             const char *nested_key,
+                                             char *out, size_t out_size)
 {
     String needle = String("\"") + key + "\"";
     int key_pos = obj.indexOf(needle);
@@ -492,11 +498,17 @@ static bool json_extract_nested_name(const String &obj, const char *key,
             depth--;
             if (depth == 0) {
                 String nested = obj.substring(object_start, i + 1);
-                return json_extract_string(nested, "name", out, out_size);
+                return json_extract_string(nested, nested_key, out, out_size);
             }
         }
     }
     return false;
+}
+
+static bool json_extract_nested_name(const String &obj, const char *key,
+                                     char *out, size_t out_size)
+{
+    return json_extract_nested_string_field(obj, key, "name", out, out_size);
 }
 
 typedef bool (*json_object_cb_t)(const String &obj, void *ctx);
@@ -587,6 +599,8 @@ static bool parse_deck_object(const String &obj, void *ctx)
     json_extract_string_from_object(obj, "name", deck->name, sizeof(deck->name));
     json_extract_nested_name(obj, "commander", deck->commander, sizeof(deck->commander));
     json_extract_nested_name(obj, "partner", deck->partner, sizeof(deck->partner));
+    json_extract_nested_string_field(obj, "commander", "art_crop_url",
+                                     deck->art_crop_url, sizeof(deck->art_crop_url));
 
     cached_deck_count++;
     return true;
