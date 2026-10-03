@@ -121,7 +121,9 @@ static bool sync_clock_for_tls(void)
         time(&now);
         if (now >= PG_VALID_EPOCH) {
             Serial.println();
-            Serial.println("[Playgroup] Clock synced.");
+            Serial.print("[Playgroup] Clock synced in ");
+            Serial.print((unsigned long)(millis() - started));
+            Serial.println(" ms.");
             return true;
         }
         delay(250);
@@ -168,12 +170,18 @@ static bool wifi_connect_saved(void)
     Serial.println();
 
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("[Playgroup] Wi-Fi connection failed.");
+        Serial.print("[Playgroup] Wi-Fi connection failed after ");
+        Serial.print((unsigned long)(millis() - started));
+        Serial.println(" ms.");
         wifi_power_down();
         return false;
     }
 
-    Serial.println("[Playgroup] Wi-Fi connected.");
+    Serial.print("[Playgroup] Wi-Fi connected in ");
+    Serial.print((unsigned long)(millis() - started));
+    Serial.print(" ms; RSSI ");
+    Serial.print(WiFi.RSSI());
+    Serial.println(" dBm.");
 
     if (!sync_clock_for_tls()) {
         wifi_power_down();
@@ -242,6 +250,7 @@ static bool playgroup_https_get(const String &path, String &response, int &statu
     HTTPClient http;
     String auth;
     String url;
+    uint32_t request_started;
 
     response = "";
     status = -1;
@@ -271,11 +280,22 @@ static bool playgroup_https_get(const String &path, String &response, int &statu
     http.addHeader("Authorization", auth);
     http.addHeader("User-Agent", "DialDosPrimos/0.1 (ESP32-S3)");
 
+    request_started = millis();
     status = http.GET();
     auth = "";
 
     if (status > 0)
         response = http.getString();
+
+    Serial.print("[Playgroup] GET ");
+    Serial.print(path);
+    Serial.print(" -> HTTP ");
+    Serial.print(status);
+    Serial.print(" in ");
+    Serial.print((unsigned long)(millis() - request_started));
+    Serial.print(" ms; body ");
+    Serial.print((unsigned)response.length());
+    Serial.println(" bytes");
 
     http.end();
     return status > 0;
@@ -713,6 +733,8 @@ bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_s
     int status;
     int content_length;
     size_t received;
+    uint32_t request_started;
+    uint32_t download_started;
 
     if (url == NULL || url[0] == '\0' || out_data == NULL || out_size == NULL)
         return false;
@@ -735,7 +757,17 @@ bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_s
 
     http.addHeader("User-Agent", "DialDosPrimos/0.1 (ESP32-S3)");
     http.addHeader("Accept", "image/jpeg,image/*;q=0.9,*/*;q=0.8");
+
+    Serial.print("[Playgroup] Commander art request: ");
+    Serial.println(url);
+    request_started = millis();
     status = http.GET();
+    Serial.print("[Playgroup] Commander art headers -> HTTP ");
+    Serial.print(status);
+    Serial.print(" in ");
+    Serial.print((unsigned long)(millis() - request_started));
+    Serial.println(" ms");
+
     if (status != HTTP_CODE_OK) {
         Serial.print("[Playgroup] Commander art HTTP ");
         Serial.println(status);
@@ -762,8 +794,29 @@ bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_s
         return false;
     }
 
+    Serial.print("[Playgroup] Commander art content length: ");
+    Serial.print(content_length);
+    Serial.println(" bytes");
+
     stream = http.getStreamPtr();
+    download_started = millis();
     received = stream->readBytes((char *)data, (size_t)content_length);
+
+    Serial.print("[Playgroup] Commander art downloaded ");
+    Serial.print((unsigned)received);
+    Serial.print(" bytes in ");
+    Serial.print((unsigned long)(millis() - download_started));
+    Serial.println(" ms");
+
+    if (received >= 4) {
+        Serial.print("[Playgroup] Commander art signature: ");
+        for (int i = 0; i < 4; i++) {
+            if (data[i] < 16) Serial.print("0");
+            Serial.print(data[i], HEX);
+            if (i < 3) Serial.print(" ");
+        }
+        Serial.println();
+    }
 
     http.end();
     wifi_power_down();
