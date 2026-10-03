@@ -8,6 +8,8 @@ extern lv_obj_t *screen_damage_resolver;
 
 void build_damage_resolver_screens(void);
 void open_damage_resolver(int source_player);
+void open_damage_resolver_for_target(int source_player, int target_player,
+                                     bool advanced);
 void refresh_damage_resolver_ui(void);
 void damage_resolver_change_amount(int delta);
 
