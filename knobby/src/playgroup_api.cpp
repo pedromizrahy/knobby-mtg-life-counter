@@ -4,6 +4,9 @@
 #include <WiFi.h>
 #include <nvs.h>
 #include <esp_heap_caps.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
 
 #include "playgroup_api.h"
 #include "../knobby_net.h"
@@ -21,6 +24,8 @@
 #define PG_PASSWORD_MAX 65
 #define PG_API_KEY_MAX 192
 #define PG_SERIAL_LINE_MAX 320
+#define PG_ART_CACHE_SLOTS 8
+#define PG_ART_CACHE_MAX_BYTES (256U * 1024U)
 
 static char serial_line[PG_SERIAL_LINE_MAX];
 static size_t serial_line_len = 0;
@@ -31,6 +36,126 @@ static playgroup_member_t cached_members[PG_MAX_MEMBERS];
 static int cached_member_count = 0;
 static playgroup_deck_t cached_decks[PG_MAX_DECKS];
 static int cached_deck_count = 0;
+
+typedef struct {
+    char scryfall_id[PG_SCRYFALL_ID_LEN];
+    uint8_t *data;
+    size_t size;
+    uint32_t stamp;
+} pg_art_cache_entry_t;
+
+typedef struct {
+    uint32_t generation;
+    int count;
+    char ids[PG_MAX_DECKS][PG_SCRYFALL_ID_LEN];
+} pg_art_prefetch_job_t;
+
+static pg_art_cache_entry_t art_cache[PG_ART_CACHE_SLOTS];
+static SemaphoreHandle_t art_cache_mutex = NULL;
+static SemaphoreHandle_t art_http_mutex = NULL;
+static volatile uint32_t art_prefetch_generation = 0;
+static uint32_t art_cache_stamp = 1;
+
+static void art_cache_init(void)
+{
+    if (art_cache_mutex == NULL)
+        art_cache_mutex = xSemaphoreCreateMutex();
+    if (art_http_mutex == NULL)
+        art_http_mutex = xSemaphoreCreateMutex();
+}
+
+static bool art_cache_copy(const char *id, uint8_t **out_data, size_t *out_size)
+{
+    bool found = false;
+
+    art_cache_init();
+    if (art_cache_mutex == NULL || id == NULL || out_data == NULL || out_size == NULL)
+        return false;
+
+    xSemaphoreTake(art_cache_mutex, portMAX_DELAY);
+    for (int i = 0; i < PG_ART_CACHE_SLOTS; i++) {
+        if (art_cache[i].data != NULL && strcmp(art_cache[i].scryfall_id, id) == 0) {
+            uint8_t *copy = (uint8_t *)heap_caps_malloc(art_cache[i].size,
+                                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (copy != NULL) {
+                memcpy(copy, art_cache[i].data, art_cache[i].size);
+                *out_data = copy;
+                *out_size = art_cache[i].size;
+                art_cache[i].stamp = art_cache_stamp++;
+                found = true;
+            }
+            break;
+        }
+    }
+    xSemaphoreGive(art_cache_mutex);
+    return found;
+}
+
+static void art_cache_store(const char *id, const uint8_t *data, size_t size)
+{
+    int slot = -1;
+    uint32_t oldest = UINT32_MAX;
+
+    if (id == NULL || data == NULL || size == 0 || size > PG_ART_CACHE_MAX_BYTES)
+        return;
+
+    art_cache_init();
+    if (art_cache_mutex == NULL)
+        return;
+
+    xSemaphoreTake(art_cache_mutex, portMAX_DELAY);
+
+    for (int i = 0; i < PG_ART_CACHE_SLOTS; i++) {
+        if (art_cache[i].data != NULL && strcmp(art_cache[i].scryfall_id, id) == 0) {
+            art_cache[i].stamp = art_cache_stamp++;
+            xSemaphoreGive(art_cache_mutex);
+            return;
+        }
+        if (art_cache[i].data == NULL) {
+            slot = i;
+            break;
+        }
+        if (art_cache[i].stamp < oldest) {
+            oldest = art_cache[i].stamp;
+            slot = i;
+        }
+    }
+
+    if (slot >= 0) {
+        uint8_t *copy = (uint8_t *)heap_caps_malloc(size,
+                                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (copy != NULL) {
+            memcpy(copy, data, size);
+            if (art_cache[slot].data != NULL)
+                heap_caps_free(art_cache[slot].data);
+            art_cache[slot].data = copy;
+            art_cache[slot].size = size;
+            art_cache[slot].stamp = art_cache_stamp++;
+            strlcpy(art_cache[slot].scryfall_id, id, sizeof(art_cache[slot].scryfall_id));
+        }
+    }
+
+    xSemaphoreGive(art_cache_mutex);
+}
+
+static void art_cache_clear(void)
+{
+    art_cache_init();
+    if (art_cache_mutex == NULL)
+        return;
+
+    xSemaphoreTake(art_cache_mutex, portMAX_DELAY);
+    for (int i = 0; i < PG_ART_CACHE_SLOTS; i++) {
+        if (art_cache[i].data != NULL) {
+            heap_caps_free(art_cache[i].data);
+            art_cache[i].data = NULL;
+        }
+        art_cache[i].size = 0;
+        art_cache[i].stamp = 0;
+        art_cache[i].scryfall_id[0] = '\0';
+    }
+    xSemaphoreGive(art_cache_mutex);
+}
 
 class PsramBufferStream : public Stream {
 public:
@@ -244,6 +369,9 @@ static bool wifi_connect_saved(void)
 
 void playgroup_end_session(void)
 {
+    ++art_prefetch_generation;
+    art_cache_clear();
+
     if (WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_OFF) {
         Serial.println("[Playgroup] Ending Wi-Fi session.");
         wifi_power_down();
@@ -778,7 +906,7 @@ const playgroup_deck_t *playgroup_cached_deck(int index)
     return &cached_decks[index];
 }
 
-bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_t *out_size)
+static bool playgroup_download_image_network(const char *scryfall_id, uint8_t **out_data, size_t *out_size)
 {
     NetworkClientSecure tls;
     HTTPClient http;
@@ -900,6 +1028,119 @@ bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_
     *out_data = data;
     *out_size = received;
     return true;
+}
+
+bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_t *out_size)
+{
+    bool ok;
+
+    if (scryfall_id == NULL || scryfall_id[0] == '\0' ||
+        out_data == NULL || out_size == NULL)
+        return false;
+
+    *out_data = NULL;
+    *out_size = 0;
+
+    if (art_cache_copy(scryfall_id, out_data, out_size)) {
+        Serial.print("[Playgroup] Commander art cache hit: ");
+        Serial.println(scryfall_id);
+        return true;
+    }
+
+    art_cache_init();
+    if (art_http_mutex == NULL)
+        return false;
+
+    xSemaphoreTake(art_http_mutex, portMAX_DELAY);
+
+    if (art_cache_copy(scryfall_id, out_data, out_size)) {
+        xSemaphoreGive(art_http_mutex);
+        Serial.print("[Playgroup] Commander art cache hit after wait: ");
+        Serial.println(scryfall_id);
+        return true;
+    }
+
+    ok = playgroup_download_image_network(scryfall_id, out_data, out_size);
+    if (ok && *out_data != NULL && *out_size > 0)
+        art_cache_store(scryfall_id, *out_data, *out_size);
+
+    xSemaphoreGive(art_http_mutex);
+    return ok;
+}
+
+static void playgroup_art_prefetch_task(void *param)
+{
+    pg_art_prefetch_job_t *job = (pg_art_prefetch_job_t *)param;
+
+    if (job == NULL) {
+        vTaskDelete(NULL);
+        return;
+    }
+
+    Serial.print("[Playgroup] Art prefetch started for ");
+    Serial.print(job->count);
+    Serial.println(" decks.");
+
+    for (int i = 0; i < job->count; i++) {
+        uint8_t *data = NULL;
+        size_t size = 0;
+
+        if (job->generation != art_prefetch_generation)
+            break;
+        if (job->ids[i][0] == '\0')
+            continue;
+
+        if (art_cache_copy(job->ids[i], &data, &size)) {
+            playgroup_free_image(data);
+            continue;
+        }
+
+        Serial.print("[Playgroup] Prefetch art ");
+        Serial.print(i + 1);
+        Serial.print("/");
+        Serial.print(job->count);
+        Serial.print(": ");
+        Serial.println(job->ids[i]);
+
+        if (playgroup_download_image(job->ids[i], &data, &size))
+            playgroup_free_image(data);
+    }
+
+    if (job->generation == art_prefetch_generation)
+        Serial.println("[Playgroup] Art prefetch finished.");
+
+    heap_caps_free(job);
+    vTaskDelete(NULL);
+}
+
+void playgroup_prefetch_deck_images(void)
+{
+    pg_art_prefetch_job_t *job;
+    uint32_t generation = ++art_prefetch_generation;
+
+    if (cached_deck_count <= 0)
+        return;
+
+    job = (pg_art_prefetch_job_t *)heap_caps_calloc(1, sizeof(*job),
+                                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (job == NULL) {
+        Serial.println("[Playgroup] Could not allocate art prefetch job.");
+        return;
+    }
+
+    job->generation = generation;
+    job->count = cached_deck_count;
+    if (job->count > PG_MAX_DECKS)
+        job->count = PG_MAX_DECKS;
+
+    for (int i = 0; i < job->count; i++)
+        strlcpy(job->ids[i], cached_decks[i].scryfall_id, sizeof(job->ids[i]));
+
+    if (xTaskCreatePinnedToCore(playgroup_art_prefetch_task, "pg_art_prefetch",
+                                6144, job, 1, NULL, 0) != pdPASS) {
+        Serial.println("[Playgroup] Could not start art prefetch task.");
+        heap_caps_free(job);
+    }
 }
 
 void playgroup_free_image(uint8_t *data)
