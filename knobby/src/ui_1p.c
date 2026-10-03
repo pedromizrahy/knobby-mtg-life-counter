@@ -79,10 +79,10 @@ void refresh_turn_ui(void)
     lv_label_set_text(label_turn, time_buf);
 
     if (active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS) {
-        snprintf(meta_buf, sizeof(meta_buf), "%s · R%d · T%d",
+        snprintf(meta_buf, sizeof(meta_buf), "%s | R%d | T%d",
                  player_names[active_turn_player], round_number, turn_in_round);
     } else {
-        snprintf(meta_buf, sizeof(meta_buf), "P1 · R%d · T%d",
+        snprintf(meta_buf, sizeof(meta_buf), "P1 | R%d | T%d",
                  round_number, turn_in_round);
     }
     if (label_turn_meta != NULL) lv_label_set_text(label_turn_meta, meta_buf);
