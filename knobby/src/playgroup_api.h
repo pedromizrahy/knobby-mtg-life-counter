@@ -69,6 +69,10 @@ void playgroup_free_image(uint8_t *data);
    Images are kept compressed in PSRAM and reused by the deck picker. */
 void playgroup_prefetch_deck_images(void);
 
+/* Non-blocking cache lookup for UI. Returns a caller-owned PSRAM copy. */
+bool playgroup_cached_image_copy(const char *scryfall_id,
+                                 uint8_t **out_data, size_t *out_size);
+
 void playgroup_end_session(void);
 
 #ifdef __cplusplus
