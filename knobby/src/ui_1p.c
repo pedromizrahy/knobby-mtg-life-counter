@@ -78,12 +78,11 @@ void refresh_turn_ui(void)
              (unsigned long)seconds);
     lv_label_set_text(label_turn, time_buf);
 
-    if (nvs_get_turn_show_name() && active_turn_player >= 0 &&
-        active_turn_player < MAX_GAME_PLAYERS) {
+    if (active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS) {
         snprintf(meta_buf, sizeof(meta_buf), "%s · R%d · T%d",
                  player_names[active_turn_player], round_number, turn_in_round);
     } else {
-        snprintf(meta_buf, sizeof(meta_buf), "R%d · T%d",
+        snprintf(meta_buf, sizeof(meta_buf), "P1 · R%d · T%d",
                  round_number, turn_in_round);
     }
     if (label_turn_meta != NULL) lv_label_set_text(label_turn_meta, meta_buf);
@@ -550,7 +549,7 @@ void build_main_screen(void)
     lv_obj_add_flag(turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
 
     turn_container = make_plain_box(screen_1p, 190, 52);
-    lv_obj_align(turn_container, LV_ALIGN_CENTER, 0, 118);
+    lv_obj_align(turn_container, LV_ALIGN_CENTER, 0, 102);
     lv_obj_set_style_radius(turn_container, 18, 0);
     lv_obj_set_style_bg_color(turn_container, lv_color_hex(0x101010), 0);
     lv_obj_set_style_bg_opa(turn_container, LV_OPA_90, 0);
