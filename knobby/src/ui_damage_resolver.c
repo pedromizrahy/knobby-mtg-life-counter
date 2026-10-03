@@ -240,7 +240,7 @@ void build_damage_resolver_screens(void)
         target_labels[i] = lv_label_create(target_buttons[i]);
         lv_label_set_text(target_labels[i], "Player");
         lv_obj_set_style_text_color(target_labels[i], lv_color_white(), 0);
-        lv_obj_set_style_text_font(target_labels[i], &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_font(target_labels[i], &lv_font_montserrat_16, 0);
         lv_obj_center(target_labels[i]);
     }
 
@@ -253,7 +253,7 @@ void build_damage_resolver_screens(void)
     resolver_title = lv_label_create(screen_damage_resolver);
     lv_label_set_text(resolver_title, "P1 > P2");
     lv_obj_set_style_text_color(resolver_title, lv_color_white(), 0);
-    lv_obj_set_style_text_font(resolver_title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(resolver_title, &lv_font_montserrat_22, 0);
     lv_obj_align(resolver_title, LV_ALIGN_TOP_MID, 0, 30);
 
     resolver_mode_label = lv_label_create(screen_damage_resolver);
