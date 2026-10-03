@@ -600,6 +600,7 @@ static void table_sync_timer_cb(lv_timer_t *timer)
 
 void open_table_sync_screen(void)
 {
+    table_sync_from_tools = false;
     refresh_table_sync_ui();
     lv_timer_resume(table_sync_timer);
     lv_scr_load(screen_table_sync);
@@ -825,8 +826,8 @@ static void event_open_damage_log(lv_event_t *e)
 static void event_open_table_sync_tools(lv_event_t *e)
 {
     (void)e;
-    table_sync_from_tools = true;
     open_table_sync_screen();
+    table_sync_from_tools = true;
 }
 
 static void event_start_new_game(lv_event_t *e)
