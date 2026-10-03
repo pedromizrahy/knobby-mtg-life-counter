@@ -215,11 +215,11 @@ static void refresh_mulligans(void)
             break;
         case 2:
             button_h = 60; button_w = 244; gap = 14;
-            font = &lv_font_montserrat_18;
+            font = &lv_font_montserrat_22;
             break;
         case 3:
             button_h = 52; button_w = 236; gap = 10;
-            font = &lv_font_montserrat_18;
+            font = &lv_font_montserrat_16;
             break;
         case 4:
             button_h = 44; button_w = 226; gap = 8;
