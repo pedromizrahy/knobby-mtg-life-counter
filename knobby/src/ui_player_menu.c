@@ -208,6 +208,7 @@ static void event_all_damage_apply(lv_event_t *e) {
   /* Opponents receive sourced normal damage so history records who dealt it.
      The optional self hit remains a direct life change because self-target
      combat is intentionally not part of the drag/damage resolver UX. */
+  damage_log_begin_action();
   for (i = 0; i < track && i < MAX_DISPLAY_PLAYERS; i++) {
     if (i == menu_player) {
       if (include_myself) apply_life_delta(i, -all_damage_value);
@@ -216,6 +217,7 @@ static void event_all_damage_apply(lv_event_t *e) {
     if (player_eliminated[i]) continue;
     apply_sourced_damage(menu_player, i, all_damage_value, DAMAGE_TYPE_NORMAL);
   }
+  damage_log_end_action();
 
   refresh_player_ui();
   back_to_main();
