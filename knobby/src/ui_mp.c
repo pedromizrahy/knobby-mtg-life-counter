@@ -753,6 +753,7 @@ static void event_multiplayer_drag(lv_event_t *e)
     }
 
     if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        bool was_drag = drag_active;
         bool handled = drag_active && drag_target_player >= 0 &&
                        drag_target_player != drag_source_player &&
                        !player_eliminated[drag_target_player];
@@ -760,7 +761,15 @@ static void event_multiplayer_drag(lv_event_t *e)
         int target = drag_target_player;
         bool advanced = drag_advanced_ready;
 
-        drag_release_ms = lv_tick_get();
+        /*
+         * Suppress the follow-up click only after an actual drag.
+         * A normal tap also emits RELEASED before SHORT_CLICKED; recording
+         * every release here made every multiplayer tap look like a
+         * post-drag click and effectively disabled player selection.
+         */
+        if (was_drag) {
+            drag_release_ms = lv_tick_get();
+        }
         damage_drag_reset();
 
         if (handled) {
