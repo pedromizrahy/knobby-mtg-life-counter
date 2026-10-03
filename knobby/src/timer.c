@@ -1,4 +1,6 @@
 #include "timer.h"
+#include "game_event.h"
+#include "storage.h"
 
 // Forward declaration
 extern void refresh_turn_ui(void);
@@ -12,6 +14,10 @@ uint32_t turn_elapsed_ms = 0;
 uint32_t turn_started_ms = 0;
 int turn_number = 0;
 
+int active_turn_player = -1;
+int round_number = 0;
+
+static uint32_t current_turn_started_ms = 0;
 static uint8_t turn_blink_steps_remaining = 0;
 
 static lv_timer_t *turn_timer = NULL;
@@ -29,15 +35,27 @@ uint32_t get_turn_elapsed_ms(void)
     return elapsed;
 }
 
+uint32_t get_current_turn_elapsed_ms(void)
+{
+    if (!turn_timer_enabled || active_turn_player < 0) return 0;
+    return lv_tick_elaps(current_turn_started_ms);
+}
+
 void turn_timer_start_fresh(void)
 {
     turn_number = 1;
+    round_number = 1;
+    active_turn_player = 0;
     turn_elapsed_ms = 0;
     turn_started_ms = lv_tick_get();
+    current_turn_started_ms = turn_started_ms;
     turn_timer_enabled = true;
     turn_indicator_visible = true;
     turn_ui_visible = true;
     turn_blink_steps_remaining = 10;
+
+    game_event_add_turn(GAME_EVENT_TURN_START, active_turn_player,
+                        (uint16_t)turn_number, (uint16_t)round_number, 0);
 
     if (turn_blink_timer != NULL) {
         lv_timer_resume(turn_blink_timer);
@@ -51,7 +69,10 @@ void turn_timer_reset(void)
     turn_timer_enabled = false;
     turn_elapsed_ms = 0;
     turn_started_ms = 0;
+    current_turn_started_ms = 0;
     turn_number = 0;
+    round_number = 0;
+    active_turn_player = -1;
     turn_indicator_visible = true;
     turn_ui_visible = false;
     turn_blink_steps_remaining = 0;
@@ -59,6 +80,43 @@ void turn_timer_reset(void)
     if (turn_blink_timer != NULL) {
         lv_timer_pause(turn_blink_timer);
     }
+
+    refresh_turn_ui();
+}
+
+void turn_advance(void)
+{
+    int player_count;
+    uint32_t duration_ms;
+
+    if (!turn_timer_enabled || active_turn_player < 0) {
+        turn_timer_start_fresh();
+        return;
+    }
+
+    duration_ms = get_current_turn_elapsed_ms();
+    game_event_add_turn(GAME_EVENT_TURN_END, active_turn_player,
+                        (uint16_t)turn_number, (uint16_t)round_number,
+                        duration_ms);
+
+    /* Preserve the original total-game timer semantics. */
+    turn_elapsed_ms = get_turn_elapsed_ms();
+    turn_started_ms = lv_tick_get();
+
+    player_count = nvs_get_players_to_track();
+    if (player_count < 1) player_count = 1;
+
+    active_turn_player++;
+    if (active_turn_player >= player_count) {
+        active_turn_player = 0;
+        round_number++;
+    }
+
+    turn_number++;
+    current_turn_started_ms = lv_tick_get();
+
+    game_event_add_turn(GAME_EVENT_TURN_START, active_turn_player,
+                        (uint16_t)turn_number, (uint16_t)round_number, 0);
 
     refresh_turn_ui();
 }
@@ -99,18 +157,7 @@ void event_tool_timer(lv_event_t *e)
 void event_turn_tap(lv_event_t *e)
 {
     (void)e;
-
-    if (turn_number <= 0) {
-        turn_number = 1;
-        turn_elapsed_ms = 0;
-    } else {
-        turn_elapsed_ms = get_turn_elapsed_ms();
-        turn_number++;
-    }
-
-    turn_started_ms = lv_tick_get();
-    turn_timer_enabled = true;
-    refresh_turn_ui();
+    turn_advance();
 }
 
 // ---------- init ----------
