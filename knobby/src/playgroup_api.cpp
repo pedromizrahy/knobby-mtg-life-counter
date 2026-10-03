@@ -223,52 +223,148 @@ static void print_heap_diagnostics(void)
     Serial.println(" bytes");
 }
 
-static bool diagnose_https_path(void)
+static bool playgroup_https_get(const String &path, String &response, int &status)
 {
-    IPAddress resolved;
-    WiFiClient tcp;
+    char api_key[PG_API_KEY_MAX];
     NetworkClientSecure tls;
-    char tls_error[160] = {0};
+    HTTPClient http;
+    String auth;
+    String url;
 
-    Serial.print("[Playgroup] DNS ");
-    Serial.print(PG_API_HOST);
-    Serial.print(" ... ");
-    if (!WiFi.hostByName(PG_API_HOST, resolved)) {
-        Serial.println("FAILED");
+    response = "";
+    status = -1;
+
+    if (!nvs_read_string("api_key", api_key, sizeof(api_key))) {
+        Serial.println("[Playgroup] API key is not configured.");
         return false;
     }
-    Serial.println(resolved);
 
-    Serial.print("[Playgroup] TCP 443 ... ");
-    if (!tcp.connect(resolved, 443, 5000)) {
-        Serial.println("FAILED");
-        return false;
-    }
-    Serial.println("OK");
-    tcp.stop();
-
-    print_heap_diagnostics();
-
-    /* Diagnostic only: no HTTP request and no API key are sent here.
-       This isolates raw TLS memory pressure from certificate-validation
-       overhead. The real API request below still requires verified TLS. */
-    Serial.print("[Playgroup] TLS diagnostic (no cert validation, no request) ... ");
-    tls.setInsecure();
+    tls.useBuiltinCACertBundle();
     tls.setHandshakeTimeout(12);
-    if (!tls.connect(PG_API_HOST, 443, 12000)) {
-        Serial.println("FAILED");
-        int err = tls.lastError(tls_error, sizeof(tls_error));
-        Serial.print("[Playgroup] TLS diagnostic error ");
-        Serial.print(err);
-        Serial.print(": ");
-        Serial.println(tls_error[0] ? tls_error : "(no detail)");
-        tls.stop();
+
+    url.reserve(strlen(PG_API_BASE) + path.length() + 1);
+    url = PG_API_BASE;
+    url += path;
+
+    http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setTimeout(PG_HTTP_TIMEOUT_MS);
+    if (!http.begin(tls, url)) {
+        Serial.println("[Playgroup] Could not initialize HTTPS.");
         return false;
     }
 
-    Serial.println("OK");
-    tls.stop();
+    auth.reserve(strlen(api_key) + 8);
+    auth = "Bearer ";
+    auth += api_key;
+    http.addHeader("Authorization", auth);
+    http.addHeader("User-Agent", "DialDosPrimos/0.1 (ESP32-S3)");
+
+    status = http.GET();
+    auth = "";
+
+    if (status > 0)
+        response = http.getString();
+
+    http.end();
+    return status > 0;
+}
+
+static bool json_extract_number_token(const String &json, const char *key,
+                                      char *out, size_t out_size)
+{
+    String needle;
+    int key_pos;
+    int colon;
+    int pos;
+    int end_pos;
+    size_t copy_len;
+
+    if (out == NULL || out_size == 0 || key == NULL) return false;
+    out[0] = '\0';
+
+    needle = String("\"") + key + "\"";
+    key_pos = json.indexOf(needle);
+    if (key_pos < 0) return false;
+
+    colon = json.indexOf(':', key_pos + needle.length());
+    if (colon < 0) return false;
+
+    pos = colon + 1;
+    while (pos < (int)json.length() &&
+           (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\r' || json[pos] == '\n'))
+        pos++;
+
+    end_pos = pos;
+    while (end_pos < (int)json.length() &&
+           ((json[end_pos] >= '0' && json[end_pos] <= '9') || json[end_pos] == '-'))
+        end_pos++;
+
+    if (end_pos <= pos) return false;
+
+    copy_len = (size_t)(end_pos - pos);
+    if (copy_len >= out_size) copy_len = out_size - 1;
+    memcpy(out, json.c_str() + pos, copy_len);
+    out[copy_len] = '\0';
     return true;
+}
+
+static bool playgroup_discover(void)
+{
+    String me;
+    String playgroups;
+    char user_id[24];
+    int status;
+
+    if (!wifi_connect_saved())
+        return false;
+
+    Serial.println("[Playgroup] GET /me ...");
+    if (!playgroup_https_get("/me", me, status)) {
+        Serial.println("[Playgroup] /me request failed.");
+        wifi_power_down();
+        Serial.println("[Playgroup] Wi-Fi off.");
+        return false;
+    }
+
+    if (status != HTTP_CODE_OK) {
+        Serial.print("[Playgroup] /me returned HTTP ");
+        Serial.println(status);
+        wifi_power_down();
+        Serial.println("[Playgroup] Wi-Fi off.");
+        return false;
+    }
+
+    if (!json_extract_number_token(me, "id", user_id, sizeof(user_id))) {
+        Serial.println("[Playgroup] Could not read user id from /me response.");
+        Serial.println("[Playgroup] /me body:");
+        Serial.println(me);
+        wifi_power_down();
+        Serial.println("[Playgroup] Wi-Fi off.");
+        return false;
+    }
+
+    Serial.print("[Playgroup] User id: ");
+    Serial.println(user_id);
+
+    String path = String("/users/") + user_id + "/playgroups";
+    Serial.println("[Playgroup] GET user playgroups ...");
+    if (!playgroup_https_get(path, playgroups, status)) {
+        Serial.println("[Playgroup] Playgroups request failed.");
+        wifi_power_down();
+        Serial.println("[Playgroup] Wi-Fi off.");
+        return false;
+    }
+
+    Serial.print("[Playgroup] Playgroups HTTP ");
+    Serial.println(status);
+    if (playgroups.length() > 0) {
+        Serial.println("[Playgroup] Playgroups response:");
+        Serial.println(playgroups);
+    }
+
+    wifi_power_down();
+    Serial.println("[Playgroup] Wi-Fi off.");
+    return status == HTTP_CODE_OK;
 }
 
 static bool playgroup_test_me(void)
@@ -289,12 +385,6 @@ static bool playgroup_test_me(void)
 
     if (!wifi_connect_saved())
         return false;
-
-    if (!diagnose_https_path()) {
-        wifi_power_down();
-        Serial.println("[Playgroup] Wi-Fi off.");
-        return false;
-    }
 
     /* Arduino-ESP32 3.3.12 exposes the IDF/Mozilla built-in CA bundle.
        This keeps TLS verification enabled without pinning an expiring
@@ -372,6 +462,7 @@ static void print_help(void)
     Serial.println("  PG KEY <api-key>");
     Serial.println("  PG STATUS");
     Serial.println("  PG TEST");
+    Serial.println("  PG DISCOVER");
     Serial.println("  PG CLEAR");
     Serial.println("  PG HELP");
     Serial.println("Secrets are stored in NVS and are never echoed back.");
@@ -396,6 +487,11 @@ static void handle_command(char *line)
 
     if (strcmp(line, "PG TEST") == 0) {
         playgroup_test_me();
+        return;
+    }
+
+    if (strcmp(line, "PG DISCOVER") == 0) {
+        playgroup_discover();
         return;
     }
 
