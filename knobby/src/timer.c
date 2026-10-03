@@ -5,6 +5,7 @@
 
 // Forward declaration
 extern void refresh_turn_ui(void);
+extern void refresh_player_ui(void);
 extern void back_to_main(void);
 
 // ---------- state ----------
@@ -89,7 +90,7 @@ void turn_timer_start_for_player(int player)
         lv_timer_resume(turn_blink_timer);
     }
 
-    refresh_turn_ui();
+    refresh_player_ui();
 }
 
 void turn_timer_start_fresh(void)
@@ -126,7 +127,7 @@ void turn_timer_reset(void)
         lv_timer_pause(turn_reminder_flash_timer);
     }
 
-    refresh_turn_ui();
+    refresh_player_ui();
 }
 
 void turn_advance(void)
@@ -189,7 +190,10 @@ void turn_advance(void)
     game_event_add_turn(GAME_EVENT_TURN_START, active_turn_player,
                         (uint16_t)turn_number, (uint16_t)round_number, 0);
 
-    refresh_turn_ui();
+    /* Turn ownership affects panel vibrancy, so refresh the player UI when
+       the active seat changes. Timer ticks still use the lightweight
+       refresh_turn_ui() path to avoid redrawing every panel each second. */
+    refresh_player_ui();
 }
 
 // ---------- timer callbacks ----------
