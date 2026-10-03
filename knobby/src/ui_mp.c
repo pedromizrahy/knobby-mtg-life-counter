@@ -131,7 +131,7 @@ static struct {
     lv_obj_t *name_labels[MULTIPLAYER_COUNT];
     lv_obj_t *counter_rows[MULTIPLAYER_COUNT][COUNTER_TYPE_COUNT];
     lv_obj_t *counter_values[MULTIPLAYER_COUNT][COUNTER_TYPE_COUNT];
-    lv_obj_t *cmd_labels[MULTIPLAYER_COUNT][MAX_DISPLAY_PLAYERS];
+    lv_obj_t *cmd_markers[MULTIPLAYER_COUNT][MAX_DISPLAY_PLAYERS];
     const mp_layout_spec_t *layout;
 } mp_state;
 
@@ -206,9 +206,10 @@ static void apply_label_rotation(lv_obj_t *life_lbl, lv_obj_t *name_lbl,
 
 static void refresh_commander_markers(const mp_panel_spec_t *spec,
                                       lv_obj_t *panel,
-                                      lv_obj_t **labels,
+                                      lv_obj_t **markers,
                                       int panel_index,
                                       int target_player,
+                                      lv_color_t value_color,
                                       int16_t row_angle)
 {
     int source;
@@ -216,9 +217,9 @@ static void refresh_commander_markers(const mp_panel_spec_t *spec,
     int sources[MAX_DISPLAY_PLAYERS];
 
     for (source = 0; source < MAX_DISPLAY_PLAYERS; source++) {
-        if (labels[source] == NULL) continue;
+        if (markers[source] == NULL) continue;
         if (source == target_player || cmd_damage_totals[source][target_player] <= 0) {
-            lv_obj_add_flag(labels[source], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(markers[source], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
         sources[visible++] = source;
@@ -226,37 +227,46 @@ static void refresh_commander_markers(const mp_panel_spec_t *spec,
 
     for (source = 0; source < visible; source++) {
         int src = sources[source];
-        char buf[12];
-        lv_obj_t *lbl = labels[src];
+        char buf[8];
+        lv_obj_t *marker = markers[src];
+        lv_obj_t *dot = lv_obj_get_child(marker, 0);
+        lv_obj_t *value = lv_obj_get_child(marker, 1);
         lv_coord_t xoff = 0;
         lv_coord_t yoff = 0;
 
-        snprintf(buf, sizeof(buf), "●%d", cmd_damage_totals[src][target_player]);
-        lv_label_set_text(lbl, buf);
-        lv_obj_set_style_text_color(
-            lbl, get_effective_player_color(src, src, LIFE_VIB_VIV), 0);
+        snprintf(buf, sizeof(buf), "%d", cmd_damage_totals[src][target_player]);
+
+        if (dot != NULL) {
+            /* Art mode intentionally falls back to the colored dot until
+               commander artwork is available from the deck integration. */
+            lv_obj_set_style_bg_color(
+                dot, get_effective_player_color(src, src, LIFE_VIB_VIV), 0);
+        }
+        if (value != NULL) {
+            lv_label_set_text(value, buf);
+            lv_obj_set_style_text_color(value, value_color, 0);
+        }
 
         if (spec_is_wedge(spec)) {
             const int radius = 118;
-            const int step_deg = 15;
+            const int step_deg = 16;
             int a = (wedge_geom[panel_index].bis_deg
                      + ((visible - 1) * step_deg / 2)
                      - (source * step_deg) + 360) % 360;
             xoff = wedge_polar(lv_trigo_cos(a), radius);
             yoff = wedge_polar(lv_trigo_sin(a), radius);
         } else if (panel != NULL) {
-            const lv_coord_t step = 34;
+            const lv_coord_t step = 38;
             xoff = (lv_coord_t)((source * step) - ((visible - 1) * step / 2));
             yoff = ((lv_obj_get_y(panel) + lv_obj_get_height(panel) / 2) < 180)
                      ? 68 : -68;
         }
 
-        lv_obj_align(lbl, LV_ALIGN_CENTER, xoff, yoff);
-        apply_object_rotation(lbl, row_angle, 0, 0);
-        lv_obj_clear_flag(lbl, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_align(marker, LV_ALIGN_CENTER, xoff, yoff);
+        apply_object_rotation(marker, row_angle, 0, 0);
+        lv_obj_clear_flag(marker, LV_OBJ_FLAG_HIDDEN);
     }
 }
-
 
 static void get_counter_equator_anchor(lv_obj_t *panel,
                                        lv_coord_t *anchor_x, lv_coord_t *anchor_y)
@@ -740,8 +750,8 @@ void refresh_multiplayer_ui(void)
                              mp_state.counter_rows[i], mp_state.counter_values[i],
                              spec->player_index, text_color, angle, counter_angle);
 
-        refresh_commander_markers(spec, panel, mp_state.cmd_labels[i], i,
-                                  spec->player_index, counter_angle);
+        refresh_commander_markers(spec, panel, mp_state.cmd_markers[i], i,
+                                  spec->player_index, text_color, counter_angle);
     }
 
     refresh_multiplayer_turn_ui();
@@ -1182,12 +1192,25 @@ void rebuild_multiplayer_layout(int track)
         {
             int source;
             for (source = 0; source < MAX_DISPLAY_PLAYERS; source++) {
-                lv_obj_t *lbl = lv_label_create(panel);
-                lv_label_set_text(lbl, "");
-                lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
-                lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
-                lv_obj_add_flag(lbl, LV_OBJ_FLAG_HIDDEN);
-                mp_state.cmd_labels[i][source] = lbl;
+                lv_obj_t *marker = make_plain_box(panel, 34, 18);
+                lv_obj_t *dot;
+                lv_obj_t *value;
+
+                dot = lv_obj_create(marker);
+                lv_obj_remove_style_all(dot);
+                lv_obj_set_size(dot, 10, 10);
+                lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+                lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+                lv_obj_align(dot, LV_ALIGN_LEFT_MID, 0, 0);
+
+                value = lv_label_create(marker);
+                lv_label_set_text(value, "0");
+                lv_obj_set_style_text_font(value, &lv_font_montserrat_14, 0);
+                lv_obj_set_style_text_color(value, lv_color_white(), 0);
+                lv_obj_align(value, LV_ALIGN_RIGHT_MID, 0, 0);
+
+                lv_obj_add_flag(marker, LV_OBJ_FLAG_HIDDEN);
+                mp_state.cmd_markers[i][source] = marker;
             }
         }
     }
