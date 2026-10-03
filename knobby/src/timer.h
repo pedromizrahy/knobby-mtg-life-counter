@@ -20,6 +20,7 @@ extern int turn_in_round;
 extern bool turn_reminder_active;
 extern bool turn_reminder_flash_on;
 extern bool turn_reminder_overlay_active;
+extern uint8_t turn_reminder_pulse_level;
 extern bool turn_hold_active;
 extern int turn_hold_progress;
 
