@@ -19,7 +19,8 @@ static int cached_auto_eliminate = 1; /* 1=ON (default), 0=OFF */
 static int cached_random_first = 1; /* 1=ON (default): random first-player pick on reset */
 static int cached_turn_timer_enabled = 1; /* 1=ON: start turn tracking with a new game */
 static int cached_turn_show_name = 0; /* compact timer by default */
-static int cached_turn_reminder_minutes = 10; /* 0 disables reminder */
+static int cached_turn_reminder_minutes = 5; /* 0 disables reminder */
+static int cached_turn_alert_duration_seconds = 3;
 static int cached_turn_visual_alert = 1;
 static int cached_timer_face_player = 1;
 static int cached_cmd_marker_mode = CMD_MARKER_DOT;
@@ -83,21 +84,25 @@ void knob_nvs_init(void)
 
         int8_t tt_val = 1;
         int8_t tn_val = 0;
-        int8_t tr_val = 10;
+        int8_t tr_val = 5;
+        int8_t tad_val = 3;
         int8_t tv_val = 1;
         int8_t tf_val = 1;
         int8_t cm_val = CMD_MARKER_DOT;
         nvs_get_i8(handle, "turn_timer", &tt_val);
         nvs_get_i8(handle, "turn_name", &tn_val);
         nvs_get_i8(handle, "turn_rem", &tr_val);
+        nvs_get_i8(handle, "turn_alert_s", &tad_val);
         nvs_get_i8(handle, "turn_visual", &tv_val);
         nvs_get_i8(handle, "timer_face", &tf_val);
         nvs_get_i8(handle, "cmd_marker", &cm_val);
         cached_turn_timer_enabled = (tt_val != 0) ? 1 : 0;
         cached_turn_show_name = (tn_val != 0) ? 1 : 0;
         cached_turn_reminder_minutes =
-            (tr_val == 0 || tr_val == 5 || tr_val == 10 || tr_val == 15 || tr_val == 20)
-                ? tr_val : 10;
+            (tr_val == 0 || tr_val == 3 || tr_val == 5 || tr_val == 10 || tr_val == 15)
+                ? tr_val : 5;
+        cached_turn_alert_duration_seconds =
+            (tad_val == 3 || tad_val == 5 || tad_val == 10) ? tad_val : 3;
         cached_turn_visual_alert = (tv_val != 0) ? 1 : 0;
         cached_timer_face_player = (tf_val != 0) ? 1 : 0;
         cached_cmd_marker_mode =
@@ -290,9 +295,21 @@ int nvs_get_turn_reminder_minutes(void)
 
 void nvs_set_turn_reminder_minutes(int value)
 {
-    if (value != 0 && value != 5 && value != 10 && value != 15 && value != 20)
-        value = 10;
+    if (value != 0 && value != 3 && value != 5 && value != 10 && value != 15)
+        value = 5;
     cached_turn_reminder_minutes = value;
+    settings_dirty = true;
+}
+
+int nvs_get_turn_alert_duration_seconds(void)
+{
+    return cached_turn_alert_duration_seconds;
+}
+
+void nvs_set_turn_alert_duration_seconds(int value)
+{
+    if (value != 3 && value != 5 && value != 10) value = 3;
+    cached_turn_alert_duration_seconds = value;
     settings_dirty = true;
 }
 
@@ -374,6 +391,7 @@ void settings_save(void)
         nvs_set_i8(handle, "turn_timer", (int8_t)cached_turn_timer_enabled);
         nvs_set_i8(handle, "turn_name", (int8_t)cached_turn_show_name);
         nvs_set_i8(handle, "turn_rem", (int8_t)cached_turn_reminder_minutes);
+        nvs_set_i8(handle, "turn_alert_s", (int8_t)cached_turn_alert_duration_seconds);
         nvs_set_i8(handle, "turn_visual", (int8_t)cached_turn_visual_alert);
         nvs_set_i8(handle, "timer_face", (int8_t)cached_timer_face_player);
         nvs_set_i8(handle, "cmd_marker", (int8_t)cached_cmd_marker_mode);
