@@ -8,6 +8,7 @@ extern void reset_all_values(void);
 extern void back_to_main(void);
 
 lv_obj_t *screen_pregame_home = NULL;
+lv_obj_t *screen_pregame_multiplayer = NULL;
 lv_obj_t *screen_pregame_players = NULL;
 lv_obj_t *screen_pregame_roster = NULL;
 lv_obj_t *screen_pregame_mulligans = NULL;
@@ -22,7 +23,8 @@ static void refresh_mulligans(void);
 
 static lv_obj_t *pregame_button(lv_obj_t *parent, const char *text,
                                 lv_coord_t w, lv_coord_t h,
-                                lv_event_cb_t cb, void *user_data)
+                                lv_event_cb_t cb, lv_event_code_t event,
+                                void *user_data)
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_remove_style_all(btn);
@@ -32,7 +34,13 @@ static lv_obj_t *pregame_button(lv_obj_t *parent, const char *text,
     lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(btn, 1, 0);
     lv_obj_set_style_border_color(btn, lv_color_hex(0x4A5563), 0);
-    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, user_data);
+    if (cb != NULL) {
+        lv_obj_add_event_cb(btn, cb, event, user_data);
+    } else {
+        lv_obj_clear_flag(btn, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(0x0C0F13), 0);
+        lv_obj_set_style_border_color(btn, lv_color_hex(0x28313B), 0);
+    }
 
     {
         lv_obj_t *label = lv_label_create(btn);
@@ -44,7 +52,7 @@ static lv_obj_t *pregame_button(lv_obj_t *parent, const char *text,
     return btn;
 }
 
-static void event_track_new_game(lv_event_t *e)
+static void event_local_play(lv_event_t *e)
 {
     int i;
     (void)e;
@@ -57,6 +65,12 @@ static void event_track_new_game(lv_event_t *e)
     if (pregame_player_count < 1 || pregame_player_count > MAX_DISPLAY_PLAYERS)
         pregame_player_count = 4;
     lv_scr_load(screen_pregame_players);
+}
+
+static void event_multiplayer_setup(lv_event_t *e)
+{
+    (void)e;
+    lv_scr_load(screen_pregame_multiplayer);
 }
 
 static void event_choose_players(lv_event_t *e)
@@ -160,6 +174,10 @@ void open_pregame_home(void)
 
 bool pregame_handle_back(lv_obj_t *screen)
 {
+    if (screen == screen_pregame_multiplayer) {
+        lv_scr_load(screen_pregame_home);
+        return true;
+    }
     if (screen == screen_pregame_players) {
         lv_scr_load(screen_pregame_home);
         return true;
@@ -189,18 +207,53 @@ void build_pregame_screens(void)
         lv_label_set_text(eyebrow, "DIAL DOS PRIMOS");
         lv_obj_set_style_text_color(eyebrow, lv_color_hex(0x778391), 0);
         lv_obj_set_style_text_font(eyebrow, &lv_font_montserrat_14, 0);
-        lv_obj_align(eyebrow, LV_ALIGN_CENTER, 0, -78);
+        lv_obj_align(eyebrow, LV_ALIGN_TOP_MID, 0, 48);
 
         lv_obj_t *title = lv_label_create(screen_pregame_home);
-        lv_label_set_text(title, "TRACK\nNEW GAME");
+        lv_label_set_text(title, "TRACK NEW GAME");
         lv_obj_set_style_text_color(title, lv_color_white(), 0);
-        lv_obj_set_style_text_font(title, &lv_font_montserrat_32, 0);
+        lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
         lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_align(title, LV_ALIGN_CENTER, 0, -20);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 82);
 
-        lv_obj_t *btn = pregame_button(screen_pregame_home, "START", 132, 46,
-                                       event_track_new_game, NULL);
-        lv_obj_align(btn, LV_ALIGN_CENTER, 0, 78);
+        lv_obj_t *local = pregame_button(
+            screen_pregame_home, "LOCAL PLAY", 176, 46,
+            event_local_play, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(local, LV_ALIGN_CENTER, 0, 6);
+
+        lv_obj_t *multi = pregame_button(
+            screen_pregame_home, "MULTIPLAYER", 176, 46,
+            event_multiplayer_setup, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(multi, LV_ALIGN_CENTER, 0, 66);
+    }
+
+    screen_pregame_multiplayer = lv_obj_create(NULL);
+    lv_obj_set_size(screen_pregame_multiplayer, 360, 360);
+    lv_obj_set_style_bg_color(screen_pregame_multiplayer, lv_color_black(), 0);
+    lv_obj_set_style_border_width(screen_pregame_multiplayer, 0, 0);
+
+    {
+        lv_obj_t *title = lv_label_create(screen_pregame_multiplayer);
+        lv_label_set_text(title, "MULTIPLAYER");
+        lv_obj_set_style_text_color(title, lv_color_white(), 0);
+        lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 46);
+
+        lv_obj_t *hint = lv_label_create(screen_pregame_multiplayer);
+        lv_label_set_text(hint, "Host owns the game settings");
+        lv_obj_set_style_text_color(hint, lv_color_hex(0x778391), 0);
+        lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+        lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 82);
+
+        lv_obj_t *host = pregame_button(
+            screen_pregame_multiplayer, "HOST  -  NEXT", 188, 46,
+            NULL, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(host, LV_ALIGN_CENTER, 0, 8);
+
+        lv_obj_t *join = pregame_button(
+            screen_pregame_multiplayer, "JOIN  -  NEXT", 188, 46,
+            NULL, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(join, LV_ALIGN_CENTER, 0, 68);
     }
 
     screen_pregame_players = lv_obj_create(NULL);
@@ -221,7 +274,7 @@ void build_pregame_screens(void)
         lv_obj_t *btn;
         snprintf(buf, sizeof(buf), "%d", i + 1);
         btn = pregame_button(screen_pregame_players, buf, 64, 52,
-                             event_choose_players,
+                             event_choose_players, LV_EVENT_CLICKED,
                              (void *)(intptr_t)(i + 1));
         lv_obj_align(btn, LV_ALIGN_CENTER,
                      (i % 2 == 0) ? -42 : 42,
@@ -249,7 +302,7 @@ void build_pregame_screens(void)
         }
 
         lv_obj_t *next = pregame_button(screen_pregame_roster, "MULLIGANS", 142, 42,
-                                        event_roster_continue, NULL);
+                                        event_roster_continue, LV_EVENT_CLICKED, NULL);
         lv_obj_align(next, LV_ALIGN_BOTTOM_MID, 0, -30);
     }
 
@@ -276,6 +329,7 @@ void build_pregame_screens(void)
         for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
             lv_obj_t *btn = pregame_button(screen_pregame_mulligans, "", 206, 38,
                                            event_mulligan_cycle,
+                                           LV_EVENT_SHORT_CLICKED,
                                            (void *)(intptr_t)i);
             lv_obj_add_event_cb(btn, event_mulligan_decrement,
                                 LV_EVENT_LONG_PRESSED,
@@ -285,7 +339,7 @@ void build_pregame_screens(void)
         }
 
         lv_obj_t *start = pregame_button(screen_pregame_mulligans, "START GAME", 146, 42,
-                                         event_start_game, NULL);
+                                         event_start_game, LV_EVENT_CLICKED, NULL);
         lv_obj_align(start, LV_ALIGN_BOTTOM_MID, 0, -24);
     }
 
