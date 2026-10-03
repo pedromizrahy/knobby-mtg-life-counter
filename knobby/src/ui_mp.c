@@ -957,6 +957,7 @@ static void event_multiplayer_drag(lv_event_t *e)
     lv_indev_get_point(indev, &point);
 
     if (code == LV_EVENT_PRESSED) {
+        if (player_selection_animation_active()) return;
         if (player_eliminated[player]) return;
         drag_source_player = player;
         drag_target_player = -1;
@@ -1056,14 +1057,9 @@ static void event_multiplayer_select(lv_event_t *e)
     if (player < 0 || player >= MULTIPLAYER_COUNT) return;
     if (player_eliminated[player]) return;
 
-    /* A tap during the first-player roulette stops the spin and leaves
-       nothing selected (the spinning highlight is not a real selection). */
-    if (player_selection_animation_active()) {
-        stop_player_selection_animation();
-        selection_clear();
-        refresh_multiplayer_ui();
-        return;
-    }
+    /* The random-first roulette owns the HUD until it lands. Ignore
+       incidental table touches instead of letting them stop the draw. */
+    if (player_selection_animation_active()) return;
 
     /* Capture state before committing: the commit clears the selection in
        multi-select mode, so we can't read it afterwards. */
@@ -1117,10 +1113,7 @@ static void event_multiplayer_open_menu(lv_event_t *e)
 
     if (player < 0 || player >= MULTIPLAYER_COUNT) return;
 
-    if (player_selection_animation_active()) {
-        stop_player_selection_animation();
-        selection_clear();
-    }
+    if (player_selection_animation_active()) return;
 
     /* Resolve any pending dialed delta before leaving the screen, so the
        auto-commit can't fire later against a context the user left. */
