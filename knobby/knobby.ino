@@ -11,6 +11,7 @@
 #include "knob.h"
 #include "src/hw.h"
 #include "knobby_net.h"
+#include "src/playgroup_api.h"
 
 static const float BATTERY_DIVIDER_RATIO = 2.0f;
 static const float BATTERY_CALIBRATION_SCALE = 1.0f;
@@ -137,6 +138,7 @@ void loop()
   uint32_t time_till_next;
 
   knob_process_pending();
+  playgroup_process_serial();
   knobby_net_process();
   time_till_next = lv_timer_handler();
 
