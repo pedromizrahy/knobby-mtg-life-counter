@@ -307,7 +307,7 @@ static void get_counter_equator_anchor(lv_obj_t *panel,
     lv_coord_t parent_h;
     lv_coord_t panel_center_y;
     lv_coord_t target_world_y;
-    const lv_coord_t equator_gap = 46;
+    const lv_coord_t equator_gap = 34;
     const lv_coord_t edge_margin = 24;
 
     if (anchor_x == NULL || anchor_y == NULL) return;
@@ -334,13 +334,12 @@ static void get_counter_equator_anchor(lv_obj_t *panel,
         lv_coord_t parent_w = lv_obj_get_width(parent);
         lv_coord_t panel_center_x = panel_x + (panel_w / 2);
 
-        /* Keep the badge row out of the timer's center safe-zone. On
-           quadrant layouts push the complete poison/commander row toward
-           the outer side of its player panel; full-width 2P panels stay
-           centered horizontally and gain clearance from the larger
-           equator gap above. */
+        /* Keep the combined poison/commander band close to the central
+           divider but outside the timer safe-zone. The previous outward
+           shift could clip the first counter (notably Infect) when several
+           commander markers were present. */
         if (panel_w < parent_w) {
-            *anchor_x = (panel_center_x < (parent_w / 2)) ? -48 : 48;
+            *anchor_x = (panel_center_x < (parent_w / 2)) ? 34 : -34;
         } else {
             *anchor_x = 0;
         }
@@ -560,7 +559,9 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
 
     {
         int vib;
-        if (turn_timer_enabled && active_turn_player >= 0) {
+        if (player_selection_animation_active()) {
+            vib = selected ? LIFE_VIB_VIV : LIFE_VIB_DIM;
+        } else if (turn_timer_enabled && active_turn_player >= 0) {
             vib = (active_turn_player == i) ? LIFE_VIB_VIV : LIFE_VIB_DIM;
         } else {
             vib = LIFE_VIB_MID;
@@ -967,7 +968,11 @@ static void event_multiplayer_drag(lv_event_t *e)
         return;
     }
 
-    if (drag_source_player != player) return;
+    if (drag_source_player != player) {
+        if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST)
+            damage_drag_reset();
+        return;
+    }
 
     if (code == LV_EVENT_PRESSING) {
         int dx = point.x - drag_start_point.x;
@@ -1099,9 +1104,16 @@ static void event_multiplayer_select(lv_event_t *e)
 
 static void event_multiplayer_open_menu(lv_event_t *e)
 {
-    if (drag_active) return;
-
     int player = (int)(intptr_t)lv_event_get_user_data(e);
+
+    if (drag_active) {
+        damage_drag_reset();
+        return;
+    }
+
+    /* A long-press is a menu gesture, not a half-finished multi-target
+       gesture. Clear any hint/state before leaving the HUD. */
+    damage_drag_reset();
 
     if (player < 0 || player >= MULTIPLAYER_COUNT) return;
 
