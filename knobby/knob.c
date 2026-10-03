@@ -455,6 +455,7 @@ void knob_gui(void)
     build_battery_screen();
     build_rotate_screen();
     build_table_sync_screen();
+    build_turn_timer_settings_screen();
     build_damage_log_screen();
     build_quad_menus();
     build_game_mode_menu_screen();
