@@ -34,6 +34,7 @@ static lv_obj_t *label_settings_battery_detail = NULL;
 static lv_obj_t *label_rotate_value = NULL;
 static lv_obj_t *turn_timer_btns[4] = {NULL, NULL, NULL, NULL};
 static lv_obj_t *turn_timer_lbls[4] = {NULL, NULL, NULL, NULL};
+static bool turn_settings_from_tools = false;
 
 // ---------- quadrant menu builder ----------
 void build_quad_screen(lv_obj_t **screen, quad_item_t items[4])
@@ -438,6 +439,7 @@ static void event_turn_timer_visual(lv_event_t *e)
 
 void open_turn_timer_settings(void)
 {
+    turn_settings_from_tools = false;
     refresh_turn_timer_settings_ui();
     load_screen_if_needed(screen_turn_timer_settings);
 }
@@ -690,6 +692,13 @@ bool settings_handle_back(lv_obj_t *screen)
 {
     int i;
 
+    if (screen == screen_turn_timer_settings && turn_settings_from_tools) {
+        settings_save();
+        turn_settings_from_tools = false;
+        lv_scr_load(screen_tools_menu);
+        return true;
+    }
+
     for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
         if (settings_items[i].nav_screen != NULL && screen == *settings_items[i].nav_screen) {
             settings_save();
@@ -756,6 +765,7 @@ static void event_open_turn_timer_settings(lv_event_t *e)
 {
     (void)e;
     open_turn_timer_settings();
+    turn_settings_from_tools = true;
 }
 
 static void event_general_reset(lv_event_t *e)
