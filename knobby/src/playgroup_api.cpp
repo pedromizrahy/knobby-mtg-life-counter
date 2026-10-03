@@ -11,7 +11,8 @@
 #define PG_NVS_NAMESPACE "playgroup"
 #define PG_API_HOST "playgroup.gg"
 #define PG_API_BASE "https://" PG_API_HOST "/api/public/v1"
-#define PG_WIFI_TIMEOUT_MS 15000UL
+#define PG_WIFI_ATTEMPT_MS 5000UL
+#define PG_WIFI_RETRIES 3
 #define PG_HTTP_TIMEOUT_MS 10000U
 #define PG_TIME_TIMEOUT_MS 10000UL
 #define PG_VALID_EPOCH 1700000000L
@@ -140,14 +141,19 @@ static bool wifi_connect_saved(void)
 {
     char ssid[PG_SSID_MAX];
     char password[PG_PASSWORD_MAX];
-    uint32_t started;
+
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.print("[Playgroup] Wi-Fi already connected; RSSI ");
+        Serial.print(WiFi.RSSI());
+        Serial.println(" dBm.");
+        return sync_clock_for_tls();
+    }
 
     if (!nvs_read_string("ssid", ssid, sizeof(ssid))) {
         Serial.println("[Playgroup] Wi-Fi is not configured.");
         return false;
     }
 
-    /* Empty password is valid for an open network. */
     nvs_read_string("wifi_pass", password, sizeof(password));
 
     if (knobby_net_active()) {
@@ -156,39 +162,59 @@ static bool wifi_connect_saved(void)
     }
 
     WiFi.persistent(false);
-    WiFi.setAutoReconnect(false);
+    WiFi.setAutoReconnect(true);
     WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
 
-    Serial.print("[Playgroup] Connecting to Wi-Fi");
-    started = millis();
-    while (WiFi.status() != WL_CONNECTED &&
-           (millis() - started) < PG_WIFI_TIMEOUT_MS) {
+    for (int attempt = 1; attempt <= PG_WIFI_RETRIES; attempt++) {
+        uint32_t started = millis();
+
+        Serial.print("[Playgroup] Connecting to Wi-Fi (");
+        Serial.print(attempt);
+        Serial.print("/");
+        Serial.print(PG_WIFI_RETRIES);
+        Serial.print(")");
+
+        WiFi.begin(ssid, password);
+
+        while (WiFi.status() != WL_CONNECTED &&
+               (millis() - started) < PG_WIFI_ATTEMPT_MS) {
+            delay(250);
+            Serial.print(".");
+        }
+        Serial.println();
+
+        if (WiFi.status() == WL_CONNECTED) {
+            Serial.print("[Playgroup] Wi-Fi connected in ");
+            Serial.print((unsigned long)(millis() - started));
+            Serial.print(" ms; RSSI ");
+            Serial.print(WiFi.RSSI());
+            Serial.println(" dBm.");
+
+            if (!sync_clock_for_tls()) {
+                wifi_power_down();
+                return false;
+            }
+            return true;
+        }
+
+        Serial.print("[Playgroup] Wi-Fi attempt ");
+        Serial.print(attempt);
+        Serial.println(" failed.");
+        WiFi.disconnect(false, false);
         delay(250);
-        Serial.print(".");
     }
-    Serial.println();
 
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.print("[Playgroup] Wi-Fi connection failed after ");
-        Serial.print((unsigned long)(millis() - started));
-        Serial.println(" ms.");
+    Serial.println("[Playgroup] Wi-Fi connection failed after retries.");
+    wifi_power_down();
+    return false;
+}
+
+void playgroup_end_session(void)
+{
+    if (WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_OFF) {
+        Serial.println("[Playgroup] Ending Wi-Fi session.");
         wifi_power_down();
-        return false;
     }
-
-    Serial.print("[Playgroup] Wi-Fi connected in ");
-    Serial.print((unsigned long)(millis() - started));
-    Serial.print(" ms; RSSI ");
-    Serial.print(WiFi.RSSI());
-    Serial.println(" dBm.");
-
-    if (!sync_clock_for_tls()) {
-        wifi_power_down();
-        return false;
-    }
-
-    return true;
 }
 
 static bool json_extract_string(const String &json, const char *key,
@@ -621,6 +647,8 @@ static bool parse_deck_object(const String &obj, void *ctx)
     json_extract_nested_name(obj, "partner", deck->partner, sizeof(deck->partner));
     json_extract_nested_string_field(obj, "commander", "art_crop_url",
                                      deck->art_crop_url, sizeof(deck->art_crop_url));
+    json_extract_nested_string_field(obj, "commander", "scryfall_id",
+                                     deck->scryfall_id, sizeof(deck->scryfall_id));
 
     cached_deck_count++;
     return true;
@@ -638,18 +666,15 @@ bool playgroup_refresh_playgroups(void)
 
     if (!playgroup_https_get("/me", me, status) || status != HTTP_CODE_OK ||
         !json_extract_number_token(me, "id", user_id, sizeof(user_id))) {
-        wifi_power_down();
         return false;
     }
 
     String path = String("/users/") + user_id + "/playgroups";
     if (!playgroup_https_get(path, response, status) || status != HTTP_CODE_OK) {
-        wifi_power_down();
         return false;
     }
 
     json_for_each_top_level_object(response, parse_playgroup_object, NULL, PG_MAX_PLAYGROUPS);
-    wifi_power_down();
     return cached_playgroup_count > 0;
 }
 
@@ -674,12 +699,10 @@ bool playgroup_refresh_members(long playgroup_id)
 
     String path = String("/playgroups/") + String(playgroup_id) + "/members";
     if (!playgroup_https_get(path, response, status) || status != HTTP_CODE_OK) {
-        wifi_power_down();
         return false;
     }
 
     json_for_each_top_level_object(response, parse_member_object, NULL, PG_MAX_MEMBERS);
-    wifi_power_down();
     return cached_member_count > 0;
 }
 
@@ -704,12 +727,10 @@ bool playgroup_refresh_decks(long user_id)
 
     String path = String("/users/") + String(user_id) + "/decks";
     if (!playgroup_https_get(path, response, status) || status != HTTP_CODE_OK) {
-        wifi_power_down();
         return false;
     }
 
     json_for_each_top_level_object(response, parse_deck_object, NULL, PG_MAX_DECKS);
-    wifi_power_down();
     return true;
 }
 
@@ -724,7 +745,7 @@ const playgroup_deck_t *playgroup_cached_deck(int index)
     return &cached_decks[index];
 }
 
-bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_size)
+bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_t *out_size)
 {
     NetworkClientSecure tls;
     HTTPClient http;
@@ -735,8 +756,10 @@ bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_s
     size_t received;
     uint32_t request_started;
     uint32_t download_started;
+    String url;
 
-    if (url == NULL || url[0] == '\0' || out_data == NULL || out_size == NULL)
+    if (scryfall_id == NULL || scryfall_id[0] == '\0' ||
+        out_data == NULL || out_size == NULL)
         return false;
 
     *out_data = NULL;
@@ -745,34 +768,42 @@ bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_s
     if (!wifi_connect_saved())
         return false;
 
+    url = "https://api.scryfall.com/cards/";
+    url += scryfall_id;
+    url += "?format=image&version=art_crop";
+
     tls.useBuiltinCACertBundle();
     tls.setHandshakeTimeout(12);
     http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
     http.setTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
     if (!http.begin(tls, url)) {
-        wifi_power_down();
+        Serial.println("[Playgroup] Commander art HTTPS init failed.");
         return false;
     }
 
     http.addHeader("User-Agent", "DialDosPrimos/0.1 (ESP32-S3)");
     http.addHeader("Accept", "image/jpeg,image/*;q=0.9,*/*;q=0.8");
 
-    Serial.print("[Playgroup] Commander art request: ");
-    Serial.println(url);
+    Serial.print("[Playgroup] Commander art via Scryfall API: ");
+    Serial.println(scryfall_id);
     request_started = millis();
     status = http.GET();
-    Serial.print("[Playgroup] Commander art headers -> HTTP ");
+
+    Serial.print("[Playgroup] Commander art -> HTTP ");
     Serial.print(status);
     Serial.print(" in ");
     Serial.print((unsigned long)(millis() - request_started));
     Serial.println(" ms");
 
     if (status != HTTP_CODE_OK) {
-        Serial.print("[Playgroup] Commander art HTTP ");
-        Serial.println(status);
+        String error_body = http.getString();
+        if (error_body.length() > 0) {
+            Serial.print("[Playgroup] Commander art error body: ");
+            Serial.println(error_body);
+        }
         http.end();
-        wifi_power_down();
         return false;
     }
 
@@ -781,7 +812,6 @@ bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_s
         Serial.print("[Playgroup] Commander art invalid size: ");
         Serial.println(content_length);
         http.end();
-        wifi_power_down();
         return false;
     }
 
@@ -790,7 +820,6 @@ bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_s
     if (data == NULL) {
         Serial.println("[Playgroup] Commander art PSRAM allocation failed.");
         http.end();
-        wifi_power_down();
         return false;
     }
 
@@ -819,7 +848,6 @@ bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_s
     }
 
     http.end();
-    wifi_power_down();
 
     if (received != (size_t)content_length) {
         Serial.print("[Playgroup] Commander art short read: ");
@@ -1015,7 +1043,6 @@ static bool playgroup_test_me(void)
 
     if (!http.begin(tls, PG_API_BASE "/me")) {
         Serial.println("[Playgroup] Could not initialize HTTPS.");
-        wifi_power_down();
         return false;
     }
 
