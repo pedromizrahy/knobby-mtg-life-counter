@@ -17,6 +17,7 @@ lv_obj_t *screen_pregame_mulligans = NULL;
 static int pregame_player_count = 4;
 static uint8_t mulligans[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *roster_labels[MAX_DISPLAY_PLAYERS] = {0};
+static lv_obj_t *mulligan_buttons[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *mulligan_labels[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *multiplayer_status_label = NULL;
 static lv_timer_t *multiplayer_status_timer = NULL;
@@ -196,17 +197,66 @@ static void refresh_mulligans(void)
 {
     int i;
     char buf[48];
+    int button_h;
+    int button_w;
+    int gap;
+    int total_h;
+    int top_y;
+    const lv_font_t *font;
+
+    /* Use the vertical space we actually have. Four-player Commander is the
+       common case, so it gets comfortable 44px rows; 1-3 get even larger
+       touch targets, while only 5-6 compact enough to fit cleanly above
+       START GAME. */
+    switch (pregame_player_count) {
+        case 1:
+            button_h = 72; button_w = 250; gap = 0;
+            font = &lv_font_montserrat_22;
+            break;
+        case 2:
+            button_h = 60; button_w = 244; gap = 14;
+            font = &lv_font_montserrat_18;
+            break;
+        case 3:
+            button_h = 52; button_w = 236; gap = 10;
+            font = &lv_font_montserrat_18;
+            break;
+        case 4:
+            button_h = 44; button_w = 226; gap = 8;
+            font = &lv_font_montserrat_16;
+            break;
+        case 5:
+            button_h = 36; button_w = 216; gap = 5;
+            font = &lv_font_montserrat_14;
+            break;
+        default:
+            button_h = 32; button_w = 206; gap = 3;
+            font = &lv_font_montserrat_14;
+            break;
+    }
+
+    total_h = (pregame_player_count * button_h) +
+              ((pregame_player_count - 1) * gap);
+    /* Center the stack in the usable band below the hint and above START. */
+    top_y = 72 + ((208 - total_h) / 2);
+    if (top_y < 70) top_y = 70;
 
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
-        if (mulligan_labels[i] == NULL) continue;
+        lv_obj_t *btn = mulligan_buttons[i];
+        if (btn == NULL || mulligan_labels[i] == NULL) continue;
 
         if (i < pregame_player_count) {
             snprintf(buf, sizeof(buf), "%s   Mulligan %u",
                      player_names[i], (unsigned)mulligans[i]);
             lv_label_set_text(mulligan_labels[i], buf);
-            lv_obj_clear_flag(lv_obj_get_parent(mulligan_labels[i]), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_text_font(mulligan_labels[i], font, 0);
+            lv_obj_set_size(btn, button_w, button_h);
+            lv_obj_set_style_radius(btn, button_h / 2, 0);
+            lv_obj_align(btn, LV_ALIGN_TOP_MID, 0,
+                         top_y + i * (button_h + gap));
+            lv_obj_clear_flag(btn, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(lv_obj_get_parent(mulligan_labels[i]), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
         }
     }
 }
@@ -442,7 +492,7 @@ void build_pregame_screens(void)
             lv_obj_add_event_cb(btn, event_mulligan_decrement,
                                 LV_EVENT_LONG_PRESSED,
                                 (void *)(intptr_t)i);
-            lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 72 + (i * 34));
+            mulligan_buttons[i] = btn;
             mulligan_labels[i] = lv_obj_get_child(btn, 0);
         }
 
