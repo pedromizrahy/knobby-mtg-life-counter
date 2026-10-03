@@ -4,6 +4,7 @@
 #include "game.h"
 #include "storage.h"
 #include "hw.h"
+#include "timer.h"
 
 static lv_obj_t *add_low_battery_icon(lv_obj_t *parent)
 {
@@ -17,6 +18,8 @@ static lv_obj_t *add_low_battery_icon(lv_obj_t *parent)
 }
 
 static lv_obj_t *mp_battery_icon = NULL;
+static lv_obj_t *mp_turn_badge = NULL;
+static lv_obj_t *mp_turn_label = NULL;
 
 #include <string.h>
 
@@ -431,8 +434,13 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
 
     {
         int vib;
-        if (selection_count() == 0) vib = LIFE_VIB_MID;
-        else vib = selected ? LIFE_VIB_VIV : LIFE_VIB_DIM;
+        if (selection_count() == 0) {
+            vib = (turn_timer_enabled && active_turn_player == i)
+                      ? LIFE_VIB_VIV
+                      : LIFE_VIB_MID;
+        } else {
+            vib = selected ? LIFE_VIB_VIV : LIFE_VIB_DIM;
+        }
         bg_color = get_effective_player_color(i, color_i, vib);
         text_color = color_is_light(bg_color) ? lv_color_black() : lv_color_white();
     }
@@ -487,6 +495,41 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
     }
 
     return text_color;
+}
+
+void refresh_multiplayer_turn_ui(void)
+{
+    char buf[48];
+    uint32_t total_seconds;
+    uint32_t minutes;
+    uint32_t seconds;
+    const char *name;
+
+    if (mp_turn_badge == NULL || mp_turn_label == NULL) return;
+
+    if (!turn_ui_visible || active_turn_player < 0) {
+        lv_obj_add_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    total_seconds = get_current_turn_elapsed_ms() / 1000;
+    minutes = total_seconds / 60;
+    seconds = total_seconds % 60;
+
+    if (active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS) {
+        name = player_names[active_turn_player];
+    } else {
+        name = "P?";
+    }
+
+    snprintf(buf, sizeof(buf), "%s  %lu:%02lu\nR%d",
+             name,
+             (unsigned long)minutes,
+             (unsigned long)seconds,
+             round_number);
+
+    lv_label_set_text(mp_turn_label, buf);
+    lv_obj_clear_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
 }
 
 /* ---------- unified refresh ---------- */
@@ -572,6 +615,8 @@ void refresh_multiplayer_ui(void)
                              mp_state.counter_rows[i], mp_state.counter_values[i],
                              spec->player_index, text_color, angle, counter_angle);
     }
+
+    refresh_multiplayer_turn_ui();
 }
 
 /* ---------- events ---------- */
@@ -772,6 +817,8 @@ void rebuild_multiplayer_layout(int track)
         battery_icon_unregister(mp_battery_icon);
         mp_battery_icon = NULL;
     }
+    mp_turn_badge = NULL;
+    mp_turn_label = NULL;
 
     lv_obj_clean(screen_multiplayer);
     memset(&mp_state, 0, sizeof(mp_state));
@@ -849,6 +896,25 @@ void rebuild_multiplayer_layout(int track)
         lv_obj_set_pos(sep, 0, 0);
         lv_obj_add_event_cb(sep, event_wedge_separators, LV_EVENT_DRAW_MAIN, NULL);
     }
+
+    mp_turn_badge = lv_btn_create(screen_multiplayer);
+    lv_obj_remove_style_all(mp_turn_badge);
+    lv_obj_set_size(mp_turn_badge, 104, 48);
+    lv_obj_align(mp_turn_badge, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_radius(mp_turn_badge, 24, 0);
+    lv_obj_set_style_bg_color(mp_turn_badge, lv_color_hex(0x111111), 0);
+    lv_obj_set_style_bg_opa(mp_turn_badge, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(mp_turn_badge, 1, 0);
+    lv_obj_set_style_border_color(mp_turn_badge, lv_color_hex(0x777777), 0);
+    lv_obj_add_event_cb(mp_turn_badge, event_turn_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
+
+    mp_turn_label = lv_label_create(mp_turn_badge);
+    lv_label_set_text(mp_turn_label, "");
+    lv_obj_set_style_text_color(mp_turn_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(mp_turn_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_align(mp_turn_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(mp_turn_label);
 
     mp_battery_icon = add_low_battery_icon(screen_multiplayer);
 
