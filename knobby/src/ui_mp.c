@@ -1135,13 +1135,16 @@ static void event_multiplayer_open_menu(lv_event_t *e)
 {
     int player = (int)(intptr_t)lv_event_get_user_data(e);
 
+    /* LVGL emits LONG_PRESSED at ~500 ms on the source panel even when the
+       finger has already dragged into the center. Multi-target needs ~600 ms,
+       so resetting here made the hint disappear just before it could fire.
+       Once a real drag is active, the drag state owns the gesture. */
     if (drag_active) {
-        damage_drag_reset();
         return;
     }
 
-    /* A long-press is a menu gesture, not a half-finished multi-target
-       gesture. Clear any hint/state before leaving the HUD. */
+    /* A stationary long-press is a menu gesture. Clear stale hint state
+       before leaving the HUD. */
     damage_drag_reset();
 
     if (player < 0 || player >= MULTIPLAYER_COUNT) return;
