@@ -32,7 +32,7 @@ extern "C" {
    wire-format change. 0 is invalid (an all-zero packet must never
    pass); 255 is reserved as an escape hatch ("extended version follows
    the prelude") should the space ever run out. */
-#define KNOBBY_NET_VERSION 1
+#define KNOBBY_NET_VERSION 2
 /* A state snapshot doubles as repair: a slow beacon re-broadcasts it so
    lost packets and rejoining devices converge without an ack layer. */
 #define KNOBBY_NET_BEACON_MS 5000UL

@@ -24,7 +24,7 @@ enemy_state_t enemies[MAX_ENEMY_COUNT] = {
 int selected_enemy = -1;
 int dice_result = 0;
 
-int player_life[MAX_DISPLAY_PLAYERS] = {40, 40, 40, 40};
+int player_life[MAX_DISPLAY_PLAYERS] = {40, 40, 40, 40, 40, 40};
 bool player_selected[MAX_DISPLAY_PLAYERS] = {false};
 char player_names[MAX_GAME_PLAYERS][16] = {
     "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"
@@ -306,9 +306,9 @@ static const char *custom_color_names[CUSTOM_COLOR_COUNT] = {
 };
 
 // ---------- per-player color state (runtime only, lost on reboot) ----------
-int player_color_index[MAX_DISPLAY_PLAYERS] = {0, 1, 2, 3};
-bool player_life_color[MAX_DISPLAY_PLAYERS] = {false, false, false, false};
-bool player_has_override[MAX_DISPLAY_PLAYERS] = {false, false, false, false};
+int player_color_index[MAX_DISPLAY_PLAYERS] = {0, 1, 2, 3, 4, 5};
+bool player_life_color[MAX_DISPLAY_PLAYERS] = {false, false, false, false, false, false};
+bool player_has_override[MAX_DISPLAY_PLAYERS] = {false, false, false, false, false, false};
 
 lv_color_t get_player_color_vib(int index, int vibrancy)
 {

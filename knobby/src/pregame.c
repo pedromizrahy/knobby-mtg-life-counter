@@ -335,7 +335,7 @@ void build_pregame_screens(void)
                              (void *)(intptr_t)(i + 1));
         lv_obj_align(btn, LV_ALIGN_CENTER,
                      (i % 2 == 0) ? -42 : 42,
-                     (i < 2) ? -28 : 40);
+                     -58 + (i / 2) * 58);
     }
 
     screen_pregame_roster = lv_obj_create(NULL);
@@ -354,8 +354,8 @@ void build_pregame_screens(void)
             roster_labels[i] = lv_label_create(screen_pregame_roster);
             lv_label_set_text(roster_labels[i], "P1   |   Deck 1");
             lv_obj_set_style_text_color(roster_labels[i], lv_color_hex(0xD4DCE4), 0);
-            lv_obj_set_style_text_font(roster_labels[i], &lv_font_montserrat_16, 0);
-            lv_obj_align(roster_labels[i], LV_ALIGN_TOP_MID, 0, 78 + (i * 38));
+            lv_obj_set_style_text_font(roster_labels[i], &lv_font_montserrat_14, 0);
+            lv_obj_align(roster_labels[i], LV_ALIGN_TOP_MID, 0, 66 + (i * 31));
         }
 
         lv_obj_t *next = pregame_button(screen_pregame_roster, "MULLIGANS", 142, 42,
@@ -384,20 +384,20 @@ void build_pregame_screens(void)
         }
 
         for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
-            lv_obj_t *btn = pregame_button(screen_pregame_mulligans, "", 206, 38,
+            lv_obj_t *btn = pregame_button(screen_pregame_mulligans, "", 206, 32,
                                            event_mulligan_cycle,
                                            LV_EVENT_SHORT_CLICKED,
                                            (void *)(intptr_t)i);
             lv_obj_add_event_cb(btn, event_mulligan_decrement,
                                 LV_EVENT_LONG_PRESSED,
                                 (void *)(intptr_t)i);
-            lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 76 + (i * 42));
+            lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 72 + (i * 34));
             mulligan_labels[i] = lv_obj_get_child(btn, 0);
         }
 
         lv_obj_t *start = pregame_button(screen_pregame_mulligans, "START GAME", 146, 42,
                                          event_start_game, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(start, LV_ALIGN_BOTTOM_MID, 0, -24);
+        lv_obj_align(start, LV_ALIGN_BOTTOM_MID, 0, -18);
     }
 
     multiplayer_status_timer = lv_timer_create(multiplayer_status_timer_cb, 500, NULL);
