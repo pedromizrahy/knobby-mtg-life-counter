@@ -41,6 +41,8 @@ int nvs_get_turn_show_name(void);
 void nvs_set_turn_show_name(int value);
 int nvs_get_turn_reminder_minutes(void);
 void nvs_set_turn_reminder_minutes(int value);
+int nvs_get_turn_alert_duration_seconds(void);
+void nvs_set_turn_alert_duration_seconds(int value);
 int nvs_get_turn_visual_alert(void);
 void nvs_set_turn_visual_alert(int value);
 int nvs_get_timer_face_player(void);
