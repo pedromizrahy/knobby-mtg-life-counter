@@ -62,18 +62,35 @@ void refresh_turn_ui(void)
     uint32_t seconds = total_seconds % 60;
 
     if (turn_number <= 0 || active_turn_player < 0) {
-        snprintf(buf, sizeof(buf), "turn  0:00");
-    } else {
+        snprintf(buf, sizeof(buf), "0:00");
+    } else if (nvs_get_turn_show_name()) {
         const char *name = (active_turn_player < MAX_GAME_PLAYERS)
                                ? player_names[active_turn_player]
                                : "P?";
-        snprintf(buf, sizeof(buf), "%s T%d  %lu:%02lu",
+        snprintf(buf, sizeof(buf), "%s  %lu:%02lu  R%d",
                  name,
-                 turn_number,
                  (unsigned long)minutes,
-                 (unsigned long)seconds);
+                 (unsigned long)seconds,
+                 round_number);
+    } else {
+        snprintf(buf, sizeof(buf), "%lu:%02lu  R%d",
+                 (unsigned long)minutes,
+                 (unsigned long)seconds,
+                 round_number);
     }
     lv_label_set_text(label_turn, buf);
+
+    if (turn_reminder_active && nvs_get_turn_visual_alert()) {
+        lv_obj_set_style_text_color(label_turn, lv_palette_main(LV_PALETTE_RED), 0);
+        if (turn_container != NULL) {
+            lv_obj_set_style_bg_color(turn_container,
+                turn_reminder_flash_on ? lv_color_hex(0x3A0909) : lv_color_hex(0x101010), 0);
+        }
+    } else {
+        lv_obj_set_style_text_color(label_turn, lv_color_white(), 0);
+        if (turn_container != NULL)
+            lv_obj_set_style_bg_color(turn_container, lv_color_hex(0x101010), 0);
+    }
 
     if (turn_live_dot != NULL) {
         lv_obj_align_to(turn_live_dot, label_turn, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
