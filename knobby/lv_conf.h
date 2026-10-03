@@ -54,7 +54,7 @@
 #define LV_MEM_CUSTOM 0
 #if LV_MEM_CUSTOM == 0
     /*Size of the memory available for `lv_mem_alloc()` in bytes (>= 2kB)*/
-    #define LV_MEM_SIZE (2U * 1024U * 1024U)   /*[bytes] - PSRAM-backed; sized for commander JPEG decode */
+    #define LV_MEM_SIZE (3U * 1024U * 1024U)   /*[bytes] - PSRAM-backed; headroom for Scryfall art JPEG decode */
 
     /* Keep LVGL's 128 KB arena out of scarce internal DRAM. The board has
      * OPI PSRAM enabled and LVGL supports an externally allocated pool
