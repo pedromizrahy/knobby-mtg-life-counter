@@ -16,6 +16,8 @@ extern int turn_number;
    richer per-player timing is added incrementally. */
 extern int active_turn_player;
 extern int round_number;
+extern bool turn_reminder_active;
+extern bool turn_reminder_flash_on;
 
 // ---------- functions ----------
 void knob_timer_init(void);
