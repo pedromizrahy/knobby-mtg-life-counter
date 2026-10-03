@@ -278,8 +278,8 @@ static void refresh_commander_markers(const mp_panel_spec_t *spec,
         }
 
         if (spec_is_wedge(spec)) {
-            const int radius = 152;
-            const int step_deg = 12;
+            const int radius = 158;
+            const int step_deg = 14;
             int angle = (wedge_geom[panel_index].bis_deg
                          + ((total - 1) * step_deg / 2)
                          - (slot * step_deg) + 360) % 360;
@@ -307,7 +307,7 @@ static void get_counter_equator_anchor(lv_obj_t *panel,
     lv_coord_t parent_h;
     lv_coord_t panel_center_y;
     lv_coord_t target_world_y;
-    const lv_coord_t equator_gap = 24;
+    const lv_coord_t equator_gap = 46;
     const lv_coord_t edge_margin = 24;
 
     if (anchor_x == NULL || anchor_y == NULL) return;
@@ -328,7 +328,23 @@ static void get_counter_equator_anchor(lv_obj_t *panel,
     if (target_world_y < panel_y + edge_margin) target_world_y = panel_y + edge_margin;
     if (target_world_y > panel_y + panel_h - edge_margin) target_world_y = panel_y + panel_h - edge_margin;
 
-    *anchor_x = 0;
+    {
+        lv_coord_t panel_x = lv_obj_get_x(panel);
+        lv_coord_t panel_w = lv_obj_get_width(panel);
+        lv_coord_t parent_w = lv_obj_get_width(parent);
+        lv_coord_t panel_center_x = panel_x + (panel_w / 2);
+
+        /* Keep the badge row out of the timer's center safe-zone. On
+           quadrant layouts push the complete poison/commander row toward
+           the outer side of its player panel; full-width 2P panels stay
+           centered horizontally and gain clearance from the larger
+           equator gap above. */
+        if (panel_w < parent_w) {
+            *anchor_x = (panel_center_x < (parent_w / 2)) ? -48 : 48;
+        } else {
+            *anchor_x = 0;
+        }
+    }
     *anchor_y = target_world_y - panel_center_y;
 }
 
@@ -506,8 +522,8 @@ static void refresh_counter_rows(const mp_panel_spec_t *spec, int16_t wedge_bis,
         lv_coord_t local_y;
 
         if (spec_is_wedge(spec)) {
-            const int radius = 152;
-            const int step_deg = 12;
+            const int radius = 158;
+            const int step_deg = 14;
             int angle = (wedge_bis + ((total - 1) * step_deg / 2)
                          - (type * step_deg) + 360) % 360;
             local_x = wedge_polar(lv_trigo_cos((int16_t)angle), radius);
