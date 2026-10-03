@@ -936,10 +936,20 @@ void start_player_selection_animation(void)
 
 void stop_player_selection_animation(void)
 {
+    bool was_active = player_selection_animation_active();
+    int stopped_player = roulette_idx;
+
     player_select_anim_steps = 0;
     if (player_select_anim_timer != NULL) {
         lv_timer_del(player_select_anim_timer);
         player_select_anim_timer = NULL;
+    }
+
+    /* Stopping the roulette is still a valid first-player decision.
+       If turn tracking is enabled, begin the game on the player where
+       the roulette stopped instead of leaving the game without a turn. */
+    if (was_active && nvs_get_turn_timer_enabled() && !turn_timer_enabled) {
+        turn_timer_start_for_player(stopped_player);
     }
 }
 
