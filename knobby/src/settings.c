@@ -598,7 +598,6 @@ static const setting_item_t settings_items[] = {
     { .id = "auto-eliminate", .label = auto_eliminate_label,   .color = toggle_color,      .get = nvs_get_auto_eliminate,   .set = nvs_set_auto_eliminate,   .count = 2 },
     { .id = "random-first",   .label = random_first_label,     .color = toggle_color,      .get = nvs_get_random_first,     .set = nvs_set_random_first,     .count = 2 },
     { .id = "turn-timer",     .fixed_label = "Turn Timer\nSettings", .navigate = open_turn_timer_settings, .nav_screen = &screen_turn_timer_settings },
-    { .id = "multi-select",   .label = multi_select_label,     .color = toggle_color,      .get = nvs_get_multi_select,     .set = multi_select_set,         .count = 2 },
     { .id = "table-sync",     .fixed_label = "Table Sync\n(Experimental)", .navigate = open_table_sync_screen, .nav_screen = &screen_table_sync },
     { .id = "rotate",         .fixed_label = "Rotate\nScreen", .navigate = open_rotate_screen, .nav_screen = &screen_rotate },
     { .id = "menu-facing",    .label = menu_facing_label,      .color = toggle_color,      .get = nvs_get_menu_facing,      .set = nvs_set_menu_facing,      .count = 2 },
@@ -774,7 +773,7 @@ void build_quad_menus(void)
 
     quad_item_t tools_items[4] = {
         {"Dice",        event_tool_dice, true, LV_EVENT_CLICKED},
-        {"Timer",       event_tool_timer, true, LV_EVENT_CLICKED},
+        {"Turn\nSettings", open_turn_timer_settings, true, LV_EVENT_CLICKED},
         {"Event\nLog",  event_open_damage_log, true, LV_EVENT_CLICKED},
         {"Mana\nPool",  event_tool_mana, true, LV_EVENT_CLICKED},
     };
