@@ -23,6 +23,8 @@ static lv_obj_t *mp_turn_badge = NULL;
 static lv_obj_t *mp_turn_label = NULL;
 static lv_obj_t *mp_turn_round_label = NULL;
 static lv_obj_t *mp_turn_hold_arc = NULL;
+static lv_obj_t *mp_reminder_overlay = NULL;
+static lv_obj_t *mp_reminder_overlay_label = NULL;
 
 #define DAMAGE_DRAG_THRESHOLD_PX 18
 #define DAMAGE_DRAG_ADVANCED_HOLD_MS 900
@@ -696,6 +698,24 @@ void refresh_multiplayer_turn_ui(void)
     }
 
     lv_obj_clear_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
+
+    if (mp_reminder_overlay != NULL && mp_reminder_overlay_label != NULL) {
+        if (turn_reminder_overlay_active && nvs_get_turn_visual_alert()) {
+            char alert_buf[24];
+            int reminder_minutes = nvs_get_turn_reminder_minutes();
+
+            snprintf(alert_buf, sizeof(alert_buf), "%d MIN", reminder_minutes);
+            lv_label_set_text(mp_reminder_overlay_label, alert_buf);
+            lv_obj_set_style_bg_opa(
+                mp_reminder_overlay,
+                turn_reminder_flash_on ? LV_OPA_90 : LV_OPA_70,
+                0);
+            lv_obj_clear_flag(mp_reminder_overlay, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(mp_reminder_overlay);
+        } else {
+            lv_obj_add_flag(mp_reminder_overlay, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 }
 
 /* ---------- unified refresh ---------- */
@@ -1317,6 +1337,22 @@ void rebuild_multiplayer_layout(int track)
     lv_obj_align(mp_turn_round_label, LV_ALIGN_BOTTOM_MID, 0, -6);
 
     mp_battery_icon = add_low_battery_icon(screen_multiplayer);
+
+    mp_reminder_overlay = lv_obj_create(screen_multiplayer);
+    lv_obj_remove_style_all(mp_reminder_overlay);
+    lv_obj_set_size(mp_reminder_overlay, 360, 360);
+    lv_obj_set_pos(mp_reminder_overlay, 0, 0);
+    lv_obj_set_style_bg_color(mp_reminder_overlay, lv_color_hex(0xC62828), 0);
+    lv_obj_set_style_bg_opa(mp_reminder_overlay, LV_OPA_80, 0);
+    lv_obj_clear_flag(mp_reminder_overlay, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(mp_reminder_overlay, LV_OBJ_FLAG_HIDDEN);
+
+    mp_reminder_overlay_label = lv_label_create(mp_reminder_overlay);
+    lv_label_set_text(mp_reminder_overlay_label, "5 MIN");
+    lv_obj_set_style_text_color(mp_reminder_overlay_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(mp_reminder_overlay_label, &lv_font_montserrat_bold_44, 0);
+    lv_obj_set_style_text_letter_space(mp_reminder_overlay_label, 2, 0);
+    lv_obj_center(mp_reminder_overlay_label);
 
     refresh_multiplayer_ui();
 }
