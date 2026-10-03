@@ -28,7 +28,7 @@ int turn_hold_progress = 0;
 
 #define TURN_HOLD_MS 1000U
 #define TURN_REMINDER_ALERT_PERIOD_MS 250U
-#define TURN_REMINDER_PULSE_PERIOD_MS 100U
+#define TURN_REMINDER_PULSE_PERIOD_MS 50U
 
 static uint32_t current_turn_started_ms = 0;
 static uint32_t turn_hold_started_ms = 0;
@@ -77,7 +77,9 @@ void turn_timer_start_for_player(int player)
     turn_timer_enabled = true;
     turn_indicator_visible = true;
     turn_ui_visible = true;
-    turn_blink_steps_remaining = 10;
+    /* Solo mode should start stable; the multiplayer start blink is useful
+       as a turn-owner cue but looks like a broken timer on a personal Dial. */
+    turn_blink_steps_remaining = (player_count > 1) ? 10 : 0;
     turn_reminder_active = false;
     turn_reminder_flash_on = false;
     turn_reminder_overlay_active = false;
@@ -97,7 +99,10 @@ void turn_timer_start_for_player(int player)
                         (uint16_t)turn_number, (uint16_t)round_number, 0);
 
     if (turn_blink_timer != NULL) {
-        lv_timer_resume(turn_blink_timer);
+        if (turn_blink_steps_remaining > 0)
+            lv_timer_resume(turn_blink_timer);
+        else
+            lv_timer_pause(turn_blink_timer);
     }
 
     refresh_player_ui();
@@ -357,14 +362,14 @@ static void turn_reminder_flash_timer_cb(lv_timer_t *timer)
             turn_reminder_pulse_level = 90;
             turn_reminder_pulse_dir = -1;
         } else {
-            turn_reminder_pulse_level = (uint8_t)(turn_reminder_pulse_level + 6);
+            turn_reminder_pulse_level = (uint8_t)(turn_reminder_pulse_level + 2);
         }
     } else {
         if (turn_reminder_pulse_level <= 24) {
             turn_reminder_pulse_level = 24;
             turn_reminder_pulse_dir = 1;
         } else {
-            turn_reminder_pulse_level = (uint8_t)(turn_reminder_pulse_level - 6);
+            turn_reminder_pulse_level = (uint8_t)(turn_reminder_pulse_level - 2);
         }
     }
 
