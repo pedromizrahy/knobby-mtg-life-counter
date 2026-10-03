@@ -201,6 +201,49 @@ static bool json_extract_string(const String &json, const char *key,
     return true;
 }
 
+static bool diagnose_https_path(void)
+{
+    IPAddress resolved;
+    WiFiClient tcp;
+    NetworkClientSecure tls;
+    char tls_error[160] = {0};
+
+    Serial.print("[Playgroup] DNS ");
+    Serial.print(PG_API_HOST);
+    Serial.print(" ... ");
+    if (!WiFi.hostByName(PG_API_HOST, resolved)) {
+        Serial.println("FAILED");
+        return false;
+    }
+    Serial.println(resolved);
+
+    Serial.print("[Playgroup] TCP 443 ... ");
+    if (!tcp.connect(resolved, 443, 5000)) {
+        Serial.println("FAILED");
+        return false;
+    }
+    Serial.println("OK");
+    tcp.stop();
+
+    Serial.print("[Playgroup] TLS handshake ... ");
+    tls.useBuiltinCACertBundle();
+    tls.setHandshakeTimeout(12);
+    if (!tls.connect(PG_API_HOST, 443, 12000)) {
+        Serial.println("FAILED");
+        int err = tls.lastError(tls_error, sizeof(tls_error));
+        Serial.print("[Playgroup] TLS error ");
+        Serial.print(err);
+        Serial.print(": ");
+        Serial.println(tls_error[0] ? tls_error : "(no detail)");
+        tls.stop();
+        return false;
+    }
+
+    Serial.println("OK");
+    tls.stop();
+    return true;
+}
+
 static bool playgroup_test_me(void)
 {
     char api_key[PG_API_KEY_MAX];
@@ -219,6 +262,12 @@ static bool playgroup_test_me(void)
 
     if (!wifi_connect_saved())
         return false;
+
+    if (!diagnose_https_path()) {
+        wifi_power_down();
+        Serial.println("[Playgroup] Wi-Fi off.");
+        return false;
+    }
 
     /* Arduino-ESP32 3.3.12 exposes the IDF/Mozilla built-in CA bundle.
        This keeps TLS verification enabled without pinning an expiring
