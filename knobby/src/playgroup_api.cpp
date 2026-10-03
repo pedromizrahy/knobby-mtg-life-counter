@@ -1030,6 +1030,16 @@ static bool playgroup_download_image_network(const char *scryfall_id, uint8_t **
     return true;
 }
 
+bool playgroup_cached_image_copy(const char *scryfall_id,
+                                 uint8_t **out_data, size_t *out_size)
+{
+    if (out_data == NULL || out_size == NULL)
+        return false;
+    *out_data = NULL;
+    *out_size = 0;
+    return art_cache_copy(scryfall_id, out_data, out_size);
+}
+
 bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_t *out_size)
 {
     bool ok;
@@ -1130,8 +1140,8 @@ void playgroup_prefetch_deck_images(void)
 
     job->generation = generation;
     job->count = cached_deck_count;
-    if (job->count > PG_MAX_DECKS)
-        job->count = PG_MAX_DECKS;
+    if (job->count > PG_ART_CACHE_SLOTS)
+        job->count = PG_ART_CACHE_SLOTS;
 
     for (int i = 0; i < job->count; i++)
         strlcpy(job->ids[i], cached_decks[i].scryfall_id, sizeof(job->ids[i]));
