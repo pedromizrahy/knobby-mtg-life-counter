@@ -973,9 +973,10 @@ static void player_select_anim_cb(lv_timer_t *timer)
             turn_timer_start_for_player(roulette_idx);
         }
     } else {
-        // Linear deceleration
-        player_select_anim_period += (200 / (player_select_anim_steps + 1));
-        if (player_select_anim_period > 600) player_select_anim_period = 600;
+        /* Smooth roulette deceleration: fast enough to read as motion at
+           the start, then progressively slower so the winner feels earned. */
+        player_select_anim_period += 12;
+        if (player_select_anim_period > 340) player_select_anim_period = 340;
         lv_timer_set_period(player_select_anim_timer, player_select_anim_period);
     }
 }
@@ -992,12 +993,14 @@ void start_player_selection_animation(void)
         player_select_anim_timer = lv_timer_create(player_select_anim_cb, 50, NULL);
     }
 
-    // Randomize length to ensure random landing
-    random_stops = (int)(esp_random() % track) + (track * 3);
-    random_stops += esp_random() % (track * 2);
+    /* Always show enough visible hops to feel like a roulette. The final
+       0..track-1 offset keeps each seat reachable with the same cadence. */
+    random_stops = 12;
+    while ((random_stops % track) != 0) random_stops++;
+    random_stops += (int)(esp_random() % track);
 
     player_select_anim_steps = random_stops;
-    player_select_anim_period = 40; // start fast
+    player_select_anim_period = 80;
 
     roulette_idx = 0;
     selection_set_single(0);
