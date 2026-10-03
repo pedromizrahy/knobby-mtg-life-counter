@@ -308,6 +308,64 @@ static bool json_extract_number_token(const String &json, const char *key,
     return true;
 }
 
+static int json_collect_top_level_ids(const String &json, long *ids, int max_ids)
+{
+    int brace_depth = 0;
+    bool in_string = false;
+    bool escape = false;
+    int count = 0;
+
+    for (int i = 0; i < (int)json.length(); i++) {
+        char ch = json[i];
+
+        if (in_string) {
+            if (escape) {
+                escape = false;
+            } else if (ch == '\\') {
+                escape = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if (ch == '"') {
+            /* At depth 1 we are inside one playgroup object from the root
+               array. Nested league objects are depth 2+, so their ids are
+               deliberately ignored. */
+            if (brace_depth == 1 && json.startsWith("\"id\"", i)) {
+                int colon = json.indexOf(':', i + 4);
+                if (colon >= 0) {
+                    int pos = colon + 1;
+                    while (pos < (int)json.length() &&
+                           (json[pos] == ' ' || json[pos] == '\t' ||
+                            json[pos] == '\r' || json[pos] == '\n'))
+                        pos++;
+
+                    long id = 0;
+                    bool found_digit = false;
+                    while (pos < (int)json.length() &&
+                           json[pos] >= '0' && json[pos] <= '9') {
+                        found_digit = true;
+                        id = (id * 10L) + (json[pos] - '0');
+                        pos++;
+                    }
+
+                    if (found_digit && count < max_ids)
+                        ids[count++] = id;
+                }
+            }
+            in_string = true;
+        } else if (ch == '{') {
+            brace_depth++;
+        } else if (ch == '}') {
+            if (brace_depth > 0) brace_depth--;
+        }
+    }
+
+    return count;
+}
+
 static bool playgroup_discover(void)
 {
     String me;
@@ -362,9 +420,44 @@ static bool playgroup_discover(void)
         Serial.println(playgroups);
     }
 
+    if (status == HTTP_CODE_OK) {
+        long playgroup_ids[12];
+        int playgroup_count =
+            json_collect_top_level_ids(playgroups, playgroup_ids,
+                                       (int)(sizeof(playgroup_ids) / sizeof(playgroup_ids[0])));
+
+        Serial.print("[Playgroup] Found ");
+        Serial.print(playgroup_count);
+        Serial.println(" playgroup id(s).");
+
+        for (int i = 0; i < playgroup_count; i++) {
+            String members;
+            String members_path = String("/playgroups/") +
+                                  String(playgroup_ids[i]) + "/members";
+
+            Serial.print("[Playgroup] GET members for playgroup ");
+            Serial.print(playgroup_ids[i]);
+            Serial.println(" ...");
+
+            if (!playgroup_https_get(members_path, members, status)) {
+                Serial.println("[Playgroup] Members request failed.");
+                continue;
+            }
+
+            Serial.print("[Playgroup] Members HTTP ");
+            Serial.println(status);
+            if (members.length() > 0) {
+                Serial.print("[Playgroup] Members response for ");
+                Serial.print(playgroup_ids[i]);
+                Serial.println(":");
+                Serial.println(members);
+            }
+        }
+    }
+
     wifi_power_down();
     Serial.println("[Playgroup] Wi-Fi off.");
-    return status == HTTP_CODE_OK;
+    return true;
 }
 
 static bool playgroup_test_me(void)
