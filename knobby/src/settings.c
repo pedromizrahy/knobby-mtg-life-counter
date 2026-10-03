@@ -37,6 +37,7 @@ static lv_obj_t *turn_timer_btns[4] = {NULL, NULL, NULL, NULL};
 static lv_obj_t *turn_timer_lbls[4] = {NULL, NULL, NULL, NULL};
 static bool turn_settings_from_tools = false;
 static bool turn_settings_from_game = false;
+static bool table_sync_from_tools = false;
 
 // ---------- quadrant menu builder ----------
 void build_quad_screen(lv_obj_t **screen, quad_item_t items[4])
@@ -753,6 +754,12 @@ bool settings_handle_back(lv_obj_t *screen)
         return true;
     }
 
+    if (screen == screen_table_sync && table_sync_from_tools) {
+        table_sync_from_tools = false;
+        lv_scr_load(screen_tools_menu);
+        return true;
+    }
+
     for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
         if (settings_items[i].nav_screen != NULL && screen == *settings_items[i].nav_screen) {
             settings_save();
@@ -818,6 +825,7 @@ static void event_open_damage_log(lv_event_t *e)
 static void event_open_table_sync_tools(lv_event_t *e)
 {
     (void)e;
+    table_sync_from_tools = true;
     open_table_sync_screen();
 }
 
