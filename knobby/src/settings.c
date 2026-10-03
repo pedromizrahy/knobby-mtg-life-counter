@@ -225,6 +225,20 @@ static const char *color_mode_label(int mode)
     }
 }
 
+static const char *cmd_marker_label(int mode)
+{
+    return (mode == CMD_MARKER_ART)
+        ? "Commander\nMarker: Art"
+        : "Commander\nMarker: Dot";
+}
+
+static void cmd_marker_set(int mode)
+{
+    nvs_set_cmd_marker_mode(mode);
+    refresh_player_ui();
+}
+
+
 static const char *deselect_label(int index)
 {
     switch (index) {
@@ -595,6 +609,7 @@ static const setting_item_t settings_items[] = {
     { .id = "autodim",        .label = autodim_label,          .color = autodim_color,     .get = autodim_get,              .set = autodim_set,              .count = AUTO_DIM_COUNT },
     { .id = "battery",        .fixed_label = "Battery",    .navigate = open_battery_screen, .nav_screen = &screen_battery },
     { .id = "color-mode",     .label = color_mode_label,       .color = color_mode_color,  .get = nvs_get_color_mode,       .set = nvs_set_color_mode,       .count = COLOR_MODE_COUNT },
+    { .id = "cmd-marker",     .label = cmd_marker_label,       .color = color_mode_color,  .get = nvs_get_cmd_marker_mode,  .set = cmd_marker_set,           .count = CMD_MARKER_COUNT },
     { .id = "orientation",    .label = orientation_mode_label, .color = orientation_color, .get = nvs_get_orientation,      .set = nvs_set_orientation,      .count = ORIENTATION_MODE_COUNT },
     { .id = "auto-eliminate", .label = auto_eliminate_label,   .color = toggle_color,      .get = nvs_get_auto_eliminate,   .set = nvs_set_auto_eliminate,   .count = 2 },
     { .id = "random-first",   .label = random_first_label,     .color = toggle_color,      .get = nvs_get_random_first,     .set = nvs_set_random_first,     .count = 2 },
