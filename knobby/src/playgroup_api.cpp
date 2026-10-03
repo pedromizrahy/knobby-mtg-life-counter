@@ -704,6 +704,89 @@ const playgroup_deck_t *playgroup_cached_deck(int index)
     return &cached_decks[index];
 }
 
+bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_size)
+{
+    NetworkClientSecure tls;
+    HTTPClient http;
+    NetworkClient *stream;
+    uint8_t *data;
+    int status;
+    int content_length;
+    size_t received;
+
+    if (url == NULL || url[0] == '\0' || out_data == NULL || out_size == NULL)
+        return false;
+
+    *out_data = NULL;
+    *out_size = 0;
+
+    if (!wifi_connect_saved())
+        return false;
+
+    tls.useBuiltinCACertBundle();
+    tls.setHandshakeTimeout(12);
+    http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setTimeout(PG_HTTP_TIMEOUT_MS);
+
+    if (!http.begin(tls, url)) {
+        wifi_power_down();
+        return false;
+    }
+
+    http.addHeader("User-Agent", "DialDosPrimos/0.1 (ESP32-S3)");
+    status = http.GET();
+    if (status != HTTP_CODE_OK) {
+        Serial.print("[Playgroup] Commander art HTTP ");
+        Serial.println(status);
+        http.end();
+        wifi_power_down();
+        return false;
+    }
+
+    content_length = http.getSize();
+    if (content_length <= 0 || content_length > (512 * 1024)) {
+        Serial.print("[Playgroup] Commander art invalid size: ");
+        Serial.println(content_length);
+        http.end();
+        wifi_power_down();
+        return false;
+    }
+
+    data = (uint8_t *)heap_caps_malloc((size_t)content_length,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (data == NULL) {
+        Serial.println("[Playgroup] Commander art PSRAM allocation failed.");
+        http.end();
+        wifi_power_down();
+        return false;
+    }
+
+    stream = http.getStreamPtr();
+    received = stream->readBytes((char *)data, (size_t)content_length);
+
+    http.end();
+    wifi_power_down();
+
+    if (received != (size_t)content_length) {
+        Serial.print("[Playgroup] Commander art short read: ");
+        Serial.print((unsigned)received);
+        Serial.print("/");
+        Serial.println(content_length);
+        heap_caps_free(data);
+        return false;
+    }
+
+    *out_data = data;
+    *out_size = received;
+    return true;
+}
+
+void playgroup_free_image(uint8_t *data)
+{
+    if (data != NULL)
+        heap_caps_free(data);
+}
+
 static bool playgroup_discover_my_decks(void)
 {
     String me;
