@@ -607,10 +607,27 @@ void refresh_multiplayer_turn_ui(void)
     seconds = total_seconds % 60;
 
     if (active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS) {
+        int color_index = active_turn_player;
+        int i;
+
         name = player_names[active_turn_player];
+
+        /* Match the timer border to the exact color assignment used by the
+           active panel. This matters in layouts where seat/player order and
+           color order are not identical (notably 2P). */
+        if (mp_state.layout != NULL) {
+            for (i = 0; i < mp_state.layout->panel_count; i++) {
+                const mp_panel_spec_t *spec = &mp_state.layout->panels[i];
+                if (spec->player_index == active_turn_player) {
+                    color_index = spec->color_index;
+                    break;
+                }
+            }
+        }
+
         active_color =
             get_effective_player_color(active_turn_player,
-                                       active_turn_player,
+                                       color_index,
                                        LIFE_VIB_VIV);
     } else {
         name = "P?";
@@ -622,9 +639,11 @@ void refresh_multiplayer_turn_ui(void)
     lv_label_set_text(mp_turn_label, time_buf);
 
     if (nvs_get_turn_show_name()) {
-        snprintf(round_buf, sizeof(round_buf), "%s · R%d", name, round_number);
+        snprintf(round_buf, sizeof(round_buf), "%s · R%d · T%d",
+                 name, round_number, turn_in_round);
     } else {
-        snprintf(round_buf, sizeof(round_buf), "R%d", round_number);
+        snprintf(round_buf, sizeof(round_buf), "R%d · T%d",
+                 round_number, turn_in_round);
     }
     lv_label_set_text(mp_turn_round_label, round_buf);
 
