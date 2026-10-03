@@ -1,7 +1,5 @@
 #include "intro.h"
-
-// Forward declaration
-extern void back_to_main(void);
+#include "pregame.h"
 
 lv_obj_t *screen_intro = NULL;
 
@@ -72,7 +70,7 @@ static void intro_timer_cb(lv_timer_t *timer)
     }
 
     lv_timer_pause(timer);
-    back_to_main();
+    open_pregame_home();
 }
 
 void build_intro_screen(void)
