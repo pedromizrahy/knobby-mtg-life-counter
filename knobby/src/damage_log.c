@@ -9,9 +9,11 @@ typedef struct {
     int8_t   source;       // source for cmd damage or counter type, -1 if N/A
     uint8_t  event_type;   // log_event_type_t
     int16_t  delta;
-    uint16_t turn_number;
+    uint16_t turn_number;      /* global turn id: grouping/order */
     uint16_t round_number;
+    uint16_t turn_in_round;    /* user-facing T1/T2/... within the round */
     int8_t   turn_player;
+    uint32_t duration_ms;      /* populated by LOG_EVT_TURN_END */
     uint16_t action_id;
 } damage_log_entry_t;
 
@@ -66,6 +68,8 @@ void damage_log_add(int player, int delta, uint8_t event_type, int source)
     damage_log[damage_log_head].delta      = (int16_t)delta;
     damage_log[damage_log_head].turn_number = (uint16_t)(turn_number > 0 ? turn_number : 0);
     damage_log[damage_log_head].round_number = (uint16_t)(round_number > 0 ? round_number : 0);
+    damage_log[damage_log_head].turn_in_round = (uint16_t)(turn_in_round > 0 ? turn_in_round : 0);
+    damage_log[damage_log_head].duration_ms = 0;
     damage_log[damage_log_head].turn_player =
         (int8_t)((active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS)
                      ? active_turn_player
@@ -76,6 +80,29 @@ void damage_log_add(int player, int delta, uint8_t event_type, int source)
         damage_log[damage_log_head].action_id = next_action_id++;
         if (next_action_id == 0) next_action_id = 1;
     }
+    damage_log_head = (damage_log_head + 1) % DAMAGE_LOG_MAX;
+    if (damage_log_count < DAMAGE_LOG_MAX) damage_log_count++;
+}
+
+void damage_log_add_turn_end(int player, int round, int turn_index,
+                             uint32_t duration_ms)
+{
+    damage_log_entry_t *entry = &damage_log[damage_log_head];
+
+    memset(entry, 0, sizeof(*entry));
+    entry->timestamp_ms = lv_tick_get();
+    entry->player = (int8_t)player;
+    entry->source = -1;
+    entry->event_type = LOG_EVT_TURN_END;
+    entry->delta = 0;
+    entry->turn_number = (uint16_t)(turn_number > 0 ? turn_number : 0);
+    entry->round_number = (uint16_t)(round > 0 ? round : 0);
+    entry->turn_in_round = (uint16_t)(turn_index > 0 ? turn_index : 0);
+    entry->turn_player = (int8_t)player;
+    entry->duration_ms = duration_ms;
+    entry->action_id = next_action_id++;
+    if (next_action_id == 0) next_action_id = 1;
+
     damage_log_head = (damage_log_head + 1) % DAMAGE_LOG_MAX;
     if (damage_log_count < DAMAGE_LOG_MAX) damage_log_count++;
 }
@@ -279,6 +306,29 @@ static void format_log_line(damage_log_entry_t *entry, char *buf, size_t buf_sz)
     }
 }
 
+static int newest_undoable_offset(void)
+{
+    int i;
+
+    for (i = 0; i < damage_log_count; i++) {
+        int idx = (damage_log_head - 1 - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+        if (damage_log[idx].event_type != LOG_EVT_TURN_END)
+            return i;
+    }
+    return -1;
+}
+
+static void event_undo_last(lv_event_t *e)
+{
+    int offset = newest_undoable_offset();
+    (void)e;
+
+    if (offset < 0) return;
+    damage_log_selected = offset;
+    damage_log_undo_selected();
+    lv_indev_wait_release(lv_indev_get_act());
+}
+
 static void update_selection_highlight(void)
 {
     int i;
@@ -330,6 +380,7 @@ static void update_selection_highlight(void)
 static void refresh_damage_log_ui(void)
 {
     int i, idx, first, last;
+    int undo_offset = newest_undoable_offset();
 
     lv_obj_clean(damage_log_container);
 
@@ -345,45 +396,26 @@ static void refresh_damage_log_ui(void)
         return;
     }
 
-    if (damage_log_selected >= damage_log_count) {
+    if (damage_log_selected >= damage_log_count)
         damage_log_selected = damage_log_count - 1;
-    }
-    damage_log_page = (damage_log_selected > 0) ? damage_log_selected / LOG_PAGE_SIZE : 0;
+    if (damage_log_selected < 0)
+        damage_log_selected = 0;
 
+    damage_log_page = damage_log_selected / LOG_PAGE_SIZE;
     first = damage_log_page * LOG_PAGE_SIZE;
     last = first + LOG_PAGE_SIZE;
     if (last > damage_log_count) last = damage_log_count;
 
     for (i = first; i < last; i++) {
         char line[96];
-        char header[80];
+        char header[96];
         bool new_group = false;
         int newer_idx;
         lv_color_t event_color = lv_color_hex(0xB8B8B8);
         lv_obj_t *row;
-        lv_obj_t *event_lbl;
+        lv_obj_t *event_lbl = NULL;
 
         idx = (damage_log_head - 1 - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
-        format_log_line(&damage_log[idx], line, sizeof(line));
-
-        if (damage_log[idx].event_type == LOG_EVT_DAMAGE ||
-            damage_log[idx].event_type == LOG_EVT_CMD_DAMAGE ||
-            damage_log[idx].event_type == LOG_EVT_CMD_INFECT ||
-            damage_log[idx].event_type == LOG_EVT_POISON) {
-            event_color = lv_color_hex(0xFF5252);
-        } else if (damage_log[idx].event_type == LOG_EVT_LIFE) {
-            event_color = (damage_log[idx].delta > 0)
-                        ? lv_color_hex(0x4CAF50)
-                        : lv_color_hex(0xFF5252);
-        } else if (damage_log[idx].event_type == LOG_EVT_COUNTER) {
-            event_color = (damage_log[idx].delta > 0)
-                        ? lv_color_hex(0xFFB74D)
-                        : lv_color_hex(0xB8B8B8);
-        } else {
-            event_color = (damage_log[idx].delta > 0)
-                        ? lv_color_hex(0x4CAF50)
-                        : lv_color_hex(0xFF5252);
-        }
 
         if (i == first) {
             new_group = true;
@@ -399,7 +431,7 @@ static void refresh_damage_log_ui(void)
         row = lv_obj_create(damage_log_container);
         lv_obj_remove_style_all(row);
         lv_obj_set_width(row, 280);
-        lv_obj_set_height(row, new_group ? 54 : 22);
+        lv_obj_set_height(row, new_group ? 58 : 24);
         lv_obj_set_style_pad_left(row, 4, 0);
         lv_obj_set_style_pad_right(row, 4, 0);
         lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
@@ -409,11 +441,37 @@ static void refresh_damage_log_ui(void)
             damage_log[idx].turn_player >= 0 &&
             damage_log[idx].turn_player < MAX_GAME_PLAYERS) {
             lv_obj_t *header_lbl = lv_label_create(row);
+            uint32_t duration_ms = 0;
+            int scan;
 
-            snprintf(header, sizeof(header), "R%u | T%u | %s\n----------------",
-                     (unsigned)damage_log[idx].round_number,
-                     (unsigned)damage_log[idx].turn_number,
-                     player_names[damage_log[idx].turn_player]);
+            /* The turn-end marker is normally the newest entry in a completed
+               block. Scan this block so headers still show duration after
+               pagination or when actions were appended before the turn ended. */
+            for (scan = i; scan < damage_log_count; scan++) {
+                int scan_idx = (damage_log_head - 1 - scan + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+                if (damage_log[scan_idx].turn_number != damage_log[idx].turn_number)
+                    break;
+                if (damage_log[scan_idx].event_type == LOG_EVT_TURN_END) {
+                    duration_ms = damage_log[scan_idx].duration_ms;
+                    break;
+                }
+            }
+
+            if (duration_ms > 0) {
+                unsigned long total_s = (unsigned long)(duration_ms / 1000U);
+                snprintf(header, sizeof(header), "R%u | T%u | %s | %lu:%02lu\n----------------",
+                         (unsigned)damage_log[idx].round_number,
+                         (unsigned)(damage_log[idx].turn_in_round > 0
+                                      ? damage_log[idx].turn_in_round : 1),
+                         player_names[damage_log[idx].turn_player],
+                         total_s / 60UL, total_s % 60UL);
+            } else {
+                snprintf(header, sizeof(header), "R%u | T%u | %s\n----------------",
+                         (unsigned)damage_log[idx].round_number,
+                         (unsigned)(damage_log[idx].turn_in_round > 0
+                                      ? damage_log[idx].turn_in_round : 1),
+                         player_names[damage_log[idx].turn_player]);
+            }
 
             lv_label_set_text(header_lbl, header);
             lv_obj_set_style_text_color(header_lbl, lv_color_hex(0x8A8A8A), 0);
@@ -421,11 +479,52 @@ static void refresh_damage_log_ui(void)
             lv_obj_align(header_lbl, LV_ALIGN_TOP_LEFT, 0, 0);
         }
 
-        event_lbl = lv_label_create(row);
-        lv_label_set_text(event_lbl, line);
-        lv_obj_set_style_text_color(event_lbl, event_color, 0);
-        lv_obj_set_style_text_font(event_lbl, &lv_font_montserrat_14, 0);
-        lv_obj_align(event_lbl, LV_ALIGN_TOP_LEFT, 0, new_group ? 34 : 0);
+        if (damage_log[idx].event_type != LOG_EVT_TURN_END) {
+            format_log_line(&damage_log[idx], line, sizeof(line));
+
+            if (damage_log[idx].event_type == LOG_EVT_DAMAGE ||
+                damage_log[idx].event_type == LOG_EVT_CMD_DAMAGE ||
+                damage_log[idx].event_type == LOG_EVT_CMD_INFECT ||
+                damage_log[idx].event_type == LOG_EVT_POISON) {
+                event_color = lv_color_hex(0xFF5252);
+            } else if (damage_log[idx].event_type == LOG_EVT_LIFE) {
+                event_color = (damage_log[idx].delta > 0)
+                            ? lv_color_hex(0x4CAF50)
+                            : lv_color_hex(0xFF5252);
+            } else if (damage_log[idx].event_type == LOG_EVT_COUNTER) {
+                event_color = (damage_log[idx].delta > 0)
+                            ? lv_color_hex(0xFFB74D)
+                            : lv_color_hex(0xB8B8B8);
+            }
+
+            event_lbl = lv_label_create(row);
+            lv_label_set_text(event_lbl, line);
+            lv_obj_set_style_text_color(event_lbl, event_color, 0);
+            lv_obj_set_style_text_font(event_lbl, &lv_font_montserrat_14, 0);
+            lv_obj_set_width(event_lbl, (i == undo_offset) ? 245 : 272);
+            lv_obj_align(event_lbl, LV_ALIGN_TOP_LEFT, 0, new_group ? 36 : 1);
+        }
+
+        if (i == undo_offset && damage_log[idx].event_type != LOG_EVT_TURN_END) {
+            lv_obj_t *undo = lv_btn_create(row);
+            lv_obj_remove_style_all(undo);
+            lv_obj_set_size(undo, 28, 28);
+            lv_obj_align(undo, LV_ALIGN_RIGHT_MID, 0, new_group ? 15 : 0);
+            lv_obj_set_style_radius(undo, LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_bg_color(undo, lv_color_hex(0x181818), 0);
+            lv_obj_set_style_bg_opa(undo, LV_OPA_80, 0);
+            lv_obj_set_style_border_width(undo, 1, 0);
+            lv_obj_set_style_border_color(undo, lv_color_hex(0x666666), 0);
+            lv_obj_add_event_cb(undo, event_undo_last, LV_EVENT_CLICKED, NULL);
+
+            {
+                lv_obj_t *icon = lv_label_create(undo);
+                lv_label_set_text(icon, LV_SYMBOL_LEFT);
+                lv_obj_set_style_text_color(icon, lv_color_hex(0xD8D8D8), 0);
+                lv_obj_set_style_text_font(icon, &lv_font_montserrat_14, 0);
+                lv_obj_center(icon);
+            }
+        }
     }
 
     if (page_label != NULL) {
@@ -457,13 +556,8 @@ static void event_delete_pressed(lv_event_t *e)
     if (code == LV_EVENT_RELEASED) {
         uint32_t held_ms = lv_tick_elaps(undo_press_started_ms);
 
-        if (held_ms >= 3000U) {
+        if (held_ms >= 2000U) {
             damage_log_undo_all();
-        } else if (held_ms >= 1500U) {
-            /* Short protected hold always means the newest logical action.
-               Knob selection remains for browsing the history. */
-            damage_log_selected = (damage_log_count > 0) ? 0 : -1;
-            damage_log_undo_selected();
         }
         undo_press_started_ms = 0;
         return;
@@ -544,7 +638,7 @@ void build_damage_log_screen(void)
     lv_obj_add_flag(delete_btn, LV_OBJ_FLAG_HIDDEN);
 
     btn_label = lv_label_create(delete_btn);
-    lv_label_set_text(btn_label, "Hold 1.5s: Last\nHold 3s: All");
+    lv_label_set_text(btn_label, "Undo All\n(Hold 2s)");
     lv_obj_set_style_text_align(btn_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(btn_label, lv_color_white(), 0);
     lv_obj_set_style_text_font(btn_label, &lv_font_montserrat_14, 0);
