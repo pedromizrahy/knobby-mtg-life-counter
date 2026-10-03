@@ -3,6 +3,7 @@
 #include "game.h"
 #include "ui_mp.h"
 #include "ui_1p.h"
+#include "net_sync.h"
 
 extern void reset_all_values(void);
 extern void back_to_main(void);
@@ -17,6 +18,8 @@ static int pregame_player_count = 4;
 static uint8_t mulligans[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *roster_labels[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *mulligan_labels[MAX_DISPLAY_PLAYERS] = {0};
+static lv_obj_t *multiplayer_status_label = NULL;
+static lv_timer_t *multiplayer_status_timer = NULL;
 
 static void refresh_roster(void);
 static void refresh_mulligans(void);
@@ -67,9 +70,61 @@ static void event_local_play(lv_event_t *e)
     lv_scr_load(screen_pregame_players);
 }
 
+static void refresh_multiplayer_status(void)
+{
+    char buf[48];
+    int status = net_sync_status();
+    int code = net_sync_code();
+
+    if (multiplayer_status_label == NULL) return;
+
+    switch (status) {
+        case NET_SYNC_JOINING:
+            snprintf(buf, sizeof(buf), "Searching for a host...");
+            break;
+        case NET_SYNC_HOSTING:
+            snprintf(buf, sizeof(buf), "Hosting  #%04d", code);
+            break;
+        case NET_SYNC_IN_GAME:
+            snprintf(buf, sizeof(buf), "Connected  #%04d", code);
+            break;
+        default:
+            snprintf(buf, sizeof(buf), "Host owns the game settings");
+            break;
+    }
+
+    lv_label_set_text(multiplayer_status_label, buf);
+}
+
+static void multiplayer_status_timer_cb(lv_timer_t *timer)
+{
+    if (lv_scr_act() != screen_pregame_multiplayer) {
+        lv_timer_pause(timer);
+        return;
+    }
+    refresh_multiplayer_status();
+}
+
+static void event_multiplayer_host(lv_event_t *e)
+{
+    (void)e;
+    net_sync_start_game();
+    refresh_multiplayer_status();
+}
+
+static void event_multiplayer_join(lv_event_t *e)
+{
+    (void)e;
+    net_sync_join_game();
+    refresh_multiplayer_status();
+}
+
 static void event_multiplayer_setup(lv_event_t *e)
 {
     (void)e;
+    refresh_multiplayer_status();
+    if (multiplayer_status_timer != NULL)
+        lv_timer_resume(multiplayer_status_timer);
     lv_scr_load(screen_pregame_multiplayer);
 }
 
@@ -239,20 +294,22 @@ void build_pregame_screens(void)
         lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
         lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 46);
 
-        lv_obj_t *hint = lv_label_create(screen_pregame_multiplayer);
-        lv_label_set_text(hint, "Host owns the game settings");
-        lv_obj_set_style_text_color(hint, lv_color_hex(0x778391), 0);
-        lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
-        lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 82);
+        multiplayer_status_label = lv_label_create(screen_pregame_multiplayer);
+        lv_label_set_text(multiplayer_status_label, "Host owns the game settings");
+        lv_obj_set_style_text_color(multiplayer_status_label, lv_color_hex(0x778391), 0);
+        lv_obj_set_style_text_font(multiplayer_status_label, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_align(multiplayer_status_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_width(multiplayer_status_label, 250);
+        lv_obj_align(multiplayer_status_label, LV_ALIGN_TOP_MID, 0, 82);
 
         lv_obj_t *host = pregame_button(
-            screen_pregame_multiplayer, "HOST  -  NEXT", 188, 46,
-            NULL, LV_EVENT_CLICKED, NULL);
+            screen_pregame_multiplayer, "HOST", 188, 46,
+            event_multiplayer_host, LV_EVENT_CLICKED, NULL);
         lv_obj_align(host, LV_ALIGN_CENTER, 0, 8);
 
         lv_obj_t *join = pregame_button(
-            screen_pregame_multiplayer, "JOIN  -  NEXT", 188, 46,
-            NULL, LV_EVENT_CLICKED, NULL);
+            screen_pregame_multiplayer, "JOIN", 188, 46,
+            event_multiplayer_join, LV_EVENT_CLICKED, NULL);
         lv_obj_align(join, LV_ALIGN_CENTER, 0, 68);
     }
 
@@ -342,6 +399,9 @@ void build_pregame_screens(void)
                                          event_start_game, LV_EVENT_CLICKED, NULL);
         lv_obj_align(start, LV_ALIGN_BOTTOM_MID, 0, -24);
     }
+
+    multiplayer_status_timer = lv_timer_create(multiplayer_status_timer_cb, 500, NULL);
+    lv_timer_pause(multiplayer_status_timer);
 
     refresh_roster();
     refresh_mulligans();
