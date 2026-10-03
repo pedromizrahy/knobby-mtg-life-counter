@@ -539,57 +539,117 @@ void apply_life_delta(int player, int delta)
     net_sync_commit_player(player);
 }
 
-bool apply_sourced_damage(int source, int target, int amount, game_damage_type_t damage_type)
+bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
+                          uint8_t effects)
 {
-    game_event_t event = {0};
+    int target;
+    int track = nvs_get_players_to_track();
+    int total_lifelink = 0;
+    bool applied = false;
 
     if (source < 0 || source >= MAX_GAME_PLAYERS) return false;
-    if (target < 0 || target >= MAX_DISPLAY_PLAYERS) return false;
-    if (source == target || amount <= 0 || player_eliminated[target]) return false;
+    if (amount <= 0 || target_mask == 0) return false;
+    if (track < 1) track = 1;
+    if (track > MAX_DISPLAY_PLAYERS) track = MAX_DISPLAY_PLAYERS;
 
-    event.source_player = (int8_t)source;
-    event.target_player = (int8_t)target;
-    event.target_mask = (uint8_t)(1U << target);
-    event.amount = (int16_t)amount;
-    event.damage_type = (uint8_t)damage_type;
+    for (target = 0; target < track; target++) {
+        game_event_t event = {0};
+        bool infect;
+        bool commander;
 
-    if (damage_type == DAMAGE_TYPE_NORMAL) {
-        damage_log_add(target, -amount, LOG_EVT_DAMAGE, source);
-        player_life[target] = clamp_life(player_life[target] - amount);
-        event.type = GAME_EVENT_DAMAGE;
+        if ((target_mask & (1U << target)) == 0) continue;
+        if (target == source) continue;
+        if (player_eliminated[target]) continue;
 
-        if (player_life[target] <= 0) {
-            set_player_elimination_action(target, LOG_EVT_DAMAGE, source, -amount);
+        infect = (effects & ATTACK_EFFECT_INFECT) != 0;
+        commander = (effects & ATTACK_EFFECT_COMMANDER) != 0;
+
+        event.source_player = (int8_t)source;
+        event.target_player = (int8_t)target;
+        event.target_mask = (uint8_t)(1U << target);
+        event.amount = (int16_t)amount;
+        event.effects = effects;
+
+        if (infect) {
+            player_counters[target][COUNTER_TYPE_POISON] =
+                clamp_counter(player_counters[target][COUNTER_TYPE_POISON] + amount);
+            damage_log_add(target, amount, LOG_EVT_POISON, source);
+            event.type = GAME_EVENT_COUNTER_CHANGE;
+            event.damage_type = DAMAGE_TYPE_POISON;
+            event.value = (int16_t)player_counters[target][COUNTER_TYPE_POISON];
+
+            if (player_counters[target][COUNTER_TYPE_POISON] >= 10) {
+                set_player_elimination_action(target, LOG_EVT_POISON, source, amount);
+            }
+        } else {
+            player_life[target] = clamp_life(player_life[target] - amount);
+            event.type = commander ? GAME_EVENT_COMMANDER_DAMAGE : GAME_EVENT_DAMAGE;
+            event.damage_type = commander ? DAMAGE_TYPE_COMMANDER : DAMAGE_TYPE_NORMAL;
+            damage_log_add(target, -amount,
+                           commander ? LOG_EVT_CMD_DAMAGE : LOG_EVT_DAMAGE,
+                           source);
+
+            if (player_life[target] <= 0) {
+                set_player_elimination_action(
+                    target,
+                    commander ? LOG_EVT_CMD_DAMAGE : LOG_EVT_DAMAGE,
+                    source,
+                    -amount);
+            }
         }
-    } else if (damage_type == DAMAGE_TYPE_COMMANDER) {
-        cmd_damage_totals[source][target] += amount;
-        damage_log_add(target, -amount, LOG_EVT_CMD_DAMAGE, source);
-        player_life[target] = clamp_life(player_life[target] - amount);
-        event.type = GAME_EVENT_COMMANDER_DAMAGE;
 
-        if (cmd_damage_totals[source][target] >= 21 || player_life[target] <= 0) {
-            set_player_elimination_action(target, LOG_EVT_CMD_DAMAGE, source, -amount);
+        /* Commander damage tracks the combat damage dealt by that commander
+           even when Infect replaces life loss with poison counters. */
+        if (commander) {
+            cmd_damage_totals[source][target] += amount;
+            if (infect) {
+                /* Keep a visible commander entry too; poison remains the
+                   actual player-damage consequence. */
+                damage_log_add(target, -amount, LOG_EVT_CMD_DAMAGE, source);
+            }
+            if (cmd_damage_totals[source][target] >= 21) {
+                set_player_elimination_action(target, LOG_EVT_CMD_DAMAGE, source, -amount);
+            }
         }
+
+        if (effects & ATTACK_EFFECT_LIFELINK) {
+            total_lifelink += amount;
+        }
+
+        game_event_add(&event);
+        check_player_elimination(target);
+        net_sync_commit_player(target);
+        applied = true;
+    }
+
+    if (applied && total_lifelink > 0 &&
+        source >= 0 && source < MAX_DISPLAY_PLAYERS &&
+        !player_eliminated[source]) {
+        apply_life_delta(source, total_lifelink);
+    }
+
+    if (applied) {
+        refresh_player_ui();
+        refresh_select_ui();
+    }
+
+    return applied;
+}
+
+bool apply_sourced_damage(int source, int target, int amount,
+                          game_damage_type_t damage_type)
+{
+    uint8_t effects = 0;
+
+    if (damage_type == DAMAGE_TYPE_COMMANDER) {
+        effects |= ATTACK_EFFECT_COMMANDER;
     } else if (damage_type == DAMAGE_TYPE_POISON) {
-        player_counters[target][COUNTER_TYPE_POISON] =
-            clamp_counter(player_counters[target][COUNTER_TYPE_POISON] + amount);
-        damage_log_add(target, amount, LOG_EVT_POISON, source);
-        event.type = GAME_EVENT_COUNTER_CHANGE;
-        event.value = (int16_t)player_counters[target][COUNTER_TYPE_POISON];
-
-        if (player_counters[target][COUNTER_TYPE_POISON] >= 10) {
-            set_player_elimination_action(target, LOG_EVT_POISON, source, amount);
-        }
-    } else {
+        effects |= ATTACK_EFFECT_INFECT;
+    } else if (damage_type != DAMAGE_TYPE_NORMAL) {
         return false;
     }
 
-    game_event_add(&event);
-    check_player_elimination(target);
-    net_sync_commit_player(target);
-    refresh_player_ui();
-    refresh_select_ui();
-    return true;
+    return apply_sourced_attack(source, (uint8_t)(1U << target), amount, effects);
 }
 
 // ---------- life preview ----------
