@@ -16,6 +16,7 @@ extern "C" {
 #define PG_DECK_NAME_LEN 64
 #define PG_COMMANDER_NAME_LEN 64
 #define PG_IMAGE_URL_LEN 192
+#define PG_SCRYFALL_ID_LEN 40
 
 typedef struct {
     long id;
@@ -38,14 +39,15 @@ typedef struct {
     char commander[PG_COMMANDER_NAME_LEN];
     char partner[PG_COMMANDER_NAME_LEN];
     char art_crop_url[PG_IMAGE_URL_LEN];
+    char scryfall_id[PG_SCRYFALL_ID_LEN];
 } playgroup_deck_t;
 
 /* USB/Serial provisioning + diagnostics. */
 void playgroup_process_serial(void);
 bool playgroup_credentials_ready(void);
 
-/* On-demand API cache for pregame UI. These calls connect Wi-Fi, perform
-   verified HTTPS requests, populate bounded RAM caches, then turn Wi-Fi off. */
+/* On-demand API cache for pregame UI. Wi-Fi stays connected for the whole
+   Playgroup setup session and is explicitly released when setup ends. */
 bool playgroup_refresh_playgroups(void);
 int playgroup_cached_playgroup_count(void);
 const playgroup_summary_t *playgroup_cached_playgroup(int index);
@@ -60,8 +62,9 @@ const playgroup_deck_t *playgroup_cached_deck(int index);
 
 /* Fetch one public commander image into PSRAM. Caller owns the returned
    buffer and must release it with playgroup_free_image(). */
-bool playgroup_download_image(const char *url, uint8_t **out_data, size_t *out_size);
+bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_t *out_size);
 void playgroup_free_image(uint8_t *data);
+void playgroup_end_session(void);
 
 #ifdef __cplusplus
 }
