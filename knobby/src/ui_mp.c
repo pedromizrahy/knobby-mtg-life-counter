@@ -897,7 +897,8 @@ static void drag_hint_refresh(void)
     char buf[64];
 
     if (drag_hint == NULL || drag_hint_label == NULL ||
-        drag_source_player < 0 || drag_target_player < 0) {
+        drag_source_player < 0 ||
+        (drag_target_player < 0 && drag_target_player != -2)) {
         drag_hint_hide();
         return;
     }
@@ -974,7 +975,19 @@ static void event_multiplayer_drag(lv_event_t *e)
         } else if (drag_target_player == -2 && !drag_center_ready &&
                    lv_tick_elaps(drag_target_enter_ms) >=
                        DAMAGE_DRAG_CENTER_HOLD_MS) {
+            int source = drag_source_player;
+
             drag_center_ready = true;
+            drag_hint_refresh();
+
+            /* The center gesture is complete after the short hold; open the
+               multi-target picker immediately instead of requiring a second
+               release gesture. */
+            drag_release_ms = lv_tick_get();
+            damage_drag_reset();
+            open_damage_resolver(source);
+            lv_indev_wait_release(indev);
+            return;
         }
 
         drag_hint_refresh();
