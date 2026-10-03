@@ -95,6 +95,7 @@ static void event_local_play(lv_event_t *e)
     int i;
     (void)e;
 
+    playgroup_end_session();
     playgroup_roster_active = false;
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
         snprintf(player_names[i], sizeof(player_names[i]), "P%d", i + 1);
@@ -468,7 +469,7 @@ static void deck_art_timer_cb(lv_timer_t *timer)
         lv_refr_now(NULL);
     }
 
-    if (!playgroup_download_image(deck->art_crop_url, &data, &data_size)) {
+    if (!playgroup_download_image(deck->scryfall_id, &data, &data_size)) {
         if (deck_commander_label != NULL) {
             char buf[96];
             snprintf(buf, sizeof(buf), "%s\nArt unavailable",
@@ -853,6 +854,8 @@ static void event_start_game(lv_event_t *e)
     int i;
     (void)e;
 
+    playgroup_end_session();
+
     nvs_set_num_players(pregame_player_count);
     nvs_set_players_to_track(pregame_player_count);
     settings_save();
@@ -870,6 +873,7 @@ static void event_start_game(lv_event_t *e)
 
 void open_pregame_home(void)
 {
+    playgroup_end_session();
     if (screen_pregame_home != NULL)
         lv_scr_load(screen_pregame_home);
 }
@@ -881,6 +885,7 @@ bool pregame_handle_back(lv_obj_t *screen)
         return true;
     }
     if (screen == screen_pregame_players) {
+        playgroup_end_session();
         lv_scr_load(screen_pregame_home);
         return true;
     }
