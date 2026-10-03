@@ -122,6 +122,9 @@ void damage_log_undo_selected(void)
     } else if (entry->event_type == LOG_EVT_CMD_DAMAGE) {
         undo_life_change(entry->player, entry->delta);
         undo_cmd_damage(entry->source, entry->player, entry->delta);
+    } else if (entry->event_type == LOG_EVT_CMD_INFECT) {
+        undo_counter_change(entry->player, COUNTER_TYPE_POISON, entry->delta);
+        undo_cmd_damage(entry->source, entry->player, -entry->delta);
     } else if (entry->event_type == LOG_EVT_POISON) {
         undo_counter_change(entry->player, COUNTER_TYPE_POISON, entry->delta);
     } else if (entry->event_type == LOG_EVT_COUNTER) {
@@ -178,6 +181,14 @@ static void format_log_line(damage_log_entry_t *entry, char *buf, size_t buf_sz)
         entry->source < MAX_GAME_PLAYERS && entry->player >= 0 &&
         entry->player < MAX_GAME_PLAYERS) {
         snprintf(buf, buf_sz, "%s: %s dealt %d cmd to %s",
+                 time_str,
+                 player_names[entry->source],
+                 abs_delta,
+                 player_names[entry->player]);
+    } else if (entry->event_type == LOG_EVT_CMD_INFECT && entry->source >= 0 &&
+               entry->source < MAX_GAME_PLAYERS && entry->player >= 0 &&
+               entry->player < MAX_GAME_PLAYERS) {
+        snprintf(buf, buf_sz, "%s: %s dealt %d cmd infect to %s",
                  time_str,
                  player_names[entry->source],
                  abs_delta,
@@ -320,9 +331,11 @@ static void refresh_damage_log_ui(void)
         lv_obj_set_width(lbl, 280);
         lv_obj_add_style(lbl, &log_label_style, 0);
         if (damage_log[idx].event_type == LOG_EVT_COUNTER ||
-            damage_log[idx].event_type == LOG_EVT_POISON) {
+            damage_log[idx].event_type == LOG_EVT_POISON ||
+            damage_log[idx].event_type == LOG_EVT_CMD_INFECT) {
             const counter_definition_t *definition =
-                (damage_log[idx].event_type == LOG_EVT_POISON)
+                (damage_log[idx].event_type == LOG_EVT_POISON ||
+                 damage_log[idx].event_type == LOG_EVT_CMD_INFECT)
                     ? get_counter_definition(COUNTER_TYPE_POISON)
                     : get_counter_definition((counter_type_t)damage_log[idx].source);
             lv_obj_set_style_text_color(lbl,
