@@ -11,11 +11,19 @@ extern uint32_t turn_elapsed_ms;
 extern uint32_t turn_started_ms;
 extern int turn_number;
 
+/* Structured turn tracking. These are intentionally separate from the
+   existing total-game timer so current UI behavior stays compatible while
+   richer per-player timing is added incrementally. */
+extern int active_turn_player;
+extern int round_number;
+
 // ---------- functions ----------
 void knob_timer_init(void);
 void turn_timer_start_fresh(void);
 void turn_timer_reset(void);
 uint32_t get_turn_elapsed_ms(void);
+uint32_t get_current_turn_elapsed_ms(void);
+void turn_advance(void);
 
 // event callbacks used in screen builders
 void event_tool_timer(lv_event_t *e);
