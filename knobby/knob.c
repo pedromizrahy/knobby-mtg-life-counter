@@ -309,6 +309,8 @@ void knob_swipe_hint_update(int start_x, int start_y, int cur_x, int cur_y)
 static void open_menu_for_screen(lv_obj_t *screen)
 {
     if (is_player_screen(screen)) {
+        if (screen == screen_multiplayer)
+            multiplayer_cancel_damage_drag();
         previous_screen = screen;
         open_quad_menu();
     }
