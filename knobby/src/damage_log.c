@@ -20,6 +20,7 @@ static int damage_log_count = 0;
 static int damage_log_head = 0;
 static uint16_t next_action_id = 1;
 static uint16_t active_action_id = 0;
+static uint8_t active_action_depth = 0;
 static uint32_t undo_press_started_ms = 0;
 
 // ---------- screen ----------
@@ -39,14 +40,21 @@ static lv_style_t log_label_style;    // shared by all entry labels
 // ---------- log operations ----------
 void damage_log_begin_action(void)
 {
-    if (active_action_id != 0) return;
-    active_action_id = next_action_id++;
-    if (next_action_id == 0) next_action_id = 1;
+    if (active_action_depth == 0) {
+        active_action_id = next_action_id++;
+        if (next_action_id == 0) next_action_id = 1;
+    }
+    if (active_action_depth < 255) active_action_depth++;
 }
 
 void damage_log_end_action(void)
 {
-    active_action_id = 0;
+    if (active_action_depth == 0) return;
+    active_action_depth--;
+    if (active_action_depth == 0) {
+        active_action_id = 0;
+    active_action_depth = 0;
+    }
 }
 
 void damage_log_add(int player, int delta, uint8_t event_type, int source)
@@ -429,6 +437,9 @@ static void event_delete_pressed(lv_event_t *e)
         if (held_ms >= 3000U) {
             damage_log_undo_all();
         } else if (held_ms >= 1500U) {
+            /* Short protected hold always means the newest logical action.
+               Knob selection remains for browsing the history. */
+            damage_log_selected = (damage_log_count > 0) ? 0 : -1;
             damage_log_undo_selected();
         }
         undo_press_started_ms = 0;
