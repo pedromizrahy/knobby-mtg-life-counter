@@ -6,6 +6,9 @@
 #include "net_sync.h"
 #include "playgroup_api.h"
 #include <stdio.h>
+#include <string.h>
+#include "esp_heap_caps.h"
+#include "rom/tjpgd.h"
 
 extern void reset_all_values(void);
 extern void back_to_main(void);
@@ -50,7 +53,148 @@ static lv_obj_t *deck_position_label = NULL;
 static lv_obj_t *deck_image = NULL;
 static lv_timer_t *deck_art_timer = NULL;
 static uint8_t *deck_art_data = NULL;
+static uint8_t *deck_art_pixels = NULL;
 static lv_img_dsc_t deck_art_dsc;
+
+typedef struct {
+    const uint8_t *src;
+    size_t src_size;
+    size_t src_pos;
+    uint8_t *dst;
+    uint16_t width;
+    uint16_t height;
+} commander_jpeg_ctx_t;
+
+static UINT commander_jpeg_input(JDEC *jd, BYTE *buf, UINT len)
+{
+    commander_jpeg_ctx_t *ctx = (commander_jpeg_ctx_t *)jd->device;
+    size_t remaining;
+    size_t count;
+
+    if (ctx == NULL || ctx->src_pos >= ctx->src_size)
+        return 0;
+
+    remaining = ctx->src_size - ctx->src_pos;
+    count = len < remaining ? len : remaining;
+
+    if (buf != NULL)
+        memcpy(buf, ctx->src + ctx->src_pos, count);
+
+    ctx->src_pos += count;
+    return (UINT)count;
+}
+
+static UINT commander_jpeg_output(JDEC *jd, void *bitmap, JRECT *rect)
+{
+    commander_jpeg_ctx_t *ctx = (commander_jpeg_ctx_t *)jd->device;
+    uint8_t *rgb = (uint8_t *)bitmap;
+    uint16_t block_w;
+    uint16_t block_h;
+    uint16_t y;
+    uint16_t x;
+
+    if (ctx == NULL || ctx->dst == NULL || bitmap == NULL || rect == NULL)
+        return 0;
+
+    block_w = (uint16_t)(rect->right - rect->left + 1U);
+    block_h = (uint16_t)(rect->bottom - rect->top + 1U);
+
+    for (y = 0; y < block_h; y++) {
+        for (x = 0; x < block_w; x++) {
+            uint16_t dx = (uint16_t)(rect->left + x);
+            uint16_t dy = (uint16_t)(rect->top + y);
+            size_t src_i = ((size_t)y * block_w + x) * 3U;
+            size_t dst_i;
+            uint16_t color;
+
+            if (dx >= ctx->width || dy >= ctx->height)
+                continue;
+
+            color = (uint16_t)(((uint16_t)(rgb[src_i] & 0xF8U) << 8) |
+                               ((uint16_t)(rgb[src_i + 1] & 0xFCU) << 3) |
+                               ((uint16_t)rgb[src_i + 2] >> 3));
+#if LV_COLOR_16_SWAP
+            color = (uint16_t)((color << 8) | (color >> 8));
+#endif
+            dst_i = ((size_t)dy * ctx->width + dx) * 2U;
+            ctx->dst[dst_i] = (uint8_t)(color & 0xFFU);
+            ctx->dst[dst_i + 1] = (uint8_t)(color >> 8);
+        }
+    }
+
+    return 1;
+}
+
+static bool decode_commander_jpeg(const uint8_t *jpeg, size_t jpeg_size,
+                                  uint8_t **out_pixels,
+                                  uint16_t *out_width, uint16_t *out_height)
+{
+    JDEC decoder;
+    commander_jpeg_ctx_t ctx;
+    uint8_t *work = NULL;
+    uint8_t *pixels = NULL;
+    JRESULT res;
+    const uint8_t scale = 3; /* 1/8: ideal for ~700x900 Scryfall art on 360x360 */
+    uint16_t width;
+    uint16_t height;
+    size_t pixel_bytes;
+
+    if (jpeg == NULL || jpeg_size == 0 || out_pixels == NULL ||
+        out_width == NULL || out_height == NULL)
+        return false;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.src = jpeg;
+    ctx.src_size = jpeg_size;
+
+    work = (uint8_t *)heap_caps_malloc(3100, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (work == NULL) {
+        printf("[Playgroup] Commander JPEG work buffer allocation failed.\n");
+        return false;
+    }
+
+    res = jd_prepare(&decoder, commander_jpeg_input, work, 3100, &ctx);
+    if (res != JDR_OK) {
+        printf("[Playgroup] Commander JPEG prepare failed: %d\n", (int)res);
+        heap_caps_free(work);
+        return false;
+    }
+
+    width = (uint16_t)((decoder.width + 7U) >> scale);
+    height = (uint16_t)((decoder.height + 7U) >> scale);
+    pixel_bytes = (size_t)width * (size_t)height * 2U;
+
+    pixels = (uint8_t *)heap_caps_malloc(pixel_bytes,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (pixels == NULL) {
+        printf("[Playgroup] Commander JPEG pixel allocation failed: %u bytes\n",
+               (unsigned)pixel_bytes);
+        heap_caps_free(work);
+        return false;
+    }
+
+    memset(pixels, 0, pixel_bytes);
+    ctx.dst = pixels;
+    ctx.width = width;
+    ctx.height = height;
+
+    res = jd_decomp(&decoder, commander_jpeg_output, scale);
+    heap_caps_free(work);
+
+    if (res != JDR_OK) {
+        printf("[Playgroup] Commander JPEG decode failed: %d\n", (int)res);
+        heap_caps_free(pixels);
+        return false;
+    }
+
+    printf("[Playgroup] Commander JPEG decoded to %ux%u RGB565 (%u bytes)\n",
+           (unsigned)width, (unsigned)height, (unsigned)pixel_bytes);
+
+    *out_pixels = pixels;
+    *out_width = width;
+    *out_height = height;
+    return true;
+}
 
 static void refresh_roster(void);
 static void refresh_mulligans(void);
@@ -444,6 +588,11 @@ static void clear_deck_art(void)
         deck_art_data = NULL;
     }
 
+    if (deck_art_pixels != NULL) {
+        heap_caps_free(deck_art_pixels);
+        deck_art_pixels = NULL;
+    }
+
     memset(&deck_art_dsc, 0, sizeof(deck_art_dsc));
 }
 
@@ -452,7 +601,6 @@ static void deck_art_timer_cb(lv_timer_t *timer)
     const playgroup_deck_t *deck;
     uint8_t *data = NULL;
     size_t data_size = 0;
-    lv_img_header_t header;
     uint16_t zoom = 256;
 
     lv_timer_pause(timer);
@@ -481,42 +629,45 @@ static void deck_art_timer_cb(lv_timer_t *timer)
 
     clear_deck_art();
     deck_art_data = data;
-    memset(&deck_art_dsc, 0, sizeof(deck_art_dsc));
-    deck_art_dsc.header.cf = LV_IMG_CF_RAW;
-    deck_art_dsc.data_size = (uint32_t)data_size;
-    deck_art_dsc.data = deck_art_data;
 
     {
+        uint16_t decoded_w = 0;
+        uint16_t decoded_h = 0;
         uint32_t decode_started = lv_tick_get();
-        lv_res_t info_res = lv_img_decoder_get_info(&deck_art_dsc, &header);
 
-        printf("[Playgroup] Commander art decoder info -> %s in %lu ms\n",
-               info_res == LV_RES_OK ? "OK" : "FAILED",
+        if (!decode_commander_jpeg(deck_art_data, data_size,
+                                   &deck_art_pixels, &decoded_w, &decoded_h)) {
+            printf("[Playgroup] Commander art ROM JPEG decode failed.\n");
+            return;
+        }
+
+        printf("[Playgroup] Commander art ROM decode completed in %lu ms\n",
                (unsigned long)(lv_tick_get() - decode_started));
 
-        if (info_res == LV_RES_OK && header.w > 0 && header.h > 0) {
-            uint32_t zoom_w = (190U * 256U) / header.w;
-            uint32_t zoom_h = (130U * 256U) / header.h;
+        memset(&deck_art_dsc, 0, sizeof(deck_art_dsc));
+        deck_art_dsc.header.always_zero = 0;
+        deck_art_dsc.header.w = decoded_w;
+        deck_art_dsc.header.h = decoded_h;
+        deck_art_dsc.header.cf = LV_IMG_CF_TRUE_COLOR;
+        deck_art_dsc.data_size = (uint32_t)decoded_w * (uint32_t)decoded_h * 2U;
+        deck_art_dsc.data = deck_art_pixels;
+
+        {
+            uint32_t zoom_w = (190U * 256U) / decoded_w;
+            uint32_t zoom_h = (130U * 256U) / decoded_h;
             zoom = (uint16_t)((zoom_w < zoom_h) ? zoom_w : zoom_h);
             if (zoom > 256U) zoom = 256U;
             if (zoom < 32U) zoom = 32U;
-
-            printf("[Playgroup] Commander art size %ux%u; zoom %u\n",
-                   (unsigned)header.w, (unsigned)header.h, (unsigned)zoom);
-        } else {
-            printf("[Playgroup] Commander art is not a JPEG format LVGL can decode.\n");
         }
-    }
 
-    {
-        uint32_t render_started = lv_tick_get();
         lv_img_set_src(deck_image, &deck_art_dsc);
         lv_img_set_zoom(deck_image, zoom);
         lv_obj_align(deck_image, LV_ALIGN_CENTER, 0, -40);
         lv_obj_clear_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
         lv_refr_now(NULL);
-        printf("[Playgroup] Commander art render queued in %lu ms\n",
-               (unsigned long)(lv_tick_get() - render_started));
+
+        printf("[Playgroup] Commander art shown %ux%u; zoom %u\n",
+               (unsigned)decoded_w, (unsigned)decoded_h, (unsigned)zoom);
     }
 
     if (deck_commander_label != NULL) {
