@@ -543,7 +543,7 @@ void build_main_screen(void)
     label_turn_meta = lv_label_create(turn_container);
     lv_label_set_text(label_turn_meta, "R1");
     lv_obj_set_style_text_color(label_turn_meta, lv_color_hex(0xA8A8A8), 0);
-    lv_obj_set_style_text_font(label_turn_meta, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(label_turn_meta, &lv_font_montserrat_14, 0);
     lv_obj_align(label_turn_meta, LV_ALIGN_BOTTOM_MID, 0, -4);
 
     turn_live_dot = lv_obj_create(turn_container);
