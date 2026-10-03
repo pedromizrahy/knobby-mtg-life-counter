@@ -32,6 +32,8 @@ int turn_hold_progress = 0;
 #define TURN_REMINDER_PULSE_PERIOD_MS 50U
 
 static uint32_t current_turn_started_ms = 0;
+static uint32_t last_turn_advance_ms = 0;
+#define TURN_LIFE_INPUT_GUARD_MS 300U
 static uint32_t turn_hold_started_ms = 0;
 static bool turn_hold_completed = false;
 static uint8_t turn_blink_steps_remaining = 0;
@@ -120,6 +122,7 @@ void turn_timer_reset(void)
     turn_elapsed_ms = 0;
     turn_started_ms = 0;
     current_turn_started_ms = 0;
+    last_turn_advance_ms = 0;
     turn_number = 0;
     round_number = 0;
     turn_in_round = 0;
@@ -160,6 +163,12 @@ void turn_advance(void)
         turn_timer_start_fresh();
         return;
     }
+
+    /* Encoder input can arrive during the hold itself. Resolve any life
+       preview that appeared after the hold began before changing turn
+       ownership, so no preview timer can commit against the next player. */
+    if (life_preview_active)
+        life_preview_commit_cb(NULL);
 
     duration_ms = get_current_turn_elapsed_ms();
     game_event_add_turn(GAME_EVENT_TURN_END, active_turn_player,
@@ -232,11 +241,19 @@ void turn_advance(void)
     /* A life-selection highlight must not outlive a turn change, otherwise
        it visually overrides the new active player. */
     selection_clear();
+    last_turn_advance_ms = lv_tick_get();
 
     /* Turn ownership affects panel vibrancy, so refresh the player UI when
        the active seat changes. Timer ticks still use the lightweight
        refresh_turn_ui() path to avoid redrawing every panel each second. */
     refresh_player_ui();
+}
+
+bool turn_life_input_blocked(void)
+{
+    if (turn_hold_active) return true;
+    if (last_turn_advance_ms == 0) return false;
+    return lv_tick_elaps(last_turn_advance_ms) < TURN_LIFE_INPUT_GUARD_MS;
 }
 
 void turn_reminder_reconcile_after_setting_change(void)
