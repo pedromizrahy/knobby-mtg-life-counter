@@ -165,9 +165,8 @@ void refresh_damage_resolver_ui(void)
 
     if (resolver_more_button != NULL)
         lv_obj_add_flag(resolver_more_button, LV_OBJ_FLAG_HIDDEN);
-
     if (resolver_targets_button != NULL)
-        lv_obj_align(resolver_targets_button, LV_ALIGN_CENTER, 0, 48);
+        lv_obj_add_flag(resolver_targets_button, LV_OBJ_FLAG_HIDDEN);
 }
 
 void damage_resolver_change_amount(int delta)
@@ -273,13 +272,13 @@ static lv_obj_t *make_effect_button(lv_obj_t *parent, const char *text,
 {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_remove_style_all(btn);
-    lv_obj_set_size(btn, 84, 38);
+    lv_obj_set_size(btn, 78, 38);
     lv_obj_set_pos(btn, x, 194);
     lv_obj_set_style_radius(btn, 19, 0);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(0x17191D), 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(0x15191F), 0);
     lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(btn, 1, 0);
-    lv_obj_set_style_border_color(btn, lv_color_hex(0x4A4F58), 0);
+    lv_obj_set_style_border_color(btn, lv_color_hex(0x46505A), 0);
     lv_obj_add_event_cb(btn, event_effect_toggle, LV_EVENT_CLICKED,
                         (void *)(uintptr_t)effect);
 
@@ -305,19 +304,21 @@ void build_damage_resolver_screens(void)
 
     {
         lv_obj_t *title = lv_label_create(screen_damage_target);
-        lv_label_set_text(title, "Choose targets");
-        lv_obj_set_style_text_color(title, lv_color_white(), 0);
+        lv_label_set_text(title, "MULTIPLE TARGETS");
+        lv_obj_set_style_text_color(title, lv_color_hex(0xDDE7F0), 0);
         lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
         lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 28);
     }
 
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
         target_buttons[i] = lv_btn_create(screen_damage_target);
-        lv_obj_set_size(target_buttons[i], 220, 48);
-        lv_obj_set_style_radius(target_buttons[i], 10, 0);
-        lv_obj_set_style_bg_color(target_buttons[i], lv_color_hex(0x222222), 0);
+        lv_obj_remove_style_all(target_buttons[i]);
+        lv_obj_set_size(target_buttons[i], 208, 44);
+        lv_obj_set_style_radius(target_buttons[i], 22, 0);
+        lv_obj_set_style_bg_color(target_buttons[i], lv_color_hex(0x171A20), 0);
+        lv_obj_set_style_bg_opa(target_buttons[i], LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(target_buttons[i], 1, 0);
-        lv_obj_set_style_border_color(target_buttons[i], lv_color_hex(0x555555), 0);
+        lv_obj_set_style_border_color(target_buttons[i], lv_color_hex(0x4A4F58), 0);
         lv_obj_add_event_cb(target_buttons[i], event_target_toggle,
                             LV_EVENT_CLICKED, (void *)(intptr_t)i);
         lv_obj_add_flag(target_buttons[i], LV_OBJ_FLAG_HIDDEN);
@@ -330,21 +331,22 @@ void build_damage_resolver_screens(void)
     }
 
     target_continue_button =
-        make_button(screen_damage_target, "Continue", 126, 44, event_target_continue);
-    lv_obj_align(target_continue_button, LV_ALIGN_BOTTOM_MID, 0, -24);
+        make_button(screen_damage_target, "CONTINUE", 124, 42, event_target_continue);
+    lv_obj_set_style_radius(target_continue_button, 21, 0);
+    lv_obj_align(target_continue_button, LV_ALIGN_BOTTOM_MID, 0, -26);
 
     screen_damage_resolver = lv_obj_create(NULL);
     lv_obj_set_size(screen_damage_resolver, 360, 360);
-    lv_obj_set_style_bg_color(screen_damage_resolver, lv_color_black(), 0);
+    lv_obj_set_style_bg_color(screen_damage_resolver, lv_color_hex(0x05070A), 0);
     lv_obj_set_style_border_width(screen_damage_resolver, 0, 0);
     lv_obj_set_scrollbar_mode(screen_damage_resolver, LV_SCROLLBAR_MODE_OFF);
 
     resolver_title = lv_label_create(screen_damage_resolver);
     lv_label_set_text(resolver_title, "P1 > P2");
-    lv_obj_set_style_text_color(resolver_title, lv_color_hex(0x9EABB7), 0);
-    lv_obj_set_style_text_font(resolver_title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(resolver_title, lv_color_hex(0x84909C), 0);
+    lv_obj_set_style_text_font(resolver_title, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_align(resolver_title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(resolver_title, LV_ALIGN_TOP_MID, 0, 34);
+    lv_obj_align(resolver_title, LV_ALIGN_TOP_MID, 0, 42);
 
     resolver_mode_label = lv_label_create(screen_damage_resolver);
     lv_label_set_text(resolver_mode_label, "");
@@ -356,51 +358,41 @@ void build_damage_resolver_screens(void)
     lv_obj_set_style_text_font(resolver_amount, &lv_font_montserrat_bold_56, 0);
     lv_obj_align(resolver_amount, LV_ALIGN_CENTER, 0, -48);
 
-    resolver_targets_button =
-        make_button(screen_damage_resolver, "Targets", 94, 38, event_edit_targets);
-    lv_obj_remove_style_all(resolver_targets_button);
-    lv_obj_set_size(resolver_targets_button, 86, 34);
-    lv_obj_set_style_radius(resolver_targets_button, 17, 0);
-    lv_obj_set_style_bg_color(resolver_targets_button, lv_color_hex(0x17191D), 0);
-    lv_obj_set_style_bg_opa(resolver_targets_button, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(resolver_targets_button, 1, 0);
-    lv_obj_set_style_border_color(resolver_targets_button, lv_color_hex(0x4A4F58), 0);
-    lv_obj_align(resolver_targets_button, LV_ALIGN_CENTER, 0, 48);
-
-    resolver_more_button =
-        make_button(screen_damage_resolver, "Effects", 94, 38, event_show_more);
-    lv_obj_add_flag(resolver_more_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_style_all(resolver_more_button);
-    lv_obj_set_size(resolver_more_button, 94, 38);
-    lv_obj_set_style_radius(resolver_more_button, 19, 0);
-    lv_obj_set_style_bg_color(resolver_more_button, lv_color_hex(0x17191D), 0);
-    lv_obj_set_style_bg_opa(resolver_more_button, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(resolver_more_button, 1, 0);
-    lv_obj_set_style_border_color(resolver_more_button, lv_color_hex(0x4A4F58), 0);
-    lv_obj_align(resolver_more_button, LV_ALIGN_CENTER, 54, 34);
+    /* Legacy controls intentionally not built: target editing is entered
+       through the center-hold multi-target gesture, and effects are always
+       visible below the amount. */
+    resolver_targets_button = NULL;
+    resolver_more_button = NULL;
 
     resolver_effect_buttons[0] =
-        make_effect_button(screen_damage_resolver, "Commander", 42,
+        make_effect_button(screen_damage_resolver, "CMD", 53,
                            ATTACK_EFFECT_COMMANDER);
     resolver_effect_buttons[1] =
-        make_effect_button(screen_damage_resolver, "Infect", 138,
+        make_effect_button(screen_damage_resolver, "INFECT", 141,
                            ATTACK_EFFECT_INFECT);
     resolver_effect_buttons[2] =
-        make_effect_button(screen_damage_resolver, "Lifelink", 234,
+        make_effect_button(screen_damage_resolver, "LIFELINK", 229,
                            ATTACK_EFFECT_LIFELINK);
 
     {
         lv_obj_t *apply_btn =
-            make_button(screen_damage_resolver, "Apply", 128, 44,
+            make_button(screen_damage_resolver, "APPLY", 112, 42,
                         event_apply_damage);
         lv_obj_remove_style_all(apply_btn);
-        lv_obj_set_size(apply_btn, 118, 42);
+        lv_obj_set_size(apply_btn, 112, 42);
         lv_obj_set_style_radius(apply_btn, 21, 0);
         lv_obj_set_style_bg_color(apply_btn, lv_color_hex(0x0D47A1), 0);
         lv_obj_set_style_bg_opa(apply_btn, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(apply_btn, 1, 0);
         lv_obj_set_style_border_color(apply_btn, lv_color_hex(0x66D9FF), 0);
-        lv_obj_align(apply_btn, LV_ALIGN_BOTTOM_MID, 0, -30);
+        {
+            lv_obj_t *label = lv_obj_get_child(apply_btn, 0);
+            if (label != NULL) {
+                lv_obj_set_style_text_color(label, lv_color_white(), 0);
+                lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+            }
+        }
+        lv_obj_align(apply_btn, LV_ALIGN_BOTTOM_MID, 0, -34);
     }
 
     refresh_damage_resolver_ui();
