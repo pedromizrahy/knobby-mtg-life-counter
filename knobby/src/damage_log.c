@@ -12,11 +12,15 @@ typedef struct {
     uint16_t turn_number;
     uint16_t round_number;
     int8_t   turn_player;
+    uint16_t action_id;
 } damage_log_entry_t;
 
 static damage_log_entry_t damage_log[DAMAGE_LOG_MAX];
 static int damage_log_count = 0;
 static int damage_log_head = 0;
+static uint16_t next_action_id = 1;
+static uint16_t active_action_id = 0;
+static uint32_t undo_press_started_ms = 0;
 
 // ---------- screen ----------
 /* Labels are rendered one page at a time: a full 256-entry ring as one
@@ -33,6 +37,18 @@ static int damage_log_page = 0;       // rendered page, derived from selection
 static lv_style_t log_label_style;    // shared by all entry labels
 
 // ---------- log operations ----------
+void damage_log_begin_action(void)
+{
+    if (active_action_id != 0) return;
+    active_action_id = next_action_id++;
+    if (next_action_id == 0) next_action_id = 1;
+}
+
+void damage_log_end_action(void)
+{
+    active_action_id = 0;
+}
+
 void damage_log_add(int player, int delta, uint8_t event_type, int source)
 {
     if (delta == 0) return;
@@ -47,6 +63,12 @@ void damage_log_add(int player, int delta, uint8_t event_type, int source)
         (int8_t)((active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS)
                      ? active_turn_player
                      : GAME_EVENT_NO_PLAYER);
+    if (active_action_id != 0) {
+        damage_log[damage_log_head].action_id = active_action_id;
+    } else {
+        damage_log[damage_log_head].action_id = next_action_id++;
+        if (next_action_id == 0) next_action_id = 1;
+    }
     damage_log_head = (damage_log_head + 1) % DAMAGE_LOG_MAX;
     if (damage_log_count < DAMAGE_LOG_MAX) damage_log_count++;
 }
@@ -55,6 +77,7 @@ void damage_log_reset(void)
 {
     damage_log_count = 0;
     damage_log_head = 0;
+    active_action_id = 0;
 }
 
 /* Remove the newest entry matching player + event_type (used by elimination
@@ -107,16 +130,8 @@ void damage_log_select_prev(void)
     }
 }
 
-void damage_log_undo_selected(void)
+static void undo_log_entry(const damage_log_entry_t *entry)
 {
-    int buf_idx, i;
-    damage_log_entry_t *entry;
-
-    if (damage_log_selected < 0 || damage_log_selected >= damage_log_count) return;
-
-    buf_idx = (damage_log_head - 1 - damage_log_selected + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
-    entry = &damage_log[buf_idx];
-
     if (entry->event_type == LOG_EVT_LIFE || entry->event_type == LOG_EVT_DAMAGE) {
         undo_life_change(entry->player, entry->delta);
     } else if (entry->event_type == LOG_EVT_CMD_DAMAGE) {
@@ -130,17 +145,46 @@ void damage_log_undo_selected(void)
     } else if (entry->event_type == LOG_EVT_COUNTER) {
         undo_counter_change(entry->player, entry->source, entry->delta);
     }
+}
 
-    /* Remove entry by shifting newer entries down */
-    for (i = damage_log_selected; i > 0; i--) {
+static void remove_log_offset(int offset)
+{
+    int i;
+
+    for (i = offset; i > 0; i--) {
         int dst = (damage_log_head - 1 - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
         int src = (damage_log_head - i + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
         damage_log[dst] = damage_log[src];
     }
     damage_log_head = (damage_log_head - 1 + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
     damage_log_count--;
+}
 
-    /* Adjust selection */
+void damage_log_undo_selected(void)
+{
+    int buf_idx;
+    uint16_t action_id;
+    int offset;
+
+    if (damage_log_selected < 0 || damage_log_selected >= damage_log_count) return;
+
+    buf_idx = (damage_log_head - 1 - damage_log_selected + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+    action_id = damage_log[buf_idx].action_id;
+
+    /* Undo one logical action, newest consequence first. Multi-target,
+       lifelink and All Damage entries therefore roll back atomically. */
+    offset = 0;
+    while (offset < damage_log_count) {
+        int idx = (damage_log_head - 1 - offset + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
+        if (damage_log[idx].action_id == action_id) {
+            damage_log_entry_t copy = damage_log[idx];
+            undo_log_entry(&copy);
+            remove_log_offset(offset);
+        } else {
+            offset++;
+        }
+    }
+
     if (damage_log_count == 0) {
         damage_log_selected = -1;
     } else if (damage_log_selected >= damage_log_count) {
@@ -148,6 +192,14 @@ void damage_log_undo_selected(void)
     }
 
     refresh_damage_log_ui();
+}
+
+void damage_log_undo_all(void)
+{
+    while (damage_log_count > 0) {
+        damage_log_selected = 0;
+        damage_log_undo_selected();
+    }
 }
 
 // ---------- UI ----------
@@ -364,8 +416,28 @@ static void refresh_damage_log_ui(void)
 // ---------- navigation ----------
 static void event_delete_pressed(lv_event_t *e)
 {
-    (void)e;
-    damage_log_undo_selected();
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (code == LV_EVENT_PRESSED) {
+        undo_press_started_ms = lv_tick_get();
+        return;
+    }
+
+    if (code == LV_EVENT_RELEASED) {
+        uint32_t held_ms = lv_tick_elaps(undo_press_started_ms);
+
+        if (held_ms >= 3000U) {
+            damage_log_undo_all();
+        } else if (held_ms >= 1500U) {
+            damage_log_undo_selected();
+        }
+        undo_press_started_ms = 0;
+        return;
+    }
+
+    if (code == LV_EVENT_PRESS_LOST) {
+        undo_press_started_ms = 0;
+    }
 }
 
 void open_damage_log_screen(void)
@@ -430,11 +502,13 @@ void build_damage_log_screen(void)
     lv_obj_set_style_bg_color(delete_btn, lv_color_hex(0xB71C1C), 0);
     lv_obj_set_style_bg_opa(delete_btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(delete_btn, 6, 0);
-    lv_obj_add_event_cb(delete_btn, event_delete_pressed, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(delete_btn, event_delete_pressed, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(delete_btn, event_delete_pressed, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(delete_btn, event_delete_pressed, LV_EVENT_PRESS_LOST, NULL);
     lv_obj_add_flag(delete_btn, LV_OBJ_FLAG_HIDDEN);
 
     btn_label = lv_label_create(delete_btn);
-    lv_label_set_text(btn_label, "Undo\n(Long Press)");
+    lv_label_set_text(btn_label, "Hold 1.5s: Last\nHold 3s: All");
     lv_obj_set_style_text_align(btn_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(btn_label, lv_color_white(), 0);
     lv_obj_set_style_text_font(btn_label, &lv_font_montserrat_14, 0);
