@@ -663,10 +663,10 @@ void refresh_multiplayer_turn_ui(void)
     lv_label_set_text(mp_turn_label, time_buf);
 
     if (nvs_get_turn_show_name()) {
-        snprintf(round_buf, sizeof(round_buf), "%s · R%d · T%d",
+        snprintf(round_buf, sizeof(round_buf), "%s | R%d | T%d",
                  name, round_number, turn_in_round);
     } else {
-        snprintf(round_buf, sizeof(round_buf), "R%d · T%d",
+        snprintf(round_buf, sizeof(round_buf), "R%d | T%d",
                  round_number, turn_in_round);
     }
     lv_label_set_text(mp_turn_round_label, round_buf);
