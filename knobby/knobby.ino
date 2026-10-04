@@ -1,4 +1,6 @@
 #include "esp_wifi.h"
+#include <Preferences.h>
+#include <esp_system.h>
 #include "esp_bt.h"
 #include "esp_sleep.h"
 #include "driver/gpio.h"
@@ -57,6 +59,93 @@ extern "C" float knob_read_battery_voltage(void)
   return battery_voltage_filtered;
 }
 
+
+static const char *knob_reset_reason_name(esp_reset_reason_t reason)
+{
+  switch (reason) {
+    case ESP_RST_POWERON:   return "POWERON";
+    case ESP_RST_EXT:       return "EXTERNAL";
+    case ESP_RST_SW:        return "SOFTWARE";
+    case ESP_RST_PANIC:     return "PANIC/GURU";
+    case ESP_RST_INT_WDT:   return "INT_WDT";
+    case ESP_RST_TASK_WDT:  return "TASK_WDT";
+    case ESP_RST_WDT:       return "WDT";
+    case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT";
+    case ESP_RST_SDIO:      return "SDIO";
+    default:                return "UNKNOWN";
+  }
+}
+
+static void knob_record_reset_reason(void)
+{
+  Preferences prefs;
+  esp_reset_reason_t reason = esp_reset_reason();
+
+  if (!prefs.begin("diagnostic", false))
+    return;
+
+  prefs.putUChar("last_reset", (uint8_t)reason);
+
+  /* Preserve the latest abnormal reset across a later normal USB/power boot,
+     so a battery-only crash can still be inspected after reconnecting. */
+  if (reason != ESP_RST_POWERON && reason != ESP_RST_DEEPSLEEP) {
+    prefs.putUChar("abn_reset", (uint8_t)reason);
+    prefs.putUInt("abn_count", prefs.getUInt("abn_count", 0) + 1U);
+  }
+
+  prefs.end();
+
+  Serial.print("[Diag] Reset reason: ");
+  Serial.print(knob_reset_reason_name(reason));
+  Serial.print(" (");
+  Serial.print((int)reason);
+  Serial.println(")");
+}
+
+extern "C" void knob_print_reset_diagnostics(void)
+{
+  Preferences prefs;
+  esp_reset_reason_t current = esp_reset_reason();
+  uint8_t last = (uint8_t)current;
+  uint8_t abnormal = 0;
+  uint32_t abnormal_count = 0;
+
+  if (prefs.begin("diagnostic", true)) {
+    last = prefs.getUChar("last_reset", (uint8_t)current);
+    abnormal = prefs.getUChar("abn_reset", 0);
+    abnormal_count = prefs.getUInt("abn_count", 0);
+    prefs.end();
+  }
+
+  Serial.print("[Diag] Current boot reset: ");
+  Serial.print(knob_reset_reason_name(current));
+  Serial.print(" (");
+  Serial.print((int)current);
+  Serial.println(")");
+
+  Serial.print("[Diag] Stored last reset: ");
+  Serial.print(knob_reset_reason_name((esp_reset_reason_t)last));
+  Serial.print(" (");
+  Serial.print((int)last);
+  Serial.println(")");
+
+  Serial.print("[Diag] Last abnormal reset: ");
+  if (abnormal == 0) {
+    Serial.println("none recorded");
+  } else {
+    Serial.print(knob_reset_reason_name((esp_reset_reason_t)abnormal));
+    Serial.print(" (");
+    Serial.print((int)abnormal);
+    Serial.print("), count ");
+    Serial.println((unsigned long)abnormal_count);
+  }
+
+  Serial.print("[Diag] Battery now: ");
+  Serial.print(knob_read_battery_voltage(), 3);
+  Serial.println(" V");
+}
+
 void setup()
 {
   // Detect which board we're running on before any pin-dependent init
@@ -96,6 +185,8 @@ void setup()
 
   delay(200);
   Serial.begin(115200);
+  delay(30);
+  knob_record_reset_reason();
 
   scr_lvgl_init();
   knob_gui();
