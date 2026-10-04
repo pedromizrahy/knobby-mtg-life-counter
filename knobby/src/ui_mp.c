@@ -692,7 +692,9 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
             vib = LIFE_VIB_MID;
         }
         bg_color = get_effective_player_color(i, color_i, vib);
-        text_color = color_is_light(bg_color) ? lv_color_black() : lv_color_white();
+        text_color = (nvs_get_color_mode() == COLOR_MODE_ART)
+                   ? lv_color_white()
+                   : (color_is_light(bg_color) ? lv_color_black() : lv_color_white());
     }
 
     if (player_eliminated[i]) {
@@ -714,9 +716,10 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
             lv_label_set_text(life_lbl, buf);
             {
                 lv_color_t preview_c;
-                if ((nvs_get_color_mode() == COLOR_MODE_PLAYER ||
-                     nvs_get_color_mode() == COLOR_MODE_ART) &&
-                    !player_has_override[i]) {
+                if (nvs_get_color_mode() == COLOR_MODE_ART) {
+                    preview_c = lv_color_white();
+                } else if (nvs_get_color_mode() == COLOR_MODE_PLAYER &&
+                           !player_has_override[i]) {
                     preview_c = get_player_preview_color(color_i, pending_life_delta);
                     if (color_is_light(bg_color) && color_is_light(preview_c))
                         preview_c = lv_color_black();
@@ -948,6 +951,22 @@ void refresh_multiplayer_ui(void)
 
         text_color = refresh_mp_panel(panel, life_lbl, name_lbl,
                                       spec->player_index, spec->color_index);
+
+        /* In Art mode, use the dark overlay as the turn-owner cue:
+           inactive slices stay comfortably dark for readability, while the
+           active player's commander art becomes noticeably brighter. */
+        if (nvs_get_color_mode() == COLOR_MODE_ART &&
+            mp_state.art_overlays[i] != NULL) {
+            lv_opa_t shade_opa = LV_OPA_50;
+
+            if (turn_timer_enabled && active_turn_player >= 0) {
+                shade_opa = (spec->player_index == active_turn_player)
+                          ? LV_OPA_20
+                          : LV_OPA_60;
+            }
+
+            lv_obj_set_style_bg_opa(mp_state.art_overlays[i], shade_opa, 0);
+        }
 
         if (layout->switch_font_by_orientation) {
             const lv_font_t *life_font;
