@@ -51,6 +51,8 @@ static long selected_deck_id[MAX_DISPLAY_PLAYERS] = {0};
 static char selected_deck_name[MAX_DISPLAY_PLAYERS][PG_DECK_NAME_LEN] = {{0}};
 static int deck_picker_seat = -1;
 static int deck_picker_index = 0;
+static bool deck_picker_show_all = false;
+#define INITIAL_DECK_LIMIT 5
 static lv_obj_t *deck_title_label = NULL;
 static lv_obj_t *deck_name_label = NULL;
 static lv_obj_t *deck_commander_label = NULL;
@@ -777,9 +779,35 @@ static void event_member_adjust(lv_event_t *e)
     pregame_change_member(delta);
 }
 
-static void commander_prepare_worker(void *param)
+static int initial_deck_count(void)
 {
     int count = playgroup_cached_deck_count();
+    return (count > INITIAL_DECK_LIMIT) ? INITIAL_DECK_LIMIT : count;
+}
+
+static int deck_picker_item_count(void)
+{
+    int count = playgroup_cached_deck_count();
+
+    if (deck_picker_show_all || count <= INITIAL_DECK_LIMIT)
+        return count;
+
+    /* Top decks + one synthetic MORE DECKS entry. */
+    return initial_deck_count() + 1;
+}
+
+static bool deck_picker_on_more(void)
+{
+    int count = playgroup_cached_deck_count();
+
+    return !deck_picker_show_all &&
+           count > INITIAL_DECK_LIMIT &&
+           deck_picker_index == initial_deck_count();
+}
+
+static void commander_prepare_worker(void *param)
+{
+    int count = initial_deck_count();
     (void)param;
 
     commander_prepare_total = count;
@@ -906,7 +934,7 @@ static bool start_commander_prepare(bool from_roster)
 
     commander_prepare_done = false;
     commander_prepare_progress = 0;
-    commander_prepare_total = playgroup_cached_deck_count();
+    commander_prepare_total = initial_deck_count();
     commander_prepare_failures = 0;
     commander_prepare_from_roster = from_roster;
 
@@ -969,6 +997,7 @@ static void event_member_select(lv_event_t *e)
 
     deck_picker_seat = member_picker_seat;
     deck_picker_index = 0;
+    deck_picker_show_all = false;
     clear_decoded_art_cache();
 
     if (!playgroup_refresh_decks(member->user_id)) {
@@ -1093,11 +1122,12 @@ static void schedule_deck_art(void)
 static void refresh_deck_picker(bool schedule_art)
 {
     const playgroup_deck_t *deck;
-    int count = playgroup_cached_deck_count();
+    int item_count = deck_picker_item_count();
+    int deck_count = playgroup_cached_deck_count();
     char pos[24];
     char commander[96];
 
-    if (count <= 0) {
+    if (deck_count <= 0) {
         if (deck_name_label != NULL) lv_label_set_text(deck_name_label, "No decks");
         if (deck_commander_label != NULL) lv_label_set_text(deck_commander_label, "");
         if (deck_position_label != NULL) lv_label_set_text(deck_position_label, "0 / 0");
@@ -1105,8 +1135,22 @@ static void refresh_deck_picker(bool schedule_art)
         return;
     }
 
-    if (deck_picker_index < 0) deck_picker_index = count - 1;
-    if (deck_picker_index >= count) deck_picker_index = 0;
+    if (deck_picker_index < 0) deck_picker_index = item_count - 1;
+    if (deck_picker_index >= item_count) deck_picker_index = 0;
+
+    if (deck_picker_on_more()) {
+        if (deck_name_label != NULL)
+            lv_label_set_text(deck_name_label, "MORE DECKS");
+        if (deck_commander_label != NULL)
+            lv_label_set_text(deck_commander_label, "Show less-used decks");
+        if (deck_position_label != NULL) {
+            snprintf(pos, sizeof(pos), "%d / %d",
+                     deck_picker_index + 1, item_count);
+            lv_label_set_text(deck_position_label, pos);
+        }
+        clear_deck_art();
+        return;
+    }
 
     deck = playgroup_cached_deck(deck_picker_index);
     if (deck == NULL) return;
@@ -1124,7 +1168,8 @@ static void refresh_deck_picker(bool schedule_art)
     }
 
     if (deck_position_label != NULL) {
-        snprintf(pos, sizeof(pos), "%d / %d", deck_picker_index + 1, count);
+        snprintf(pos, sizeof(pos), "%d / %d",
+                 deck_picker_index + 1, item_count);
         lv_label_set_text(deck_position_label, pos);
     }
 
@@ -1134,7 +1179,8 @@ static void refresh_deck_picker(bool schedule_art)
 
 void pregame_change_deck(int delta)
 {
-    int count = playgroup_cached_deck_count();
+    int count = deck_picker_item_count();
+
     if (count <= 0 || delta == 0 || lv_scr_act() != screen_pregame_deck)
         return;
 
@@ -1143,13 +1189,20 @@ void pregame_change_deck(int delta)
     if (deck_picker_index >= count) deck_picker_index = 0;
 
     refresh_deck_picker(false);
-    {
+    clear_deck_art();
+
+    if (!deck_picker_on_more()) {
         const playgroup_deck_t *deck = playgroup_cached_deck(deck_picker_index);
         deck_decoded_cache_entry_t *decoded =
             deck != NULL ? find_decoded_art(deck->scryfall_id) : NULL;
-        clear_deck_art();
-        if (decoded != NULL)
+
+        if (decoded != NULL) {
             show_decoded_art(decoded);
+        } else if (deck_picker_show_all) {
+            /* MORE DECKS is explicitly the secondary path. Keep the top-five
+               path instant; less-used decks may populate on demand here. */
+            schedule_deck_art();
+        }
     }
 }
 
@@ -1177,6 +1230,7 @@ static void event_roster_open_decks(lv_event_t *e)
 
     deck_picker_seat = seat;
     deck_picker_index = 0;
+    deck_picker_show_all = false;
 
     if (deck_title_label != NULL) {
         snprintf(title, sizeof(title), "P%d  %s", seat + 1, member->username);
@@ -1203,6 +1257,13 @@ static void event_deck_select(lv_event_t *e)
 
     if (deck_picker_seat < 0 || deck_picker_seat >= pregame_player_count)
         return;
+
+    if (deck_picker_on_more()) {
+        deck_picker_show_all = true;
+        deck_picker_index = initial_deck_count();
+        refresh_deck_picker(true);
+        return;
+    }
 
     deck = playgroup_cached_deck(deck_picker_index);
     if (deck == NULL)
