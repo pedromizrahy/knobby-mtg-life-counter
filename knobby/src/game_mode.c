@@ -200,7 +200,15 @@ static void event_gm_color_mode(lv_event_t *e)
     (void)e;
     nvs_set_color_mode((nvs_get_color_mode() + 1) % COLOR_MODE_COUNT);
     settings_save();
-    refresh_player_ui();
+
+    /* Art mode changes the object tree itself: commander images are
+       children of each multiplayer panel, so a simple refresh cannot
+       create/remove them. Rebuild the active multiplayer layout. */
+    if (nvs_get_players_to_track() > 1)
+        rebuild_multiplayer_layout(nvs_get_players_to_track());
+    else
+        refresh_player_ui();
+
     refresh_player_settings_ui();
 }
 
