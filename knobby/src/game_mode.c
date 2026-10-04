@@ -217,7 +217,12 @@ static void event_gm_cmd_marker(lv_event_t *e)
     (void)e;
     nvs_set_cmd_marker_mode((nvs_get_cmd_marker_mode() + 1) % CMD_MARKER_COUNT);
     settings_save();
-    refresh_player_ui();
+
+    if (nvs_get_players_to_track() > 1)
+        refresh_multiplayer_commander_markers();
+    else
+        refresh_main_ui();
+
     refresh_player_settings_ui();
 }
 
