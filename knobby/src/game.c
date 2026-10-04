@@ -8,6 +8,7 @@
 // Forward declarations for UI refresh (defined in screen modules)
 extern void refresh_player_ui(void);
 extern void refresh_life_preview_ui(void);
+extern void refresh_multiplayer_player_state(int player);
 extern void refresh_multiplayer_selection_animation(void);
 extern void refresh_multiplayer_selection_step(int previous_player, int current_player);
 extern void refresh_multiplayer_selection_finish(void);
@@ -73,6 +74,14 @@ static uint16_t player_version[MAX_DISPLAY_PLAYERS] = {0};
 static uint16_t names_version = 0;
 
 static void clear_player_elimination_action(int player);
+
+static void refresh_game_player_state(int player)
+{
+    if (nvs_get_players_to_track() <= 1)
+        refresh_player_ui();
+    else
+        refresh_multiplayer_player_state(player);
+}
 
 static void net_sync_commit_player(int player)
 {
@@ -215,7 +224,7 @@ void check_player_elimination(int player)
     }
 
     if (was_eliminated != now_eliminated) {
-        refresh_player_ui();
+        refresh_game_player_state(player);
     }
 }
 
@@ -233,7 +242,7 @@ void manual_eliminate_player(int player)
         select_kick_timer();
     }
     net_sync_commit_player(player);
-    refresh_player_ui();
+    refresh_game_player_state(player);
 }
 
 void manual_uneliminate_player(int player)
@@ -262,7 +271,7 @@ void manual_uneliminate_player(int player)
         }
     }
     net_sync_commit_player(player);
-    refresh_player_ui();
+    refresh_game_player_state(player);
 }
 
 // ---------- player colors ----------
@@ -840,7 +849,7 @@ void undo_life_change(int player, int delta)
     player_life[player] = clamp_life(player_life[player] - delta);
     check_player_elimination(player);
     net_sync_commit_player(player);
-    refresh_player_ui();
+    refresh_game_player_state(player);
     refresh_select_ui();
 }
 
@@ -867,7 +876,7 @@ void undo_counter_change(int player, int counter_type, int delta)
         check_player_elimination(player);
     }
     net_sync_commit_player(player);
-    refresh_player_ui();
+    refresh_game_player_state(player);
 }
 
 // ---------- reset ----------
@@ -1155,6 +1164,7 @@ void net_sync_fill_state(net_sync_state_t *out)
 void net_sync_apply_state(const net_sync_state_t *in, int wins_ties)
 {
     bool changed = false;
+    uint8_t changed_mask = 0;
     bool remote_stale = false;
     int16_t epoch_newer = (int16_t)(in->epoch - game_epoch);
     int p, s, c;
@@ -1242,11 +1252,21 @@ void net_sync_apply_state(const net_sync_state_t *in, int wins_ties)
         player_manually_eliminated[p] =
             now_eliminated && (rp->eliminated & NET_SYNC_ELIM_MANUAL) != 0;
         player_version[p] = rp->version;
-        changed = changed || p_changed;
+        if (p_changed) {
+            changed = true;
+            changed_mask |= (uint8_t)(1U << p);
+        }
     }
 
     if (changed) {
-        refresh_player_ui();
+        if (nvs_get_players_to_track() <= 1) {
+            refresh_player_ui();
+        } else {
+            for (p = 0; p < MAX_DISPLAY_PLAYERS; p++) {
+                if (changed_mask & (uint8_t)(1U << p))
+                    refresh_multiplayer_player_state(p);
+            }
+        }
         refresh_select_ui();
     }
     /* The sender is behind and we adopted nothing: answer immediately
