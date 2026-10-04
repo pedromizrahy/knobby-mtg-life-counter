@@ -1,4 +1,5 @@
 #include "timer.h"
+extern void refresh_multiplayer_turn_state(void);
 #include "game_event.h"
 #include "storage.h"
 #include "game.h"
@@ -108,7 +109,10 @@ void turn_timer_start_for_player(int player)
             lv_timer_pause(turn_blink_timer);
     }
 
-    refresh_player_ui();
+    if (nvs_get_players_to_track() > 1)
+        refresh_multiplayer_turn_state();
+    else
+        refresh_turn_ui();
 }
 
 void turn_timer_start_fresh(void)
@@ -151,7 +155,10 @@ void turn_timer_reset(void)
         lv_timer_pause(turn_reminder_flash_timer);
     }
 
-    refresh_player_ui();
+    if (nvs_get_players_to_track() > 1)
+        refresh_multiplayer_turn_state();
+    else
+        refresh_turn_ui();
 }
 
 void turn_advance(void)
@@ -243,10 +250,12 @@ void turn_advance(void)
     selection_clear();
     last_turn_advance_ms = lv_tick_get();
 
-    /* Turn ownership affects panel vibrancy, so refresh the player UI when
-       the active seat changes. Timer ticks still use the lightweight
-       refresh_turn_ui() path to avoid redrawing every panel each second. */
-    refresh_player_ui();
+    /* Turn ownership changes only emphasis + timer HUD. Do not redraw
+       counters, commander markers, or image content. */
+    if (nvs_get_players_to_track() > 1)
+        refresh_multiplayer_turn_state();
+    else
+        refresh_turn_ui();
 }
 
 bool turn_life_input_blocked(void)
