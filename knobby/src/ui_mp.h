@@ -13,6 +13,7 @@ void rebuild_multiplayer_layout(int track);
 void refresh_multiplayer_ui(void);
 void refresh_multiplayer_life_preview(void);
 void refresh_multiplayer_selection_animation(void);
+void refresh_multiplayer_selection_step(int previous_player, int current_player);
 void refresh_multiplayer_turn_ui(void);
 void refresh_multiplayer_turn_state(void);
 
