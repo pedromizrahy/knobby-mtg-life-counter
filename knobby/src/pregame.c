@@ -244,7 +244,7 @@ static void refresh_playgroup_picker(void);
 static void refresh_member_picker(void);
 static void refresh_deck_picker(bool schedule_art);
 static void schedule_deck_art(void);
-static bool preload_current_player_deck_art(void);
+static bool preload_current_player_deck_art(void); /* retained for diagnostics; normal picker is on-demand */
 static bool member_index_used_by_other_seat(int member_index, int current_seat);
 static int first_eligible_member_index(int current_seat);
 
@@ -787,28 +787,19 @@ static void event_member_select(lv_event_t *e)
         return;
     }
 
-    /* Load and decode all commander art before opening the deck picker.
-       This is intentionally sequential: the user sees one clear loading
-       phase, then deck browsing is instant and stable. */
-    preload_current_player_deck_art();
-
     if (deck_title_label != NULL) {
         snprintf(title, sizeof(title), "P%d  %s",
                  member_picker_seat + 1, member->username);
         lv_label_set_text(deck_title_label, title);
     }
 
+    /* Do not block on every commander image for this player. Open the
+       picker immediately and load only the currently highlighted deck.
+       Previously a player with 5-6 uncached decks paid the full download
+       cost for all of them before seeing the picker. */
     refresh_deck_picker(false);
     lv_scr_load(screen_pregame_deck);
-
-    {
-        const playgroup_deck_t *deck = playgroup_cached_deck(deck_picker_index);
-        if (deck != NULL) {
-            deck_decoded_cache_entry_t *decoded = find_decoded_art(deck->scryfall_id);
-            if (decoded != NULL)
-                show_decoded_art(decoded);
-        }
-    }
+    schedule_deck_art();
 }
 
 static void clear_deck_art(void)
@@ -853,12 +844,17 @@ static void deck_art_timer_cb(lv_timer_t *timer)
     }
 
     if (!playgroup_cached_image_copy(deck->scryfall_id, &data, &data_size)) {
-        /* Background prefetch owns HTTPS. Keep UI responsive and poll cache. */
         if (deck_commander_label != NULL)
             lv_label_set_text(deck_commander_label, "Loading commander art...");
-        lv_timer_set_period(timer, 350);
-        lv_timer_resume(timer);
-        return;
+        lv_refr_now(NULL);
+
+        if (!playgroup_download_deck_image(deck->art_crop_url,
+                                           deck->scryfall_id,
+                                           &data, &data_size)) {
+            if (deck_commander_label != NULL)
+                lv_label_set_text(deck_commander_label, "Commander art unavailable");
+            return;
+        }
     }
 
     decode_started = lv_tick_get();
