@@ -10,6 +10,8 @@
 #include <strings.h>
 #include "esp_heap_caps.h"
 #include "commander_image_decode.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 extern void reset_all_values(void);
 extern void back_to_main(void);
@@ -56,6 +58,13 @@ static lv_obj_t *deck_position_label = NULL;
 static lv_obj_t *deck_image = NULL;
 static lv_obj_t *deck_image_overlay = NULL;
 static lv_timer_t *deck_art_timer = NULL;
+static lv_timer_t *commander_prepare_timer = NULL;
+static volatile bool commander_prepare_active = false;
+static volatile bool commander_prepare_done = false;
+static volatile int commander_prepare_progress = 0;
+static volatile int commander_prepare_total = 0;
+static volatile int commander_prepare_failures = 0;
+static bool commander_prepare_from_roster = false;
 
 #define DECK_DECODED_CACHE_SLOTS 8
 
@@ -733,6 +742,9 @@ static void refresh_member_picker(void)
 void pregame_change_member(int delta)
 {
     int count = playgroup_cached_member_count();
+
+    if (commander_prepare_active)
+        return;
     int step;
     int candidate;
 
@@ -764,9 +776,14 @@ static void event_member_adjust(lv_event_t *e)
     pregame_change_member(delta);
 }
 
-static bool prepare_current_player_deck_art(void)
+static void commander_prepare_worker(void *param)
 {
     int count = playgroup_cached_deck_count();
+    (void)param;
+
+    commander_prepare_total = count;
+    commander_prepare_progress = 0;
+    commander_prepare_failures = 0;
 
     for (int i = 0; i < count; i++) {
         const playgroup_deck_t *deck = playgroup_cached_deck(i);
@@ -776,7 +793,8 @@ static bool prepare_current_player_deck_art(void)
         size_t data_size = 0;
         uint16_t decoded_w = 0;
         uint16_t decoded_h = 0;
-        char status[64];
+
+        commander_prepare_progress = i + 1;
 
         if (deck == NULL || deck->scryfall_id[0] == '\0')
             continue;
@@ -785,29 +803,23 @@ static bool prepare_current_player_deck_art(void)
         if (decoded != NULL)
             continue;
 
-        if (member_status_label != NULL) {
-            snprintf(status, sizeof(status), "Preparing commanders %d/%d",
-                     i + 1, count);
-            lv_label_set_text(member_status_label, status);
-            lv_refr_now(NULL);
-        }
-
         if (!playgroup_download_deck_image(deck->art_crop_url,
                                            deck->scryfall_id,
                                            &data, &data_size)) {
+            commander_prepare_failures++;
             printf("[Playgroup] Commander prepare download failed for deck %d.\n",
                    i + 1);
             continue;
         }
 
-        /* Preparing commanders is an explicit cache-warming step. Persist
-           every successfully fetched JPEG, not just the final selected deck,
-           so future setup sessions don't pay the network cost again. */
+        /* Cache-warming is intentional: once fetched, keep the compressed
+           JPEG in flash so later games do not pay the network cost again. */
         playgroup_persist_cached_image(deck->scryfall_id);
 
         if (!commander_image_decode_rgb565(data, data_size,
                                            &pixels, &decoded_w, &decoded_h)) {
             playgroup_free_image(data);
+            commander_prepare_failures++;
             printf("[Playgroup] Commander prepare decode failed for deck %d.\n",
                    i + 1);
             continue;
@@ -817,10 +829,106 @@ static bool prepare_current_player_deck_art(void)
         if (store_decoded_art(deck->scryfall_id, pixels,
                               decoded_w, decoded_h) == NULL) {
             commander_image_free_pixels(pixels);
+            commander_prepare_failures++;
             printf("[Playgroup] Commander prepare cache failed for deck %d.\n",
                    i + 1);
             continue;
         }
+
+        /* Be explicitly cooperative even after cache hits/decodes. */
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+
+    commander_prepare_done = true;
+    commander_prepare_active = false;
+    vTaskDelete(NULL);
+}
+
+static void finish_commander_prepare_ui(void)
+{
+    const playgroup_deck_t *first;
+    deck_decoded_cache_entry_t *decoded;
+
+    if (commander_prepare_timer != NULL)
+        lv_timer_pause(commander_prepare_timer);
+
+    if (member_status_label != NULL)
+        lv_label_set_text(member_status_label, "");
+
+    refresh_deck_picker(false);
+    lv_scr_load(screen_pregame_deck);
+
+    first = playgroup_cached_deck(deck_picker_index);
+    decoded = first != NULL ? find_decoded_art(first->scryfall_id) : NULL;
+    clear_deck_art();
+    if (decoded != NULL)
+        show_decoded_art(decoded);
+
+    commander_prepare_from_roster = false;
+}
+
+static void commander_prepare_timer_cb(lv_timer_t *timer)
+{
+    char status[64];
+    int total;
+    int progress;
+
+    (void)timer;
+
+    if (!commander_prepare_active && commander_prepare_done) {
+        commander_prepare_done = false;
+        finish_commander_prepare_ui();
+        return;
+    }
+
+    if (!commander_prepare_active)
+        return;
+
+    total = commander_prepare_total;
+    progress = commander_prepare_progress;
+
+    if (!commander_prepare_from_roster && member_status_label != NULL) {
+        if (total > 0) {
+            snprintf(status, sizeof(status), "Preparing commanders %d/%d",
+                     progress, total);
+        } else {
+            snprintf(status, sizeof(status), "Preparing commanders...");
+        }
+        lv_label_set_text(member_status_label, status);
+    }
+}
+
+static bool start_commander_prepare(bool from_roster)
+{
+    if (commander_prepare_active)
+        return false;
+
+    commander_prepare_done = false;
+    commander_prepare_progress = 0;
+    commander_prepare_total = playgroup_cached_deck_count();
+    commander_prepare_failures = 0;
+    commander_prepare_from_roster = from_roster;
+
+    if (!from_roster && member_status_label != NULL) {
+        lv_label_set_text(member_status_label, "Preparing commanders...");
+        lv_refr_now(NULL);
+    }
+
+    commander_prepare_active = true;
+
+    if (xTaskCreatePinnedToCore(commander_prepare_worker,
+                                "pg_cmd_prepare",
+                                8192, NULL, 0, NULL, 1) != pdPASS) {
+        commander_prepare_active = false;
+        if (!from_roster && member_status_label != NULL)
+            lv_label_set_text(member_status_label, "Could not prepare commander art");
+        return false;
+    }
+
+    if (commander_prepare_timer != NULL) {
+        lv_timer_set_period(commander_prepare_timer, 150);
+        lv_timer_reset(commander_prepare_timer);
+        lv_timer_resume(commander_prepare_timer);
     }
 
     return true;
@@ -831,6 +939,9 @@ static void event_member_select(lv_event_t *e)
     const playgroup_member_t *member;
     char title[64];
     (void)e;
+
+    if (commander_prepare_active)
+        return;
 
     if (member_picker_seat < 0 || member_picker_seat >= pregame_player_count)
         return;
@@ -877,23 +988,10 @@ static void event_member_select(lv_event_t *e)
         lv_label_set_text(deck_title_label, title);
     }
 
-    /* Prepare every commander before entering the browser. Once the deck
-       picker is visible, turning the dial must never wait on network I/O. */
-    prepare_current_player_deck_art();
-
-    if (member_status_label != NULL)
-        lv_label_set_text(member_status_label, "");
-
-    refresh_deck_picker(false);
-    lv_scr_load(screen_pregame_deck);
-
-    {
-        const playgroup_deck_t *first = playgroup_cached_deck(deck_picker_index);
-        deck_decoded_cache_entry_t *decoded =
-            first != NULL ? find_decoded_art(first->scryfall_id) : NULL;
-        if (decoded != NULL)
-            show_decoded_art(decoded);
-    }
+    /* Prepare in a low-priority worker. The LVGL/main task remains free,
+       so watchdogs and input continue running. The picker opens only after
+       the batch is complete; browsing itself never performs network I/O. */
+    start_commander_prepare(false);
 }
 
 static void clear_deck_art(void)
@@ -1090,16 +1188,8 @@ static void event_roster_open_decks(lv_event_t *e)
         return;
     }
 
-    prepare_current_player_deck_art();
-    refresh_deck_picker(false);
-    lv_scr_load(screen_pregame_deck);
-    {
-        const playgroup_deck_t *first = playgroup_cached_deck(deck_picker_index);
-        deck_decoded_cache_entry_t *decoded =
-            first != NULL ? find_decoded_art(first->scryfall_id) : NULL;
-        if (decoded != NULL)
-            show_decoded_art(decoded);
-    }
+    /* Same non-blocking preparation path used by normal player setup. */
+    start_commander_prepare(true);
 }
 
 static void event_deck_select(lv_event_t *e)
@@ -1123,32 +1213,9 @@ static void event_deck_select(lv_event_t *e)
         deck_decoded_cache_entry_t *selected_art =
             find_decoded_art(deck->scryfall_id);
 
-        /* Usually the async picker fetch has already decoded this art.
-           If the user selects unusually quickly, guarantee the chosen deck
-           still gets an in-game image instead of silently losing Pizza Art. */
-        if (selected_art == NULL && deck->scryfall_id[0] != '\0') {
-            uint8_t *data = NULL;
-            uint8_t *pixels = NULL;
-            size_t data_size = 0;
-            uint16_t decoded_w = 0;
-            uint16_t decoded_h = 0;
-
-            if (playgroup_download_deck_image(deck->art_crop_url,
-                                              deck->scryfall_id,
-                                              &data, &data_size)) {
-                if (commander_image_decode_rgb565(data, data_size,
-                                                  &pixels,
-                                                  &decoded_w, &decoded_h)) {
-                    selected_art = store_decoded_art(deck->scryfall_id,
-                                                     pixels,
-                                                     decoded_w, decoded_h);
-                    if (selected_art == NULL)
-                        commander_image_free_pixels(pixels);
-                }
-                playgroup_free_image(data);
-            }
-        }
-
+        /* The picker only opens after batch preparation. Never perform
+           network I/O from SELECT DECK: a missing image is a cache/prep
+           failure, not a reason to block the UI and risk another watchdog. */
         if (selected_art != NULL) {
             if (!set_selected_player_art(deck_picker_seat, selected_art)) {
                 printf("[Playgroup] Could not preserve selected commander art for P%d.\n",
@@ -1446,6 +1513,8 @@ bool pregame_handle_back(lv_obj_t *screen)
         return true;
     }
     if (screen == screen_pregame_member) {
+        if (commander_prepare_active)
+            return true;
         lv_scr_load(screen_pregame_playgroup);
         return true;
     }
@@ -1868,6 +1937,9 @@ void build_pregame_screens(void)
        polls the PSRAM cache and decodes when data is ready. */
     deck_art_timer = lv_timer_create(deck_art_timer_cb, 120, NULL);
     lv_timer_pause(deck_art_timer);
+
+    commander_prepare_timer = lv_timer_create(commander_prepare_timer_cb, 150, NULL);
+    lv_timer_pause(commander_prepare_timer);
 
     refresh_roster();
     refresh_mulligans();
