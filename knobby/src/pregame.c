@@ -69,6 +69,74 @@ typedef struct {
 static deck_decoded_cache_entry_t decoded_art_cache[DECK_DECODED_CACHE_SLOTS];
 static uint32_t decoded_art_stamp = 1;
 
+typedef struct {
+    uint8_t *pixels;
+    uint16_t width;
+    uint16_t height;
+    lv_img_dsc_t dsc;
+} selected_player_art_t;
+
+static selected_player_art_t selected_player_art[MAX_DISPLAY_PLAYERS];
+
+static void clear_selected_player_art(void)
+{
+    for (int i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
+        if (selected_player_art[i].pixels != NULL) {
+            commander_image_free_pixels(selected_player_art[i].pixels);
+            selected_player_art[i].pixels = NULL;
+        }
+        selected_player_art[i].width = 0;
+        selected_player_art[i].height = 0;
+        memset(&selected_player_art[i].dsc, 0, sizeof(selected_player_art[i].dsc));
+    }
+}
+
+static bool set_selected_player_art(int player_index,
+                                    const deck_decoded_cache_entry_t *entry)
+{
+    uint8_t *copy;
+    size_t size;
+
+    if (player_index < 0 || player_index >= MAX_DISPLAY_PLAYERS ||
+        entry == NULL || entry->pixels == NULL ||
+        entry->width == 0 || entry->height == 0)
+        return false;
+
+    size = (size_t)entry->width * (size_t)entry->height * 2U;
+    copy = (uint8_t *)heap_caps_malloc(size,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (copy == NULL)
+        return false;
+
+    memcpy(copy, entry->pixels, size);
+
+    if (selected_player_art[player_index].pixels != NULL)
+        commander_image_free_pixels(selected_player_art[player_index].pixels);
+
+    selected_player_art[player_index].pixels = copy;
+    selected_player_art[player_index].width = entry->width;
+    selected_player_art[player_index].height = entry->height;
+    memset(&selected_player_art[player_index].dsc, 0,
+           sizeof(selected_player_art[player_index].dsc));
+    selected_player_art[player_index].dsc.header.always_zero = 0;
+    selected_player_art[player_index].dsc.header.w = entry->width;
+    selected_player_art[player_index].dsc.header.h = entry->height;
+    selected_player_art[player_index].dsc.header.cf = LV_IMG_CF_TRUE_COLOR;
+    selected_player_art[player_index].dsc.data_size = (uint32_t)size;
+    selected_player_art[player_index].dsc.data = copy;
+
+    return true;
+}
+
+const lv_img_dsc_t *pregame_get_player_commander_art(int player_index)
+{
+    if (player_index < 0 || player_index >= MAX_DISPLAY_PLAYERS ||
+        selected_player_art[player_index].pixels == NULL)
+        return NULL;
+
+    return &selected_player_art[player_index].dsc;
+}
+
 static void clear_decoded_art_cache(void)
 {
     for (int i = 0; i < DECK_DECODED_CACHE_SLOTS; i++) {
@@ -217,6 +285,7 @@ static void event_local_play(lv_event_t *e)
     (void)e;
 
     clear_decoded_art_cache();
+    clear_selected_player_art();
     playgroup_end_session();
     playgroup_roster_active = false;
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
@@ -433,6 +502,7 @@ static void event_playgroup_select(lv_event_t *e)
     }
 
     playgroup_roster_active = true;
+    clear_selected_player_art();
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
         selected_member_index[i] = 0;
         selected_member_set[i] = false;
@@ -946,6 +1016,20 @@ static void event_deck_select(lv_event_t *e)
     snprintf(selected_deck_name[deck_picker_seat],
              sizeof(selected_deck_name[deck_picker_seat]),
              "%s", deck->name);
+
+    {
+        deck_decoded_cache_entry_t *selected_art =
+            find_decoded_art(deck->scryfall_id);
+        if (selected_art != NULL) {
+            if (!set_selected_player_art(deck_picker_seat, selected_art)) {
+                printf("[Playgroup] Could not preserve selected commander art for P%d.\n",
+                       deck_picker_seat + 1);
+            } else {
+                printf("[Playgroup] Preserved selected commander art for P%d.\n",
+                       deck_picker_seat + 1);
+            }
+        }
+    }
 
     clear_deck_art();
     if (deck_art_timer != NULL)
