@@ -1154,7 +1154,7 @@ static void refresh_roster(void)
                     playgroup_cached_member(selected_member_index[i] % member_count);
                 if (member != NULL) {
                     if (pregame_player_count <= 4) {
-                        snprintf(buf, sizeof(buf), "P%d  %s", i + 1, member->username);
+                        snprintf(buf, sizeof(buf), "P%d  %s", i + 1, player_names[i]);
                         if (roster_deck_labels[i] != NULL) {
                             lv_label_set_text(
                                 roster_deck_labels[i],
@@ -1166,7 +1166,7 @@ static void refresh_roster(void)
                         }
                     } else {
                         snprintf(buf, sizeof(buf), "P%d  %s  |  %s",
-                                 i + 1, member->username,
+                                 i + 1, player_names[i],
                                  (selected_deck_id[i] != 0 &&
                                   selected_deck_name[i][0] != '\0')
                                      ? selected_deck_name[i]
