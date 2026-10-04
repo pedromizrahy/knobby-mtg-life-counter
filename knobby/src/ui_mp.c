@@ -26,7 +26,6 @@ static lv_obj_t *mp_turn_round_label = NULL;
 static lv_obj_t *mp_turn_hold_arc = NULL;
 static lv_obj_t *mp_reminder_overlay = NULL;
 static lv_obj_t *mp_reminder_overlay_label = NULL;
-static lv_obj_t *mp_roulette_indicator = NULL;
 
 #define DAMAGE_DRAG_THRESHOLD_PX 18
 #define DAMAGE_DRAG_CENTER_HOLD_MS 600
@@ -138,6 +137,7 @@ static struct {
     lv_obj_t *name_labels[MULTIPLAYER_COUNT];
     lv_obj_t *art_images[MULTIPLAYER_COUNT];
     lv_obj_t *art_overlays[MULTIPLAYER_COUNT];
+    lv_obj_t *roulette_highlights[MULTIPLAYER_COUNT];
     lv_obj_t *counter_rows[MULTIPLAYER_COUNT][COUNTER_TYPE_COUNT];
     lv_obj_t *counter_values[MULTIPLAYER_COUNT][COUNTER_TYPE_COUNT];
     lv_obj_t *cmd_markers[MULTIPLAYER_COUNT][MAX_DISPLAY_PLAYERS];
@@ -1028,62 +1028,22 @@ static int roulette_panel_index_for_player(int player)
     return -1;
 }
 
-static void ensure_roulette_indicator(void)
-{
-    if (mp_roulette_indicator != NULL || screen_multiplayer == NULL)
-        return;
-
-    /*
-     * Keep roulette animation independent from the pizza itself. Moving one
-     * small ring invalidates only its old/new bounding boxes; changing an Art
-     * wedge opacity invalidates a large masked region and cannot keep up with
-     * a fast selector.
-     */
-    mp_roulette_indicator = lv_obj_create(screen_multiplayer);
-    lv_obj_remove_style_all(mp_roulette_indicator);
-
-    /*
-     * A compact "light" behind the life/name stack gives the same visual
-     * language as an illuminated player without restyling the full pizza
-     * slice. No outline/ring: it should read as a glow, not a selector circle.
-     */
-    lv_obj_set_size(mp_roulette_indicator, 128, 96);
-    lv_obj_set_style_bg_color(mp_roulette_indicator, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(mp_roulette_indicator, LV_OPA_20, 0);
-    lv_obj_set_style_radius(mp_roulette_indicator, 22, 0);
-    lv_obj_set_style_border_width(mp_roulette_indicator, 0, 0);
-    lv_obj_set_style_shadow_color(mp_roulette_indicator, lv_color_white(), 0);
-    lv_obj_set_style_shadow_width(mp_roulette_indicator, 20, 0);
-    lv_obj_set_style_shadow_spread(mp_roulette_indicator, 4, 0);
-    lv_obj_set_style_shadow_opa(mp_roulette_indicator, LV_OPA_30, 0);
-    lv_obj_clear_flag(mp_roulette_indicator,
-                      LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(mp_roulette_indicator, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void move_roulette_indicator_to_player(int player)
+static void roulette_set_player_highlight(int player, bool visible)
 {
     int panel_index = roulette_panel_index_for_player(player);
-    lv_area_t coords;
-    lv_obj_t *life_lbl;
-    lv_coord_t x;
-    lv_coord_t y;
+    lv_obj_t *highlight;
 
-    ensure_roulette_indicator();
-    if (mp_roulette_indicator == NULL || panel_index < 0)
+    if (panel_index < 0)
         return;
 
-    life_lbl = mp_state.life_labels[panel_index];
-    if (life_lbl == NULL)
+    highlight = mp_state.roulette_highlights[panel_index];
+    if (highlight == NULL)
         return;
 
-    lv_obj_get_coords(life_lbl, &coords);
-    x = (lv_coord_t)(((int32_t)coords.x1 + coords.x2) / 2 - 64);
-    y = (lv_coord_t)(((int32_t)coords.y1 + coords.y2) / 2 - 48);
-
-    lv_obj_set_pos(mp_roulette_indicator, x, y);
-    lv_obj_clear_flag(mp_roulette_indicator, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(mp_roulette_indicator);
+    if (visible)
+        lv_obj_clear_flag(highlight, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_add_flag(highlight, LV_OBJ_FLAG_HIDDEN);
 }
 
 void refresh_multiplayer_selection_animation(void)
@@ -1093,25 +1053,53 @@ void refresh_multiplayer_selection_animation(void)
     if (layout == NULL)
         return;
 
+    /*
+     * One-time setup may touch every slice. During the fast spin only the
+     * previous/current prebuilt layers are toggled.
+     *
+     * In Art mode the base state mirrors inactive turn slices (60% shade),
+     * while the prebuilt visible layer is exactly the active-turn look
+     * (same art at 80%, black shade at 20%).
+     */
     for (int i = 0; i < layout->panel_count; i++) {
-        int player = layout->panels[i].player_index;
-        if (is_player_selected(player)) {
-            move_roulette_indicator_to_player(player);
-            return;
+        const mp_panel_spec_t *spec = &layout->panels[i];
+        int player = spec->player_index;
+
+        roulette_set_player_highlight(player, is_player_selected(player));
+
+        if (nvs_get_color_mode() == COLOR_MODE_ART &&
+            mp_state.art_overlays[i] != NULL) {
+            lv_obj_set_style_bg_opa(mp_state.art_overlays[i], LV_OPA_60, 0);
+        } else if (mp_state.panels[i] != NULL) {
+            lv_color_t inactive_bg =
+                get_effective_player_color(player, spec->color_index, LIFE_VIB_DIM);
+            if (lv_obj_get_style_bg_color(mp_state.panels[i], LV_PART_MAIN).full !=
+                inactive_bg.full) {
+                lv_obj_set_style_bg_color(mp_state.panels[i], inactive_bg, 0);
+            }
         }
     }
 }
 
 void refresh_multiplayer_selection_step(int previous_player, int current_player)
 {
-    (void)previous_player;
-    move_roulette_indicator_to_player(current_player);
+    if (previous_player != current_player)
+        roulette_set_player_highlight(previous_player, false);
+    roulette_set_player_highlight(current_player, true);
 }
 
 void refresh_multiplayer_selection_finish(void)
 {
-    if (mp_roulette_indicator != NULL)
-        lv_obj_add_flag(mp_roulette_indicator, LV_OBJ_FLAG_HIDDEN);
+    const mp_layout_spec_t *layout = mp_state.layout;
+
+    if (layout == NULL)
+        return;
+
+    for (int i = 0; i < layout->panel_count; i++) {
+        lv_obj_t *highlight = mp_state.roulette_highlights[i];
+        if (highlight != NULL)
+            lv_obj_add_flag(highlight, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 /* ---------- unified refresh ---------- */
@@ -1637,7 +1625,6 @@ void rebuild_multiplayer_layout(int track)
     mp_turn_hold_arc = NULL;
     drag_hint = NULL;
     drag_hint_label = NULL;
-    mp_roulette_indicator = NULL;
     damage_drag_reset();
 
     lv_obj_clean(screen_multiplayer);
@@ -1705,6 +1692,9 @@ void rebuild_multiplayer_layout(int track)
                 uint16_t zoom = (uint16_t)((zoom_w > zoom_h) ? zoom_w : zoom_h);
                 lv_obj_t *art = lv_img_create(panel);
                 lv_obj_t *shade = make_plain_box(panel, spec->w, spec->h);
+                lv_obj_t *highlight = make_plain_box(panel, spec->w, spec->h);
+                lv_obj_t *highlight_art;
+                lv_obj_t *highlight_shade;
 
                 if (zoom < 1U) zoom = 1U;
                 if (zoom > 1024U) zoom = 1024U;
@@ -1719,9 +1709,52 @@ void rebuild_multiplayer_layout(int track)
                 lv_obj_set_style_bg_opa(shade, LV_OPA_50, 0);
                 lv_obj_align(shade, LV_ALIGN_CENTER, 0, 0);
 
+                /*
+                 * Pre-render the roulette "on" state exactly like the active
+                 * turn state: same commander art, same zoom/img opacity and
+                 * the same LV_OPA_20 black shade. The roulette only toggles
+                 * this layer; it never restyles the large masked pizza wedge.
+                 */
+                lv_obj_set_style_bg_opa(highlight, LV_OPA_TRANSP, 0);
+                lv_obj_set_style_border_width(highlight, 0, 0);
+                lv_obj_clear_flag(highlight,
+                                  LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+                highlight_art = lv_img_create(highlight);
+                lv_img_set_src(highlight_art, commander_art);
+                lv_img_set_zoom(highlight_art, zoom);
+                lv_obj_align(highlight_art, LV_ALIGN_CENTER, 0, 0);
+                lv_obj_set_style_img_opa(highlight_art, LV_OPA_80, 0);
+                lv_obj_clear_flag(highlight_art,
+                                  LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+                highlight_shade = make_plain_box(highlight, spec->w, spec->h);
+                lv_obj_set_style_bg_color(highlight_shade, lv_color_black(), 0);
+                lv_obj_set_style_bg_opa(highlight_shade, LV_OPA_20, 0);
+                lv_obj_align(highlight_shade, LV_ALIGN_CENTER, 0, 0);
+
+                lv_obj_add_flag(highlight, LV_OBJ_FLAG_HIDDEN);
+
                 mp_state.art_images[i] = art;
                 mp_state.art_overlays[i] = shade;
+                mp_state.roulette_highlights[i] = highlight;
             }
+        }
+
+        /* Player mode, and Art mode without commander art, use the exact
+           vivid panel color that refresh_mp_panel() uses for an active turn. */
+        if (mp_state.roulette_highlights[i] == NULL) {
+            lv_obj_t *highlight = make_plain_box(panel, spec->w, spec->h);
+            lv_color_t active_bg =
+                get_effective_player_color(p, spec->color_index, LIFE_VIB_VIV);
+
+            lv_obj_set_style_bg_color(highlight, active_bg, 0);
+            lv_obj_set_style_bg_opa(highlight, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(highlight, 0, 0);
+            lv_obj_clear_flag(highlight,
+                              LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_add_flag(highlight, LV_OBJ_FLAG_HIDDEN);
+            mp_state.roulette_highlights[i] = highlight;
         }
 
         name_lbl = lv_label_create(panel);
