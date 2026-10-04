@@ -1017,6 +1017,12 @@ static void event_deck_select(lv_event_t *e)
              sizeof(selected_deck_name[deck_picker_seat]),
              "%s", deck->name);
 
+    /* Persist only the deck the player actually chose. This keeps flash
+       usage focused on frequently used decks and keeps commander preload
+       free of blocking filesystem writes. */
+    if (deck->scryfall_id[0] != '\0')
+        playgroup_persist_cached_image(deck->scryfall_id);
+
     {
         deck_decoded_cache_entry_t *selected_art =
             find_decoded_art(deck->scryfall_id);
