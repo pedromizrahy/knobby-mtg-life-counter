@@ -639,6 +639,11 @@ static bool wifi_connect_saved(void)
     return false;
 }
 
+bool playgroup_network_active(void)
+{
+    return WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_OFF;
+}
+
 void playgroup_end_session(void)
 {
     ++art_prefetch_generation;
