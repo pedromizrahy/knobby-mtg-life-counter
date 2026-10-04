@@ -255,6 +255,7 @@ static void refresh_playgroup_picker(void);
 static void refresh_member_picker(void);
 static void refresh_deck_picker(bool schedule_art);
 static void schedule_deck_art(void);
+static void clear_deck_art(void);
 static void split_member_display_name(const char *full,
                                       char *first, size_t first_size,
                                       char *second_initial)
@@ -1161,6 +1162,9 @@ static void event_deck_adjust(lv_event_t *e)
 static void event_roster_open_decks(lv_event_t *e)
 {
     int seat = (int)(intptr_t)lv_event_get_user_data(e);
+
+    if (commander_prepare_active)
+        return;
     const playgroup_member_t *member;
     char title[64];
 
@@ -1376,6 +1380,9 @@ static void event_roster_continue(lv_event_t *e)
 {
     int i;
     (void)e;
+
+    if (commander_prepare_active)
+        return;
 
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) mulligans[i] = 0;
     refresh_mulligans();
