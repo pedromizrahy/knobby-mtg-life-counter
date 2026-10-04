@@ -25,6 +25,7 @@ lv_obj_t *screen_pregame_mulligans = NULL;
 static int pregame_player_count = 4;
 static uint8_t mulligans[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *roster_labels[MAX_DISPLAY_PLAYERS] = {0};
+static lv_obj_t *roster_deck_labels[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *mulligan_buttons[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *mulligan_labels[MAX_DISPLAY_PLAYERS] = {0};
 static lv_obj_t *multiplayer_status_label = NULL;
@@ -846,15 +847,12 @@ static void deck_art_timer_cb(lv_timer_t *timer)
     if (!playgroup_cached_image_copy(deck->scryfall_id, &data, &data_size)) {
         if (deck_commander_label != NULL)
             lv_label_set_text(deck_commander_label, "Loading commander art...");
-        lv_refr_now(NULL);
 
-        if (!playgroup_download_deck_image(deck->art_crop_url,
-                                           deck->scryfall_id,
-                                           &data, &data_size)) {
-            if (deck_commander_label != NULL)
-                lv_label_set_text(deck_commander_label, "Commander art unavailable");
-            return;
-        }
+        playgroup_prefetch_deck_image_async(deck->art_crop_url,
+                                            deck->scryfall_id);
+        lv_timer_set_period(timer, 180);
+        lv_timer_resume(timer);
+        return;
     }
 
     decode_started = lv_tick_get();
@@ -1075,7 +1073,7 @@ static void refresh_roster(void)
             font = &lv_font_montserrat_16;
             break;
         case 4:
-            button_h = 40; button_w = 240; gap = 5;
+            button_h = 46; button_w = 244; gap = 4;
             font = &lv_font_montserrat_14;
             break;
         case 5:
