@@ -51,10 +51,16 @@ typedef struct {
     char ids[PG_MAX_DECKS][PG_SCRYFALL_ID_LEN];
 } pg_art_prefetch_job_t;
 
+typedef struct {
+    char scryfall_id[PG_SCRYFALL_ID_LEN];
+    char art_crop_url[PG_IMAGE_URL_LEN];
+} pg_art_single_job_t;
+
 static pg_art_cache_entry_t art_cache[PG_ART_CACHE_SLOTS];
 static SemaphoreHandle_t art_cache_mutex = NULL;
 static SemaphoreHandle_t art_http_mutex = NULL;
 static volatile uint32_t art_prefetch_generation = 0;
+static volatile bool art_single_prefetch_active = false;
 static uint32_t art_cache_stamp = 1;
 
 static NetworkClientSecure art_tls;
@@ -1524,6 +1530,73 @@ static void playgroup_art_prefetch_task(void *param)
 
     heap_caps_free(job);
     vTaskDelete(NULL);
+}
+
+static void playgroup_single_art_prefetch_task(void *param)
+{
+    pg_art_single_job_t *job = (pg_art_single_job_t *)param;
+    uint8_t *data = NULL;
+    size_t size = 0;
+
+    if (job != NULL) {
+        Serial.print("[Playgroup] Async commander art start: ");
+        Serial.println(job->scryfall_id);
+
+        if (playgroup_download_deck_image(job->art_crop_url,
+                                          job->scryfall_id,
+                                          &data, &size)) {
+            playgroup_free_image(data);
+            Serial.print("[Playgroup] Async commander art ready: ");
+            Serial.println(job->scryfall_id);
+        } else {
+            Serial.print("[Playgroup] Async commander art failed: ");
+            Serial.println(job->scryfall_id);
+        }
+
+        heap_caps_free(job);
+    }
+
+    art_single_prefetch_active = false;
+    vTaskDelete(NULL);
+}
+
+bool playgroup_prefetch_deck_image_async(const char *art_crop_url,
+                                         const char *scryfall_id)
+{
+    uint8_t *cached = NULL;
+    size_t cached_size = 0;
+    pg_art_single_job_t *job;
+
+    if (scryfall_id == NULL || scryfall_id[0] == '\0')
+        return false;
+
+    if (art_cache_copy(scryfall_id, &cached, &cached_size)) {
+        playgroup_free_image(cached);
+        return true;
+    }
+
+    if (art_single_prefetch_active)
+        return false;
+
+    job = (pg_art_single_job_t *)heap_caps_calloc(
+        1, sizeof(*job), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (job == NULL)
+        return false;
+
+    strlcpy(job->scryfall_id, scryfall_id, sizeof(job->scryfall_id));
+    if (art_crop_url != NULL)
+        strlcpy(job->art_crop_url, art_crop_url, sizeof(job->art_crop_url));
+
+    art_single_prefetch_active = true;
+    if (xTaskCreatePinnedToCore(playgroup_single_art_prefetch_task,
+                                "pg_art_one",
+                                7168, job, 0, NULL, 1) != pdPASS) {
+        art_single_prefetch_active = false;
+        heap_caps_free(job);
+        return false;
+    }
+
+    return true;
 }
 
 void playgroup_prefetch_deck_images(void)
