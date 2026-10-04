@@ -1201,13 +1201,45 @@ static bool playgroup_download_image_url(const char *url_cstr,
     Serial.println(" bytes");
 
     {
-        PsramBufferStream sink(data, (size_t)content_length);
+        NetworkClient *stream = art_http.getStreamPtr();
+        uint32_t last_progress;
 
+        received = 0;
+        stream_result = 0;
         download_started = millis();
-        stream_result = art_http.writeToStream(&sink);
-        received = sink.size();
+        last_progress = download_started;
 
-        Serial.print("[Playgroup] Commander art stream result ");
+        /* Read directly into the final PSRAM buffer. Avoid HTTPClient's
+           writeToStream()/Print layer; the content length is known, so no
+           intermediate copy or byte-at-a-time sink is necessary. */
+        while (received < (size_t)content_length &&
+               (millis() - last_progress) < PG_HTTP_TIMEOUT_MS) {
+            int available = stream != NULL ? stream->available() : 0;
+
+            if (available > 0) {
+                size_t remaining = (size_t)content_length - received;
+                size_t chunk = (size_t)available;
+                if (chunk > remaining) chunk = remaining;
+                if (chunk > 16384U) chunk = 16384U;
+
+                int got = stream->read(data + received, chunk);
+                if (got > 0) {
+                    received += (size_t)got;
+                    last_progress = millis();
+                    continue;
+                }
+                if (got < 0)
+                    break;
+            }
+
+            delay(1);
+        }
+
+        stream_result = (received == (size_t)content_length)
+                            ? (int)received
+                            : -1;
+
+        Serial.print("[Playgroup] Commander art direct read result ");
         Serial.print(stream_result);
         Serial.print("; received ");
         Serial.print((unsigned)received);
@@ -1229,7 +1261,7 @@ static bool playgroup_download_image_url(const char *url_cstr,
     art_http.end();
 
     if (stream_result < 0 || received != (size_t)content_length) {
-        Serial.print("[Playgroup] Commander art body read failed: ");
+        Serial.print("[Playgroup] Commander art direct body read failed: ");
         Serial.print((unsigned)received);
         Serial.print("/");
         Serial.println(content_length);
