@@ -26,6 +26,7 @@ static lv_obj_t *mp_turn_round_label = NULL;
 static lv_obj_t *mp_turn_hold_arc = NULL;
 static lv_obj_t *mp_reminder_overlay = NULL;
 static lv_obj_t *mp_reminder_overlay_label = NULL;
+static lv_obj_t *mp_roulette_indicator = NULL;
 
 #define DAMAGE_DRAG_THRESHOLD_PX 18
 #define DAMAGE_DRAG_CENTER_HOLD_MS 600
@@ -1013,54 +1014,67 @@ void refresh_multiplayer_life_preview(void)
     }
 }
 
-static void refresh_multiplayer_roulette_player(int player, bool selected)
+static int roulette_panel_index_for_player(int player)
 {
     const mp_layout_spec_t *layout = mp_state.layout;
 
-    if (layout == NULL || player < 0)
-        return;
+    if (layout == NULL)
+        return -1;
 
     for (int i = 0; i < layout->panel_count; i++) {
-        const mp_panel_spec_t *spec = &layout->panels[i];
-        lv_obj_t *panel;
-        lv_obj_t *life_lbl;
-        lv_obj_t *name_lbl;
-
-        if (spec->player_index != player)
-            continue;
-
-        panel = mp_state.panels[i];
-        life_lbl = mp_state.life_labels[i];
-        name_lbl = mp_state.name_labels[i];
-
-        if (nvs_get_color_mode() == COLOR_MODE_ART) {
-            if (mp_state.art_overlays[i] != NULL) {
-                lv_obj_set_style_bg_opa(mp_state.art_overlays[i],
-                                        selected ? LV_OPA_10 : LV_OPA_60, 0);
-            }
-
-            if (life_lbl != NULL)
-                lv_obj_set_style_text_color(life_lbl, lv_color_white(), 0);
-            if (name_lbl != NULL)
-                lv_obj_set_style_text_color(name_lbl, lv_color_white(), 0);
-        } else {
-            int vib = selected ? LIFE_VIB_VIV : LIFE_VIB_DIM;
-            lv_color_t bg =
-                get_effective_player_color(player, spec->color_index, vib);
-            lv_color_t text_color =
-                color_is_light(bg) ? lv_color_black() : lv_color_white();
-
-            if (panel != NULL &&
-                lv_obj_get_style_bg_color(panel, LV_PART_MAIN).full != bg.full) {
-                lv_obj_set_style_bg_color(panel, bg, 0);
-            }
-            if (life_lbl != NULL)
-                lv_obj_set_style_text_color(life_lbl, text_color, 0);
-            if (name_lbl != NULL)
-                lv_obj_set_style_text_color(name_lbl, text_color, 0);
-        }
-        return;
+        if (layout->panels[i].player_index == player)
+            return i;
     }
+    return -1;
+}
+
+static void ensure_roulette_indicator(void)
+{
+    if (mp_roulette_indicator != NULL || screen_multiplayer == NULL)
+        return;
+
+    /*
+     * Keep roulette animation independent from the pizza itself. Moving one
+     * small ring invalidates only its old/new bounding boxes; changing an Art
+     * wedge opacity invalidates a large masked region and cannot keep up with
+     * a fast selector.
+     */
+    mp_roulette_indicator = lv_obj_create(screen_multiplayer);
+    lv_obj_remove_style_all(mp_roulette_indicator);
+    lv_obj_set_size(mp_roulette_indicator, 82, 82);
+    lv_obj_set_style_bg_opa(mp_roulette_indicator, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(mp_roulette_indicator, 4, 0);
+    lv_obj_set_style_border_color(mp_roulette_indicator, lv_color_white(), 0);
+    lv_obj_set_style_border_opa(mp_roulette_indicator, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(mp_roulette_indicator, LV_RADIUS_CIRCLE, 0);
+    lv_obj_clear_flag(mp_roulette_indicator,
+                      LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(mp_roulette_indicator, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void move_roulette_indicator_to_player(int player)
+{
+    int panel_index = roulette_panel_index_for_player(player);
+    lv_area_t coords;
+    lv_obj_t *life_lbl;
+    lv_coord_t x;
+    lv_coord_t y;
+
+    ensure_roulette_indicator();
+    if (mp_roulette_indicator == NULL || panel_index < 0)
+        return;
+
+    life_lbl = mp_state.life_labels[panel_index];
+    if (life_lbl == NULL)
+        return;
+
+    lv_obj_get_coords(life_lbl, &coords);
+    x = (lv_coord_t)(((int32_t)coords.x1 + coords.x2) / 2 - 41);
+    y = (lv_coord_t)(((int32_t)coords.y1 + coords.y2) / 2 - 41);
+
+    lv_obj_set_pos(mp_roulette_indicator, x, y);
+    lv_obj_clear_flag(mp_roulette_indicator, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(mp_roulette_indicator);
 }
 
 void refresh_multiplayer_selection_animation(void)
@@ -1070,27 +1084,25 @@ void refresh_multiplayer_selection_animation(void)
     if (layout == NULL)
         return;
 
-    /* One-time roulette initialization: dim all seats, then light the
-       selected one. Subsequent ticks use the two-seat step function below. */
     for (int i = 0; i < layout->panel_count; i++) {
-        const mp_panel_spec_t *spec = &layout->panels[i];
-        refresh_multiplayer_roulette_player(
-            spec->player_index,
-            is_player_selected(spec->player_index));
+        int player = layout->panels[i].player_index;
+        if (is_player_selected(player)) {
+            move_roulette_indicator_to_player(player);
+            return;
+        }
     }
 }
 
 void refresh_multiplayer_selection_step(int previous_player, int current_player)
 {
-    if (previous_player == current_player) {
-        refresh_multiplayer_roulette_player(current_player, true);
-        return;
-    }
+    (void)previous_player;
+    move_roulette_indicator_to_player(current_player);
+}
 
-    /* Only two seats visually change on a roulette hop. Avoid walking and
-       restyling every pizza slice at 50+ Hz. */
-    refresh_multiplayer_roulette_player(previous_player, false);
-    refresh_multiplayer_roulette_player(current_player, true);
+void refresh_multiplayer_selection_finish(void)
+{
+    if (mp_roulette_indicator != NULL)
+        lv_obj_add_flag(mp_roulette_indicator, LV_OBJ_FLAG_HIDDEN);
 }
 
 /* ---------- unified refresh ---------- */
@@ -1616,6 +1628,7 @@ void rebuild_multiplayer_layout(int track)
     mp_turn_hold_arc = NULL;
     drag_hint = NULL;
     drag_hint_label = NULL;
+    mp_roulette_indicator = NULL;
     damage_drag_reset();
 
     lv_obj_clean(screen_multiplayer);
