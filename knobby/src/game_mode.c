@@ -38,8 +38,8 @@ static void refresh_player_settings_ui(void)
 {
     if (label_gm_color_mode != NULL) {
         lv_label_set_text(label_gm_color_mode,
-            nvs_get_color_mode() == COLOR_MODE_LIFE
-                ? "Colors\nLife" : "Colors\nPlayer");
+            nvs_get_color_mode() == COLOR_MODE_ART
+                ? "Colors\nArt" : "Colors\nPlayer");
     }
 
     if (label_gm_cmd_marker != NULL) {
