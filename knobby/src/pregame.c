@@ -1103,24 +1103,56 @@ static void refresh_roster(void)
                     playgroup_cached_member(selected_member_index[i] % member_count);
                 if (member != NULL) {
                     snprintf(player_names[i], sizeof(player_names[i]), "%s", member->username);
-                    if (selected_deck_id[i] != 0 && selected_deck_name[i][0] != '\0')
-                        snprintf(buf, sizeof(buf), "P%d  %s\n%s",
-                                 i + 1, member->username, selected_deck_name[i]);
-                    else
-                        snprintf(buf, sizeof(buf), "P%d  %s\nChoose deck",
-                                 i + 1, member->username);
+                    if (pregame_player_count <= 4) {
+                        snprintf(buf, sizeof(buf), "P%d  %s", i + 1, member->username);
+                        if (roster_deck_labels[i] != NULL) {
+                            lv_label_set_text(
+                                roster_deck_labels[i],
+                                (selected_deck_id[i] != 0 &&
+                                 selected_deck_name[i][0] != '\0')
+                                    ? selected_deck_name[i]
+                                    : "Choose deck");
+                            lv_obj_clear_flag(roster_deck_labels[i], LV_OBJ_FLAG_HIDDEN);
+                        }
+                    } else {
+                        snprintf(buf, sizeof(buf), "P%d  %s  |  %s",
+                                 i + 1, member->username,
+                                 (selected_deck_id[i] != 0 &&
+                                  selected_deck_name[i][0] != '\0')
+                                     ? selected_deck_name[i]
+                                     : "Choose deck");
+                        if (roster_deck_labels[i] != NULL)
+                            lv_obj_add_flag(roster_deck_labels[i], LV_OBJ_FLAG_HIDDEN);
+                    }
                 } else {
                     snprintf(buf, sizeof(buf), "P%d  Select player", i + 1);
+                    if (roster_deck_labels[i] != NULL)
+                        lv_obj_add_flag(roster_deck_labels[i], LV_OBJ_FLAG_HIDDEN);
                 }
             } else {
                 snprintf(buf, sizeof(buf), "P%d  Local player", i + 1);
+                if (roster_deck_labels[i] != NULL)
+                    lv_obj_add_flag(roster_deck_labels[i], LV_OBJ_FLAG_HIDDEN);
             }
 
             lv_label_set_text(roster_labels[i], buf);
             lv_label_set_long_mode(roster_labels[i], LV_LABEL_LONG_DOT);
-            lv_obj_set_width(roster_labels[i], button_w - 24);
+            lv_obj_set_width(roster_labels[i], button_w - 28);
             lv_obj_set_style_text_align(roster_labels[i], LV_TEXT_ALIGN_CENTER, 0);
             lv_obj_set_style_text_font(roster_labels[i], font, 0);
+
+            if (pregame_player_count <= 4 && roster_deck_labels[i] != NULL) {
+                lv_obj_set_width(roster_deck_labels[i], button_w - 34);
+                lv_label_set_long_mode(roster_deck_labels[i], LV_LABEL_LONG_DOT);
+                lv_obj_set_style_text_align(roster_deck_labels[i], LV_TEXT_ALIGN_CENTER, 0);
+                lv_obj_set_style_text_font(roster_deck_labels[i], &lv_font_montserrat_14, 0);
+                lv_obj_set_style_text_color(roster_deck_labels[i],
+                                            lv_color_hex(0x9AA6B2), 0);
+                lv_obj_align(roster_labels[i], LV_ALIGN_TOP_MID, 0, 4);
+                lv_obj_align(roster_deck_labels[i], LV_ALIGN_BOTTOM_MID, 0, -4);
+            } else {
+                lv_obj_center(roster_labels[i]);
+            }
             lv_obj_set_size(btn, button_w, button_h);
             lv_obj_set_style_radius(btn, button_h / 2, 0);
             lv_obj_align(btn, LV_ALIGN_TOP_MID, 0,
@@ -1557,6 +1589,13 @@ void build_pregame_screens(void)
             lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 84 + (i * 34));
             roster_labels[i] = lv_obj_get_child(btn, 0);
             lv_obj_set_style_text_font(roster_labels[i], &lv_font_montserrat_14, 0);
+
+            roster_deck_labels[i] = lv_label_create(btn);
+            lv_label_set_text(roster_deck_labels[i], "");
+            lv_obj_set_style_text_font(roster_deck_labels[i], &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_color(roster_deck_labels[i], lv_color_hex(0x9AA6B2), 0);
+            lv_obj_set_style_text_align(roster_deck_labels[i], LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_add_flag(roster_deck_labels[i], LV_OBJ_FLAG_HIDDEN);
         }
 
         lv_obj_t *next = pregame_button(screen_pregame_roster, "MULLIGANS", 142, 42,
