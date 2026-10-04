@@ -420,7 +420,7 @@ void reset_all_values(void)
     brightness_percent = nvs_get_brightness();
     brightness_apply();
 
-    turn_timer_reset();
+    turn_timer_reset_silent();
 
     /*
      * Only repaint the gameplay HUD that is about to be shown. Select,
