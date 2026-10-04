@@ -4,6 +4,7 @@
 #include "ui_mp.h"
 #include "ui_1p.h"
 #include "timer.h"
+#include "game.h"
 
 // Forward declaration
 extern void back_to_main(void);
@@ -277,10 +278,21 @@ static void event_gm_apply(lv_event_t *e)
     nvs_set_life_total(temp_life_total);
     settings_save();
 
-    if (temp_players_to_track > 1)
-        rebuild_multiplayer_layout(temp_players_to_track);
+    cmd_damage_target = -1;
 
-    back_to_main();
+    if (temp_players_to_track > 1) {
+        /*
+         * rebuild_multiplayer_layout() already performs the full multiplayer
+         * refresh. Loading the screen directly avoids back_to_main() doing
+         * the same repaint a second time.
+         */
+        rebuild_multiplayer_layout(temp_players_to_track);
+        load_screen_if_needed(screen_multiplayer);
+    } else {
+        refresh_main_ui();
+        load_screen_if_needed(screen_1p);
+    }
+
     if (lv_indev_get_act() != NULL)
         lv_indev_wait_release(lv_indev_get_act());
 }
