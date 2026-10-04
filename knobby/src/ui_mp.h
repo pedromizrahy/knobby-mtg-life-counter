@@ -12,6 +12,7 @@ void rebuild_multiplayer_layout(int track);
 
 void refresh_multiplayer_ui(void);
 void refresh_multiplayer_life_preview(void);
+void refresh_multiplayer_selection_animation(void);
 void refresh_multiplayer_turn_ui(void);
 
 int mp_player_seat_rotation(int player);
