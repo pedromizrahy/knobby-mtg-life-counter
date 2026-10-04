@@ -372,15 +372,10 @@ lv_color_t get_effective_player_color(int player_i, int color_i, int vibrancy)
         return get_custom_color_vib(player_color_index[player_i], vibrancy);
     }
 
-    /* No override: use global mode */
-    if (nvs_get_color_mode() == COLOR_MODE_LIFE) {
-        int life = player_life[player_i];
-        int max_life = nvs_get_life_total();
-        int tier = get_life_tier(life, max_life);
-        return get_life_color_vib(tier, vibrancy);
-    }
-
-    /* COLOR_MODE_PLAYER: use position color */
+    /* Global Player and Art modes both keep the player's assigned
+       color as the panel/tint color. Art mode changes only the background
+       rendering; if no commander art exists it naturally falls back to the
+       normal player color. */
     return get_player_color_vib(color_i, vibrancy);
 }
 
