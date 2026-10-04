@@ -10,6 +10,7 @@ extern void refresh_player_ui(void);
 extern void refresh_life_preview_ui(void);
 extern void refresh_multiplayer_selection_animation(void);
 extern void refresh_multiplayer_selection_step(int previous_player, int current_player);
+extern void refresh_multiplayer_selection_finish(void);
 extern void refresh_select_ui(void);
 extern void refresh_damage_ui(void);
 extern void refresh_all_damage_ui(void);
@@ -970,6 +971,7 @@ static void player_select_anim_cb(lv_timer_t *timer)
     player_select_anim_steps--;
     if (player_select_anim_steps <= 0) {
         lv_timer_pause(player_select_anim_timer);
+        refresh_multiplayer_selection_finish();
         select_kick_timer();
         if (nvs_get_turn_timer_enabled()) {
             turn_timer_start_for_player(roulette_idx);
@@ -987,12 +989,12 @@ static void player_select_anim_cb(lv_timer_t *timer)
          * animation, while the visual motion starts fast and eases out near
          * the target instead of slowing from the very first hop.
          */
-        static const uint16_t brake_ms[6] = {28, 42, 65, 95, 145, 220};
+        static const uint16_t brake_ms[4] = {45, 75, 125, 220};
 
-        if (player_select_anim_steps <= 6) {
-            player_select_anim_period = brake_ms[6 - player_select_anim_steps];
+        if (player_select_anim_steps <= 4) {
+            player_select_anim_period = brake_ms[4 - player_select_anim_steps];
         } else {
-            player_select_anim_period = 18;
+            player_select_anim_period = 20;
         }
         lv_timer_set_period(player_select_anim_timer, player_select_anim_period);
     }
@@ -1004,7 +1006,7 @@ void start_player_selection_animation(void)
     int start_player;
     int winner;
     int offset;
-    int full_cycles = 3;
+    int full_cycles = 5;
 
     if (track <= 1) return;
     if (!nvs_get_random_first()) return;
@@ -1030,7 +1032,7 @@ void start_player_selection_animation(void)
     if (offset == 0) offset = track;
 
     player_select_anim_steps = (full_cycles * track) + offset;
-    player_select_anim_period = 18;
+    player_select_anim_period = 20;
 
     roulette_idx = start_player;
     last_roulette_winner = winner;
@@ -1048,6 +1050,7 @@ void stop_player_selection_animation(void)
     int stopped_player = roulette_idx;
 
     player_select_anim_steps = 0;
+    refresh_multiplayer_selection_finish();
     if (player_select_anim_timer != NULL) {
         lv_timer_del(player_select_anim_timer);
         player_select_anim_timer = NULL;
