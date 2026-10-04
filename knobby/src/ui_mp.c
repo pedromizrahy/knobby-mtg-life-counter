@@ -852,7 +852,7 @@ void refresh_multiplayer_turn_ui(void)
 
     snprintf(time_buf, sizeof(time_buf), "%lu:%02lu",
              (unsigned long)minutes, (unsigned long)seconds);
-    lv_label_set_text(mp_turn_label, time_buf);
+    mp_label_set_text_if_changed(mp_turn_label, time_buf);
 
     if (nvs_get_turn_show_name()) {
         snprintf(round_buf, sizeof(round_buf), "%s | R%d | T%d",
@@ -861,7 +861,7 @@ void refresh_multiplayer_turn_ui(void)
         snprintf(round_buf, sizeof(round_buf), "R%d | T%d",
                  round_number, turn_in_round);
     }
-    lv_label_set_text(mp_turn_round_label, round_buf);
+    mp_label_set_text_if_changed(mp_turn_round_label, round_buf);
 
     apply_object_rotation(mp_turn_badge, timer_angle, 0, 0);
     if (mp_reminder_overlay_label != NULL) {
