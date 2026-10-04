@@ -911,7 +911,10 @@ const playgroup_deck_t *playgroup_cached_deck(int index)
     return &cached_decks[index];
 }
 
-static bool playgroup_download_image_network(const char *scryfall_id, uint8_t **out_data, size_t *out_size)
+static bool playgroup_download_image_url(const char *url_cstr,
+                                         const char *log_label,
+                                         uint8_t **out_data,
+                                         size_t *out_size)
 {
     NetworkClientSecure tls;
     HTTPClient http;
@@ -922,9 +925,8 @@ static bool playgroup_download_image_network(const char *scryfall_id, uint8_t **
     int stream_result;
     uint32_t request_started;
     uint32_t download_started;
-    String url;
 
-    if (scryfall_id == NULL || scryfall_id[0] == '\0' ||
+    if (url_cstr == NULL || url_cstr[0] == '\0' ||
         out_data == NULL || out_size == NULL)
         return false;
 
@@ -934,26 +936,26 @@ static bool playgroup_download_image_network(const char *scryfall_id, uint8_t **
     if (!wifi_connect_saved())
         return false;
 
-    url = "https://api.scryfall.com/cards/";
-    url += scryfall_id;
-    url += "?format=image&version=art_crop";
-
     tls.useBuiltinCACertBundle();
     tls.setHandshakeTimeout(12);
+
     http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
     http.setTimeout(PG_HTTP_TIMEOUT_MS);
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setReuse(true);
 
-    if (!http.begin(tls, url)) {
+    if (!http.begin(tls, url_cstr)) {
         Serial.println("[Playgroup] Commander art HTTPS init failed.");
         return false;
     }
 
     http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
     http.addHeader("Accept", "image/jpeg,image/*;q=0.9,*/*;q=0.8");
+    http.addHeader("Connection", "keep-alive");
 
-    Serial.print("[Playgroup] Commander art via Scryfall API: ");
-    Serial.println(scryfall_id);
+    Serial.print("[Playgroup] Commander art direct source: ");
+    Serial.println(log_label != NULL ? log_label : url_cstr);
+
     request_started = millis();
     status = http.GET();
 
@@ -1033,6 +1035,78 @@ static bool playgroup_download_image_network(const char *scryfall_id, uint8_t **
     *out_data = data;
     *out_size = received;
     return true;
+}
+
+static bool playgroup_download_image_network(const char *scryfall_id,
+                                             uint8_t **out_data,
+                                             size_t *out_size)
+{
+    String url;
+
+    if (scryfall_id == NULL || scryfall_id[0] == '\0')
+        return false;
+
+    url = "https://api.scryfall.com/cards/";
+    url += scryfall_id;
+    url += "?format=image&version=art_crop";
+
+    Serial.print("[Playgroup] Commander art via Scryfall API fallback: ");
+    Serial.println(scryfall_id);
+
+    return playgroup_download_image_url(url.c_str(), scryfall_id,
+                                        out_data, out_size);
+}
+
+bool playgroup_download_deck_image(const char *art_crop_url,
+                                   const char *scryfall_id,
+                                   uint8_t **out_data,
+                                   size_t *out_size)
+{
+    bool ok = false;
+
+    if (out_data == NULL || out_size == NULL)
+        return false;
+
+    *out_data = NULL;
+    *out_size = 0;
+
+    if (scryfall_id != NULL && scryfall_id[0] != '\0' &&
+        art_cache_copy(scryfall_id, out_data, out_size)) {
+        Serial.print("[Playgroup] Commander art cache hit: ");
+        Serial.println(scryfall_id);
+        return true;
+    }
+
+    art_cache_init();
+    if (art_http_mutex == NULL)
+        return false;
+
+    xSemaphoreTake(art_http_mutex, portMAX_DELAY);
+
+    if (scryfall_id != NULL && scryfall_id[0] != '\0' &&
+        art_cache_copy(scryfall_id, out_data, out_size)) {
+        xSemaphoreGive(art_http_mutex);
+        return true;
+    }
+
+    if (art_crop_url != NULL && art_crop_url[0] != '\0') {
+        Serial.println("[Playgroup] Trying direct Playgroup art_crop_url...");
+        ok = playgroup_download_image_url(art_crop_url, "Playgroup art_crop_url",
+                                          out_data, out_size);
+    }
+
+    if (!ok && scryfall_id != NULL && scryfall_id[0] != '\0') {
+        Serial.println("[Playgroup] Direct art URL failed; using Scryfall API fallback.");
+        ok = playgroup_download_image_network(scryfall_id, out_data, out_size);
+    }
+
+    if (ok && scryfall_id != NULL && scryfall_id[0] != '\0' &&
+        *out_data != NULL && *out_size > 0) {
+        art_cache_store(scryfall_id, *out_data, *out_size);
+    }
+
+    xSemaphoreGive(art_http_mutex);
+    return ok;
 }
 
 bool playgroup_cached_image_copy(const char *scryfall_id,
