@@ -356,7 +356,13 @@ static void handle_swipe_navigation(knob_swipe_direction_t direction, lv_obj_t *
 static void handle_back_navigation(lv_obj_t *screen)
 {
     if (screen == screen_quad_menu && previous_screen != NULL) {
-        refresh_multiplayer_ui();
+        /* Refresh only the gameplay view we are actually returning to.
+           The old path repainted the multiplayer pizza even after opening
+           the menu from the 1P screen. */
+        if (previous_screen == screen_multiplayer)
+            refresh_multiplayer_ui();
+        else if (previous_screen == screen_1p)
+            refresh_main_ui();
         lv_scr_load(previous_screen);
     } else if (screen == screen_tools_menu) {
         lv_scr_load(screen_quad_menu);
