@@ -1005,9 +1005,9 @@ static void player_select_anim_cb(lv_timer_t *timer)
         if (nvs_get_turn_timer_enabled()) {
             turn_timer_start_for_player(roulette_idx);
         }
-        /* One full refresh after the winner is known restores the normal
-           turn/selection styling and updates all dependent HUD elements. */
-        refresh_player_ui();
+        /* The lightweight roulette never mutates pizza geometry/content.
+           finish() restores text opacity, and turn_timer_start_for_player()
+           owns turn emphasis when enabled, so no full pizza redraw is needed. */
     } else {
         /*
          * "Burst + brake" roulette:
