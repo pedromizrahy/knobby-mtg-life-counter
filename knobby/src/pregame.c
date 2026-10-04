@@ -641,7 +641,9 @@ static bool preload_current_player_deck_art(void)
             lv_refr_now(NULL);
         }
 
-        if (!playgroup_download_image(deck->scryfall_id, &data, &data_size)) {
+        if (!playgroup_download_deck_image(deck->art_crop_url,
+                                           deck->scryfall_id,
+                                           &data, &data_size)) {
             printf("[Playgroup] Commander preload download failed for deck %d.\n", i + 1);
             continue;
         }
