@@ -1707,6 +1707,7 @@ void build_pregame_screens(void)
         lv_obj_t *hint;
         lv_obj_t *minus;
         lv_obj_t *plus;
+        lv_obj_t *select;
 
         lv_label_set_text(title, "PLAYERS");
         lv_obj_set_style_text_color(title, lv_color_white(), 0);
