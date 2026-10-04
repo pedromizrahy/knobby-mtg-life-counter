@@ -196,6 +196,7 @@ static void event_counter_experience(lv_event_t *e) {
 static void event_all_damage_apply(lv_event_t *e) {
   int i;
   int track = nvs_get_players_to_track();
+  uint8_t target_mask = 0;
   bool include_myself = false;
 
   (void)e;
@@ -205,21 +206,23 @@ static void event_all_damage_apply(lv_event_t *e) {
     include_myself = lv_obj_has_state(cb_include_myself, LV_STATE_CHECKED);
   }
 
-  /* Opponents receive sourced normal damage so history records who dealt it.
-     The optional self hit remains a direct life change because self-target
-     combat is intentionally not part of the drag/damage resolver UX. */
-  damage_log_begin_action();
+  /*
+   * Build one multi-target attack instead of invoking the full resolver once
+   * per opponent. This keeps one logical action/event batch and one UI pass.
+   */
   for (i = 0; i < track && i < MAX_DISPLAY_PLAYERS; i++) {
-    if (i == menu_player) {
-      if (include_myself) apply_life_delta(i, -all_damage_value);
-      continue;
-    }
-    if (player_eliminated[i]) continue;
-    apply_sourced_damage(menu_player, i, all_damage_value, DAMAGE_TYPE_NORMAL);
+    if (i == menu_player || player_eliminated[i]) continue;
+    target_mask |= (uint8_t)(1U << i);
   }
+
+  damage_log_begin_action();
+  if (target_mask != 0)
+    apply_sourced_attack(menu_player, target_mask, all_damage_value, 0);
+  if (include_myself && !player_eliminated[menu_player])
+    apply_life_delta(menu_player, -all_damage_value);
   damage_log_end_action();
 
-  refresh_player_ui();
+  /* back_to_main() performs the single final gameplay refresh. */
   back_to_main();
 }
 
@@ -232,7 +235,6 @@ static void event_counter_apply(lv_event_t *e) {
   (void)e;
   apply_counter_edit();
   refresh_counter_edit_ui();
-  refresh_player_ui();
   back_to_main();
 }
 
@@ -253,7 +255,6 @@ static void event_color_default(lv_event_t *e) {
     return;
   player_has_override[menu_player] = false;
   player_life_color[menu_player] = false;
-  refresh_player_ui();
   back_to_main();
 }
 
@@ -263,7 +264,6 @@ static void event_color_life(lv_event_t *e) {
     return;
   player_has_override[menu_player] = true;
   player_life_color[menu_player] = true;
-  refresh_player_ui();
   back_to_main();
 }
 
@@ -310,7 +310,6 @@ void commit_player_color(void) {
   player_has_override[menu_player] = true;
   player_color_index[menu_player] = color_picker_index;
   player_life_color[menu_player] = false;
-  refresh_player_ui();
 }
 
 static void event_color_apply(lv_event_t *e) {
