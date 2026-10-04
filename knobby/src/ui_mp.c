@@ -714,7 +714,9 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
             lv_label_set_text(life_lbl, buf);
             {
                 lv_color_t preview_c;
-                if (nvs_get_color_mode() == COLOR_MODE_PLAYER && !player_has_override[i]) {
+                if ((nvs_get_color_mode() == COLOR_MODE_PLAYER ||
+                     nvs_get_color_mode() == COLOR_MODE_ART) &&
+                    !player_has_override[i]) {
                     preview_c = get_player_preview_color(color_i, pending_life_delta);
                     if (color_is_light(bg_color) && color_is_light(preview_c))
                         preview_c = lv_color_black();
@@ -1468,7 +1470,7 @@ void rebuild_multiplayer_layout(int track)
         lv_obj_add_event_cb(panel, event_multiplayer_open_menu, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)p);
         mp_state.panels[i] = panel;
 
-        if (nvs_get_pizza_art()) {
+        if (nvs_get_color_mode() == COLOR_MODE_ART) {
             const lv_img_dsc_t *commander_art = pregame_get_player_commander_art(p);
             if (commander_art != NULL &&
                 commander_art->header.w > 0 && commander_art->header.h > 0) {
