@@ -56,6 +56,33 @@ static SemaphoreHandle_t art_http_mutex = NULL;
 static volatile uint32_t art_prefetch_generation = 0;
 static uint32_t art_cache_stamp = 1;
 
+static NetworkClientSecure art_tls;
+static HTTPClient art_http;
+static bool art_http_configured = false;
+static volatile bool art_background_prefetch_active = false;
+
+static void art_http_reset(void)
+{
+    art_http.end();
+    art_tls.stop();
+    art_http_configured = false;
+}
+
+static void art_http_configure_once(void)
+{
+    if (art_http_configured)
+        return;
+
+    art_tls.useBuiltinCACertBundle();
+    art_tls.setHandshakeTimeout(12);
+    art_http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
+    art_http.setTimeout(PG_HTTP_TIMEOUT_MS);
+    art_http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    art_http.setReuse(true);
+    art_http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
+    art_http_configured = true;
+}
+
 static void art_cache_init(void)
 {
     if (art_cache_mutex == NULL)
@@ -170,9 +197,8 @@ public:
     size_t write(uint8_t value) override {
         if (pos_ >= capacity_) return 0;
         buffer_[pos_++] = value;
-        /* Background HTTPS can otherwise monopolize CPU0 long enough to
-           starve IDLE0 and trigger the task watchdog. */
-        vTaskDelay(1);
+        if (art_background_prefetch_active)
+            vTaskDelay(1);
         return 1;
     }
 
@@ -182,8 +208,8 @@ public:
         size_t count = size < room ? size : room;
         memcpy(buffer_ + pos_, data, count);
         pos_ += count;
-        /* Let the idle task and Wi-Fi/TLS housekeeping run between chunks. */
-        vTaskDelay(1);
+        if (art_background_prefetch_active)
+            vTaskDelay(1);
         return count;
     }
 
@@ -376,6 +402,7 @@ void playgroup_end_session(void)
 {
     ++art_prefetch_generation;
     art_cache_clear();
+    art_http_reset();
 
     if (WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_OFF) {
         Serial.println("[Playgroup] Ending Wi-Fi session.");
@@ -916,8 +943,6 @@ static bool playgroup_download_image_url(const char *url_cstr,
                                          uint8_t **out_data,
                                          size_t *out_size)
 {
-    NetworkClientSecure tls;
-    HTTPClient http;
     uint8_t *data;
     int status;
     int content_length;
@@ -936,28 +961,24 @@ static bool playgroup_download_image_url(const char *url_cstr,
     if (!wifi_connect_saved())
         return false;
 
-    tls.useBuiltinCACertBundle();
-    tls.setHandshakeTimeout(12);
+    art_http_configure_once();
 
-    http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
-    http.setTimeout(PG_HTTP_TIMEOUT_MS);
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.setReuse(true);
-
-    if (!http.begin(tls, url_cstr)) {
+    if (!art_http.begin(art_tls, url_cstr)) {
         Serial.println("[Playgroup] Commander art HTTPS init failed.");
+        art_http_reset();
         return false;
     }
 
-    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
-    http.addHeader("Accept", "image/jpeg,image/*;q=0.9,*/*;q=0.8");
-    http.addHeader("Connection", "keep-alive");
+    art_http.addHeader("Accept", "image/jpeg,image/*;q=0.9,*/*;q=0.8");
+    art_http.addHeader("Connection", "keep-alive");
 
     Serial.print("[Playgroup] Commander art direct source: ");
     Serial.println(log_label != NULL ? log_label : url_cstr);
+    Serial.print("[Playgroup] Art TLS socket before GET: ");
+    Serial.println(art_tls.connected() ? "reusable" : "new handshake");
 
     request_started = millis();
-    status = http.GET();
+    status = art_http.GET();
 
     Serial.print("[Playgroup] Commander art -> HTTP ");
     Serial.print(status);
@@ -966,20 +987,20 @@ static bool playgroup_download_image_url(const char *url_cstr,
     Serial.println(" ms");
 
     if (status != HTTP_CODE_OK) {
-        String error_body = http.getString();
+        String error_body = art_http.getString();
         if (error_body.length() > 0) {
             Serial.print("[Playgroup] Commander art error body: ");
             Serial.println(error_body);
         }
-        http.end();
+        art_http.end();
         return false;
     }
 
-    content_length = http.getSize();
+    content_length = art_http.getSize();
     if (content_length <= 0 || content_length > (512 * 1024)) {
         Serial.print("[Playgroup] Commander art invalid size: ");
         Serial.println(content_length);
-        http.end();
+        art_http.end();
         return false;
     }
 
@@ -987,7 +1008,7 @@ static bool playgroup_download_image_url(const char *url_cstr,
                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (data == NULL) {
         Serial.println("[Playgroup] Commander art PSRAM allocation failed.");
-        http.end();
+        art_http.end();
         return false;
     }
 
@@ -999,7 +1020,7 @@ static bool playgroup_download_image_url(const char *url_cstr,
         PsramBufferStream sink(data, (size_t)content_length);
 
         download_started = millis();
-        stream_result = http.writeToStream(&sink);
+        stream_result = art_http.writeToStream(&sink);
         received = sink.size();
 
         Serial.print("[Playgroup] Commander art stream result ");
@@ -1021,7 +1042,7 @@ static bool playgroup_download_image_url(const char *url_cstr,
         Serial.println();
     }
 
-    http.end();
+    art_http.end();
 
     if (stream_result < 0 || received != (size_t)content_length) {
         Serial.print("[Playgroup] Commander art body read failed: ");
@@ -1191,8 +1212,10 @@ static void playgroup_art_prefetch_task(void *param)
         Serial.print(": ");
         Serial.println(job->ids[i]);
 
+        art_background_prefetch_active = true;
         if (playgroup_download_image(job->ids[i], &data, &size))
             playgroup_free_image(data);
+        art_background_prefetch_active = false;
 
         /* Prefetch is opportunistic; never compete with UI/system tasks. */
         vTaskDelay(pdMS_TO_TICKS(25));
