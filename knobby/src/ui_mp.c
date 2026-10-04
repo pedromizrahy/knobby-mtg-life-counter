@@ -912,6 +912,71 @@ void refresh_multiplayer_turn_ui(void)
     }
 }
 
+void refresh_multiplayer_life_preview(void)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+    int i;
+
+    if (layout == NULL)
+        return;
+
+    for (i = 0; i < layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &layout->panels[i];
+        int player = spec->player_index;
+        lv_obj_t *life_lbl = mp_state.life_labels[i];
+        lv_obj_t *name_lbl = mp_state.name_labels[i];
+        lv_color_t text_color;
+        char buf[16];
+
+        if (!is_player_selected(player))
+            continue;
+
+        if (nvs_get_color_mode() == COLOR_MODE_ART) {
+            text_color = lv_color_white();
+        } else {
+            lv_color_t bg_color =
+                get_effective_player_color(player, spec->color_index, LIFE_VIB_VIV);
+            text_color = color_is_light(bg_color) ? lv_color_black() : lv_color_white();
+        }
+
+        if (life_lbl != NULL) {
+            if (life_preview_active) {
+                lv_color_t preview_c = text_color;
+
+                snprintf(buf, sizeof(buf), "%+d", pending_life_delta);
+
+                if (nvs_get_color_mode() == COLOR_MODE_PLAYER &&
+                    !player_has_override[player]) {
+                    lv_color_t bg_color =
+                        get_effective_player_color(player, spec->color_index, LIFE_VIB_VIV);
+                    preview_c =
+                        get_player_preview_color(spec->color_index, pending_life_delta);
+                    if (color_is_light(bg_color) == color_is_light(preview_c))
+                        preview_c = text_color;
+                }
+
+                lv_label_set_text(life_lbl, buf);
+                lv_obj_set_style_text_color(life_lbl, preview_c, 0);
+            } else {
+                snprintf(buf, sizeof(buf), "%d", player_life[player]);
+                lv_label_set_text(life_lbl, buf);
+                lv_obj_set_style_text_color(life_lbl, text_color, 0);
+            }
+        }
+
+        if (name_lbl != NULL) {
+            if (life_preview_active) {
+                snprintf(buf, sizeof(buf), "= %d",
+                         player_life[player] + pending_life_delta);
+                lv_label_set_text(name_lbl, buf);
+            } else {
+                lv_label_set_text(name_lbl, player_names[player]);
+            }
+            lv_obj_set_style_text_color(name_lbl, text_color, 0);
+        }
+    }
+}
+
 /* ---------- unified refresh ---------- */
 void refresh_multiplayer_ui(void)
 {
