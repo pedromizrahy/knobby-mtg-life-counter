@@ -17,7 +17,8 @@ extern "C" void knob_print_reset_diagnostics(void);
 #define PG_NVS_NAMESPACE "playgroup"
 #define PG_API_HOST "playgroup.gg"
 #define PG_API_BASE "https://" PG_API_HOST "/api/public/v1"
-#define PG_WIFI_ATTEMPT_MS 5000UL
+#define PG_WIFI_FIRST_ATTEMPT_MS 2500UL
+#define PG_WIFI_RETRY_ATTEMPT_MS 4500UL
 #define PG_WIFI_RETRIES 3
 #define PG_HTTP_TIMEOUT_MS 10000U
 #define PG_TIME_TIMEOUT_MS 10000UL
@@ -597,6 +598,9 @@ static bool wifi_connect_saved(void)
 
     for (int attempt = 1; attempt <= PG_WIFI_RETRIES; attempt++) {
         uint32_t started = millis();
+        uint32_t attempt_timeout =
+            (attempt == 1) ? PG_WIFI_FIRST_ATTEMPT_MS
+                           : PG_WIFI_RETRY_ATTEMPT_MS;
 
         Serial.print("[Playgroup] Connecting to Wi-Fi (");
         Serial.print(attempt);
@@ -606,10 +610,14 @@ static bool wifi_connect_saved(void)
 
         WiFi.begin(ssid, password);
 
+        uint32_t last_dot = started;
         while (WiFi.status() != WL_CONNECTED &&
-               (millis() - started) < PG_WIFI_ATTEMPT_MS) {
-            delay(250);
-            Serial.print(".");
+               (millis() - started) < attempt_timeout) {
+            delay(100);
+            if ((millis() - last_dot) >= 500) {
+                Serial.print(".");
+                last_dot = millis();
+            }
         }
         Serial.println();
 
