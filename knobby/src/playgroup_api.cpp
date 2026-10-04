@@ -60,6 +60,31 @@ static uint32_t art_cache_stamp = 1;
 static NetworkClientSecure art_tls;
 static HTTPClient art_http;
 static bool art_http_configured = false;
+
+static NetworkClientSecure api_tls;
+static HTTPClient api_http;
+static bool api_http_configured = false;
+
+static void api_http_reset(void)
+{
+    api_http.end();
+    api_tls.stop();
+    api_http_configured = false;
+}
+
+static void api_http_configure_once(void)
+{
+    if (api_http_configured)
+        return;
+
+    api_tls.useBuiltinCACertBundle();
+    api_tls.setHandshakeTimeout(12);
+    api_http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
+    api_http.setTimeout(PG_HTTP_TIMEOUT_MS);
+    api_http.setReuse(true);
+    api_http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
+    api_http_configured = true;
+}
 static volatile bool art_background_prefetch_active = false;
 #define PG_ART_FILE_MAGIC 0x50474131UL
 #define PG_ART_FILE_VERSION 1U
@@ -587,6 +612,7 @@ void playgroup_end_session(void)
     ++art_prefetch_generation;
     art_cache_clear();
     art_http_reset();
+    api_http_reset();
 
     if (WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_OFF) {
         Serial.println("[Playgroup] Ending Wi-Fi session.");
@@ -649,8 +675,6 @@ static void print_heap_diagnostics(void)
 static bool playgroup_https_get(const String &path, String &response, int &status)
 {
     char api_key[PG_API_KEY_MAX];
-    NetworkClientSecure tls;
-    HTTPClient http;
     String auth;
     String url;
     uint32_t request_started;
@@ -663,32 +687,38 @@ static bool playgroup_https_get(const String &path, String &response, int &statu
         return false;
     }
 
-    tls.useBuiltinCACertBundle();
-    tls.setHandshakeTimeout(12);
+    if (!wifi_connect_saved())
+        return false;
+
+    api_http_configure_once();
 
     url.reserve(strlen(PG_API_BASE) + path.length() + 1);
     url = PG_API_BASE;
     url += path;
 
-    http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
-    http.setTimeout(PG_HTTP_TIMEOUT_MS);
-    if (!http.begin(tls, url)) {
+    if (!api_http.begin(api_tls, url)) {
         Serial.println("[Playgroup] Could not initialize HTTPS.");
+        api_http_reset();
         return false;
     }
 
     auth.reserve(strlen(api_key) + 8);
     auth = "Bearer ";
     auth += api_key;
-    http.addHeader("Authorization", auth);
-    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
+    api_http.addHeader("Authorization", auth);
+    api_http.addHeader("Connection", "keep-alive");
+
+    Serial.print("[Playgroup] API TLS socket before GET ");
+    Serial.print(path);
+    Serial.print(": ");
+    Serial.println(api_tls.connected() ? "reusable" : "new handshake");
 
     request_started = millis();
-    status = http.GET();
+    status = api_http.GET();
     auth = "";
 
     if (status > 0)
-        response = http.getString();
+        response = api_http.getString();
 
     Serial.print("[Playgroup] GET ");
     Serial.print(path);
@@ -700,8 +730,14 @@ static bool playgroup_https_get(const String &path, String &response, int &statu
     Serial.print((unsigned)response.length());
     Serial.println(" bytes");
 
-    http.end();
-    return status > 0;
+    api_http.end();
+
+    if (status <= 0) {
+        api_http_reset();
+        return false;
+    }
+
+    return true;
 }
 
 static bool json_extract_number_token(const String &json, const char *key,
