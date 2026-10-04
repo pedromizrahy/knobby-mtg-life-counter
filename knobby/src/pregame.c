@@ -246,7 +246,6 @@ static void refresh_playgroup_picker(void);
 static void refresh_member_picker(void);
 static void refresh_deck_picker(bool schedule_art);
 static void schedule_deck_art(void);
-static bool preload_current_player_deck_art(void); /* retained for diagnostics; normal picker is on-demand */
 static void split_member_display_name(const char *full,
                                       char *first, size_t first_size,
                                       char *second_initial)
@@ -765,62 +764,6 @@ static void event_member_adjust(lv_event_t *e)
     pregame_change_member(delta);
 }
 
-static bool preload_current_player_deck_art(void)
-{
-    int count = playgroup_cached_deck_count();
-
-    for (int i = 0; i < count; i++) {
-        const playgroup_deck_t *deck = playgroup_cached_deck(i);
-        uint8_t *data = NULL;
-        uint8_t *pixels = NULL;
-        size_t data_size = 0;
-        uint16_t decoded_w = 0;
-        uint16_t decoded_h = 0;
-        char status[64];
-
-        if (deck == NULL || deck->scryfall_id[0] == '\0')
-            continue;
-
-        if (find_decoded_art(deck->scryfall_id) != NULL)
-            continue;
-
-        if (member_status_label != NULL) {
-            snprintf(status, sizeof(status), "Loading commanders... %d / %d",
-                     i + 1, count);
-            lv_label_set_text(member_status_label, status);
-            lv_refr_now(NULL);
-        }
-
-        if (!playgroup_download_deck_image(deck->art_crop_url,
-                                           deck->scryfall_id,
-                                           &data, &data_size)) {
-            printf("[Playgroup] Commander preload download failed for deck %d.\n", i + 1);
-            continue;
-        }
-
-        if (!commander_image_decode_rgb565(data, data_size,
-                                           &pixels, &decoded_w, &decoded_h)) {
-            playgroup_free_image(data);
-            printf("[Playgroup] Commander preload decode failed for deck %d.\n", i + 1);
-            continue;
-        }
-
-        playgroup_free_image(data);
-
-        if (store_decoded_art(deck->scryfall_id, pixels,
-                              decoded_w, decoded_h) == NULL) {
-            commander_image_free_pixels(pixels);
-            printf("[Playgroup] Commander preload cache failed for deck %d.\n", i + 1);
-            continue;
-        }
-
-        printf("[Playgroup] Commander preload ready %d/%d: %s\n",
-               i + 1, count, deck->scryfall_id);
-    }
-
-    return true;
-}
-
 static void event_member_select(lv_event_t *e)
 {
     const playgroup_member_t *member;
@@ -875,6 +818,9 @@ static void event_member_select(lv_event_t *e)
     /* Open the picker immediately. The current commander image is fetched
        asynchronously; browsing never waits for the entire player's deck
        list to preload. */
+    if (member_status_label != NULL)
+        lv_label_set_text(member_status_label, "");
+
     refresh_deck_picker(false);
     lv_scr_load(screen_pregame_deck);
     schedule_deck_art();
@@ -922,9 +868,8 @@ static void deck_art_timer_cb(lv_timer_t *timer)
     }
 
     if (!playgroup_cached_image_copy(deck->scryfall_id, &data, &data_size)) {
-        if (deck_commander_label != NULL)
-            lv_label_set_text(deck_commander_label, "Loading commander art...");
-
+        /* The picker stays usable while the image arrives. Keep the deck and
+           commander text visible; do not replace it with a loading state. */
         playgroup_prefetch_deck_image_async(deck->art_crop_url,
                                             deck->scryfall_id);
         lv_timer_set_period(timer, 180);
