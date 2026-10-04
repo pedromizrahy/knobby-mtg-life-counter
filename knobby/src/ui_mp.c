@@ -146,6 +146,30 @@ static struct {
 static lv_timer_t *select_timeout_timer = NULL;
 
 /* ---------- small helpers ---------- */
+static void mp_label_set_text_if_changed(lv_obj_t *label, const char *text)
+{
+    const char *current;
+
+    if (label == NULL || text == NULL) return;
+    current = lv_label_get_text(label);
+    if (current == NULL || strcmp(current, text) != 0)
+        lv_label_set_text(label, text);
+}
+
+static void mp_set_text_color_if_changed(lv_obj_t *obj, lv_color_t color)
+{
+    if (obj == NULL) return;
+    if (lv_obj_get_style_text_color(obj, LV_PART_MAIN).full != color.full)
+        lv_obj_set_style_text_color(obj, color, 0);
+}
+
+static void mp_set_bg_opa_if_changed(lv_obj_t *obj, lv_opa_t opa)
+{
+    if (obj == NULL) return;
+    if (lv_obj_get_style_bg_opa(obj, LV_PART_MAIN) != opa)
+        lv_obj_set_style_bg_opa(obj, opa, 0);
+}
+
 static const lv_font_t *get_counter_badge_font(const counter_definition_t *definition)
 {
     if (definition != NULL && definition->icon_text != NULL) {
@@ -713,7 +737,7 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
     if (life_lbl != NULL) {
         if (preview_here) {
             snprintf(buf, sizeof(buf), "%+d", pending_life_delta);
-            lv_label_set_text(life_lbl, buf);
+            mp_label_set_text_if_changed(life_lbl, buf);
             {
                 lv_color_t preview_c;
                 if (nvs_get_color_mode() == COLOR_MODE_ART) {
@@ -728,12 +752,12 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
                 } else {
                     preview_c = color_is_light(bg_color) ? lv_color_black() : lv_color_white();
                 }
-                lv_obj_set_style_text_color(life_lbl, preview_c, 0);
+                mp_set_text_color_if_changed(life_lbl, preview_c);
             }
         } else {
             snprintf(buf, sizeof(buf), "%d", player_life[i]);
-            lv_label_set_text(life_lbl, buf);
-            lv_obj_set_style_text_color(life_lbl, text_color, 0);
+            mp_label_set_text_if_changed(life_lbl, buf);
+            mp_set_text_color_if_changed(life_lbl, text_color);
         }
     }
 
@@ -742,11 +766,11 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
             char total_buf[16];
             int new_total = player_life[i] + pending_life_delta;
             snprintf(total_buf, sizeof(total_buf), "= %d", new_total);
-            lv_label_set_text(name_lbl, total_buf);
+            mp_label_set_text_if_changed(name_lbl, total_buf);
         } else {
-            lv_label_set_text(name_lbl, player_names[i]);
+            mp_label_set_text_if_changed(name_lbl, player_names[i]);
         }
-        lv_obj_set_style_text_color(name_lbl, text_color, 0);
+        mp_set_text_color_if_changed(name_lbl, text_color);
     }
 
     return text_color;
@@ -941,7 +965,7 @@ void refresh_multiplayer_turn_state(void)
                           : LV_OPA_60;
             }
 
-            lv_obj_set_style_bg_opa(mp_state.art_overlays[i], shade_opa, 0);
+            mp_set_bg_opa_if_changed(mp_state.art_overlays[i], shade_opa);
         }
     }
 
@@ -991,12 +1015,12 @@ void refresh_multiplayer_life_preview(void)
                         preview_c = text_color;
                 }
 
-                lv_label_set_text(life_lbl, buf);
-                lv_obj_set_style_text_color(life_lbl, preview_c, 0);
+                mp_label_set_text_if_changed(life_lbl, buf);
+                mp_set_text_color_if_changed(life_lbl, preview_c);
             } else {
                 snprintf(buf, sizeof(buf), "%d", player_life[player]);
-                lv_label_set_text(life_lbl, buf);
-                lv_obj_set_style_text_color(life_lbl, text_color, 0);
+                mp_label_set_text_if_changed(life_lbl, buf);
+                mp_set_text_color_if_changed(life_lbl, text_color);
             }
         }
 
@@ -1006,9 +1030,9 @@ void refresh_multiplayer_life_preview(void)
                          player_life[player] + pending_life_delta);
                 lv_label_set_text(name_lbl, buf);
             } else {
-                lv_label_set_text(name_lbl, player_names[player]);
+                mp_label_set_text_if_changed(name_lbl, player_names[player]);
             }
-            lv_obj_set_style_text_color(name_lbl, text_color, 0);
+            mp_set_text_color_if_changed(name_lbl, text_color);
         }
     }
 }
@@ -1138,7 +1162,7 @@ void refresh_multiplayer_ui(void)
                           : LV_OPA_60;
             }
 
-            lv_obj_set_style_bg_opa(mp_state.art_overlays[i], shade_opa, 0);
+            mp_set_bg_opa_if_changed(mp_state.art_overlays[i], shade_opa);
         }
 
         if (layout->switch_font_by_orientation) {
