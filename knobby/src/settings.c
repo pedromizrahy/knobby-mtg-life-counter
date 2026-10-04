@@ -847,7 +847,7 @@ static void event_start_new_game(lv_event_t *e)
     net_sync_leave_game();
     stop_player_selection_animation();
     knob_life_reset();
-    turn_timer_reset();
+    turn_timer_reset_silent();
     mana_clear_all();
     open_pregame_home();
     lv_indev_wait_release(lv_indev_get_act());
