@@ -9,6 +9,7 @@
 extern void refresh_player_ui(void);
 extern void refresh_life_preview_ui(void);
 extern void refresh_multiplayer_selection_animation(void);
+extern void refresh_multiplayer_selection_step(int previous_player, int current_player);
 extern void refresh_select_ui(void);
 extern void refresh_damage_ui(void);
 extern void refresh_all_damage_ui(void);
@@ -943,7 +944,6 @@ void knob_life_init(void)
 // ---------- player selection animation ----------
 static lv_timer_t *player_select_anim_timer = NULL;
 static int player_select_anim_steps = 0;
-static int player_select_anim_total_steps = 0;
 static int player_select_anim_period = 0;
 static int roulette_idx = 0;
 static int last_roulette_winner = -1;
@@ -959,11 +959,13 @@ static void player_select_anim_cb(lv_timer_t *timer)
     }
 
     // Move to next player (clockwise logic mapping to bottom/left/top/right)
-    roulette_idx = (roulette_idx + 1) % track;
-    selection_set_single(roulette_idx);
-    /* Roulette owns selection while spinning. Do not restart the
-       deselect timer or redraw the entire pizza on every step. */
-    refresh_multiplayer_selection_animation();
+    {
+        int previous_idx = roulette_idx;
+        roulette_idx = (roulette_idx + 1) % track;
+        selection_set_single(roulette_idx);
+        /* Only the old and new seats changed visually. */
+        refresh_multiplayer_selection_step(previous_idx, roulette_idx);
+    }
 
     player_select_anim_steps--;
     if (player_select_anim_steps <= 0) {
@@ -1028,7 +1030,6 @@ void start_player_selection_animation(void)
     if (offset == 0) offset = track;
 
     player_select_anim_steps = (full_cycles * track) + offset;
-    player_select_anim_total_steps = player_select_anim_steps;
     player_select_anim_period = 18;
 
     roulette_idx = start_player;
@@ -1047,7 +1048,6 @@ void stop_player_selection_animation(void)
     int stopped_player = roulette_idx;
 
     player_select_anim_steps = 0;
-    player_select_anim_total_steps = 0;
     if (player_select_anim_timer != NULL) {
         lv_timer_del(player_select_anim_timer);
         player_select_anim_timer = NULL;
