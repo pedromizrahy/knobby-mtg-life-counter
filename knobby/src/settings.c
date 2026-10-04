@@ -238,7 +238,10 @@ static const char *cmd_marker_label(int mode)
 static void cmd_marker_set(int mode)
 {
     nvs_set_cmd_marker_mode(mode);
-    refresh_player_ui();
+    if (nvs_get_players_to_track() > 1)
+        refresh_multiplayer_commander_markers();
+    else
+        refresh_main_ui();
 }
 
 static void color_mode_set(int mode)
