@@ -90,6 +90,7 @@ bool playgroup_cached_image_copy(const char *scryfall_id,
    cache. Used after the user actually selects a deck, never during preload. */
 bool playgroup_persist_cached_image(const char *scryfall_id);
 
+bool playgroup_network_active(void);
 void playgroup_end_session(void);
 
 #ifdef __cplusplus
