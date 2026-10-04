@@ -512,15 +512,13 @@ void knob_gui(void)
     build_custom_life_screen();
     menu_facing_hook_screens();
 
+    /*
+     * Gameplay views are initialized here; secondary screens refresh on
+     * entry. Avoid eagerly repainting Rename, Select, Damage, All Damage,
+     * Counter Edit and Settings while the intro is the only visible screen.
+     */
     refresh_main_ui();
     refresh_multiplayer_ui();
-
-    refresh_rename_ui();
-    refresh_select_ui();
-    refresh_damage_ui();
-    refresh_all_damage_ui();
-    refresh_counter_edit_ui();
-    refresh_settings_ui();
 
     knob_timer_init();
     knob_life_init();
