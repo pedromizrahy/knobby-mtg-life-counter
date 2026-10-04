@@ -788,19 +788,29 @@ static void event_member_select(lv_event_t *e)
         return;
     }
 
+    /* Keep the deck browser deterministic: all commander art is ready
+       before the picker opens, so turning the dial never lands on a
+       "Loading commander art..." state. */
+    preload_current_player_deck_art();
+
     if (deck_title_label != NULL) {
         snprintf(title, sizeof(title), "P%d  %s",
                  member_picker_seat + 1, member->username);
         lv_label_set_text(deck_title_label, title);
     }
 
-    /* Do not block on every commander image for this player. Open the
-       picker immediately and load only the currently highlighted deck.
-       Previously a player with 5-6 uncached decks paid the full download
-       cost for all of them before seeing the picker. */
     refresh_deck_picker(false);
     lv_scr_load(screen_pregame_deck);
-    schedule_deck_art();
+
+    {
+        const playgroup_deck_t *deck = playgroup_cached_deck(deck_picker_index);
+        if (deck != NULL) {
+            deck_decoded_cache_entry_t *decoded =
+                find_decoded_art(deck->scryfall_id);
+            if (decoded != NULL)
+                show_decoded_art(decoded);
+        }
+    }
 }
 
 static void clear_deck_art(void)
@@ -846,12 +856,7 @@ static void deck_art_timer_cb(lv_timer_t *timer)
 
     if (!playgroup_cached_image_copy(deck->scryfall_id, &data, &data_size)) {
         if (deck_commander_label != NULL)
-            lv_label_set_text(deck_commander_label, "Loading commander art...");
-
-        playgroup_prefetch_deck_image_async(deck->art_crop_url,
-                                            deck->scryfall_id);
-        lv_timer_set_period(timer, 180);
-        lv_timer_resume(timer);
+            lv_label_set_text(deck_commander_label, "Commander art unavailable");
         return;
     }
 
