@@ -29,6 +29,7 @@ void knob_timer_init(void);
 void turn_timer_start_fresh(void);
 void turn_timer_start_for_player(int player);
 void turn_timer_reset(void);
+void turn_timer_reset_silent(void);
 uint32_t get_turn_elapsed_ms(void);
 uint32_t get_current_turn_elapsed_ms(void);
 void turn_advance(void);
