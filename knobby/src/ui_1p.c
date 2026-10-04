@@ -42,6 +42,20 @@ static lv_obj_t *label_damage_hint = NULL;
 static lv_obj_t *label_damage_delta = NULL;
 
 // ---------- refresh functions ----------
+static void ui1p_label_set_text_if_changed(lv_obj_t *label, const char *text)
+{
+    if (label == NULL || text == NULL) return;
+    if (strcmp(lv_label_get_text(label), text) != 0)
+        lv_label_set_text(label, text);
+}
+
+static void ui1p_set_text_color_if_changed(lv_obj_t *obj, lv_color_t color)
+{
+    if (obj == NULL) return;
+    if (lv_obj_get_style_text_color(obj, LV_PART_MAIN).full != color.full)
+        lv_obj_set_style_text_color(obj, color, 0);
+}
+
 static void refresh_ring(void)
 {
     int max_life = nvs_get_life_total();
@@ -76,7 +90,7 @@ void refresh_turn_ui(void)
     snprintf(time_buf, sizeof(time_buf), "%lu:%02lu",
              (unsigned long)minutes,
              (unsigned long)seconds);
-    lv_label_set_text(label_turn, time_buf);
+    ui1p_label_set_text_if_changed(label_turn, time_buf);
 
     if (active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS) {
         snprintf(meta_buf, sizeof(meta_buf), "%s | R%d | T%d",
@@ -85,7 +99,7 @@ void refresh_turn_ui(void)
         snprintf(meta_buf, sizeof(meta_buf), "P1 | R%d | T%d",
                  round_number, turn_in_round);
     }
-    if (label_turn_meta != NULL) lv_label_set_text(label_turn_meta, meta_buf);
+    ui1p_label_set_text_if_changed(label_turn_meta, meta_buf);
 
     if (turn_hold_arc != NULL) {
         lv_obj_set_style_arc_color(turn_hold_arc, active_color, LV_PART_INDICATOR);
@@ -161,7 +175,7 @@ void refresh_turn_ui(void)
             int reminder_minutes = nvs_get_turn_reminder_minutes();
 
             snprintf(alert_buf, sizeof(alert_buf), "%d MIN", reminder_minutes);
-            lv_label_set_text(reminder_overlay_label_1p, alert_buf);
+            ui1p_label_set_text_if_changed(reminder_overlay_label_1p, alert_buf);
             lv_obj_set_style_bg_opa(reminder_overlay_1p, LV_OPA_90, 0);
             lv_obj_clear_flag(reminder_overlay_1p, LV_OBJ_FLAG_HIDDEN);
             lv_obj_move_foreground(reminder_overlay_1p);
@@ -192,8 +206,8 @@ static void refresh_life_digits(void)
         snprintf(buf, sizeof(buf), "%d", display_value);
     }
 
-    lv_label_set_text(label_life_total, buf);
-    lv_obj_set_style_text_color(label_life_total, c, 0);
+    ui1p_label_set_text_if_changed(label_life_total, buf);
+    ui1p_set_text_color_if_changed(label_life_total, c);
 
     if (life_preview_active) {
         /* Give the life delta its own visual lane. The old preview total sat
@@ -206,7 +220,7 @@ static void refresh_life_digits(void)
     if (life_preview_active && label_life_preview_total != NULL) {
         int new_total = player_life[0] + pending_life_delta;
         snprintf(buf, sizeof(buf), "= %d", new_total);
-        lv_label_set_text(label_life_preview_total, buf);
+        ui1p_label_set_text_if_changed(label_life_preview_total, buf);
         lv_obj_align(label_life_preview_total, LV_ALIGN_CENTER, 0, 34);
         lv_obj_clear_flag(label_life_preview_total, LV_OBJ_FLAG_HIDDEN);
     } else if (label_life_preview_total != NULL) {
