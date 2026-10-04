@@ -926,7 +926,7 @@ void refresh_multiplayer_turn_ui(void)
             int reminder_minutes = nvs_get_turn_reminder_minutes();
 
             snprintf(alert_buf, sizeof(alert_buf), "%d MIN", reminder_minutes);
-            lv_label_set_text(mp_reminder_overlay_label, alert_buf);
+            mp_label_set_text_if_changed(mp_reminder_overlay_label, alert_buf);
             lv_obj_set_style_bg_opa(mp_reminder_overlay, LV_OPA_90, 0);
             lv_obj_clear_flag(mp_reminder_overlay, LV_OBJ_FLAG_HIDDEN);
             lv_obj_move_foreground(mp_reminder_overlay);
@@ -1147,7 +1147,7 @@ void refresh_multiplayer_life_preview(void)
             if (life_preview_active) {
                 snprintf(buf, sizeof(buf), "= %d",
                          player_life[player] + pending_life_delta);
-                lv_label_set_text(name_lbl, buf);
+                mp_label_set_text_if_changed(name_lbl, buf);
             } else {
                 mp_label_set_text_if_changed(name_lbl, player_names[player]);
             }
