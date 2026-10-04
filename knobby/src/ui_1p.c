@@ -269,6 +269,17 @@ void refresh_player_ui(void)
         refresh_multiplayer_ui();
 }
 
+void refresh_life_preview_ui(void)
+{
+    if (nvs_get_players_to_track() == 1) {
+        /* Life dialing only changes the central value/preview labels.
+           Avoid rebuilding the ring, timer and counters on every detent. */
+        refresh_life_digits();
+    } else {
+        refresh_multiplayer_life_preview();
+    }
+}
+
 /* grid constants for select screen */
 #define SEL_BOX_W      100
 #define SEL_BOX_H       56
