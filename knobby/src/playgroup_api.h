@@ -80,6 +80,10 @@ void playgroup_prefetch_deck_images(void);
 bool playgroup_cached_image_copy(const char *scryfall_id,
                                  uint8_t **out_data, size_t *out_size);
 
+/* Persist only an art image that is already present in the compressed RAM
+   cache. Used after the user actually selects a deck, never during preload. */
+bool playgroup_persist_cached_image(const char *scryfall_id);
+
 void playgroup_end_session(void);
 
 #ifdef __cplusplus
