@@ -582,11 +582,6 @@ static void event_playgroup_select(lv_event_t *e)
     if (pg == NULL) return;
 
     if (playgroup_meta_label != NULL) {
-        lv_label_set_text(playgroup_meta_label, "Loading members...");
-        lv_refr_now(NULL);
-    }
-
-    if (playgroup_meta_label != NULL) {
         lv_label_set_text(playgroup_meta_label, "Connected  |  Loading players...");
         lv_refr_now(NULL);
     }
