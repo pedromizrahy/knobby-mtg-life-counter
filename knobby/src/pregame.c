@@ -800,6 +800,11 @@ static bool prepare_current_player_deck_art(void)
             continue;
         }
 
+        /* Preparing commanders is an explicit cache-warming step. Persist
+           every successfully fetched JPEG, not just the final selected deck,
+           so future setup sessions don't pay the network cost again. */
+        playgroup_persist_cached_image(deck->scryfall_id);
+
         if (!commander_image_decode_rgb565(data, data_size,
                                            &pixels, &decoded_w, &decoded_h)) {
             playgroup_free_image(data);
