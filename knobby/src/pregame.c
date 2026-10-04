@@ -50,12 +50,124 @@ static lv_obj_t *deck_title_label = NULL;
 static lv_obj_t *deck_name_label = NULL;
 static lv_obj_t *deck_commander_label = NULL;
 static lv_obj_t *deck_position_label = NULL;
-static lv_obj_t *deck_image_clip = NULL;
 static lv_obj_t *deck_image = NULL;
+static lv_obj_t *deck_image_overlay = NULL;
 static lv_timer_t *deck_art_timer = NULL;
-static uint8_t *deck_art_data = NULL;
-static uint8_t *deck_art_pixels = NULL;
-static lv_img_dsc_t deck_art_dsc;
+
+#define DECK_DECODED_CACHE_SLOTS 8
+
+typedef struct {
+    char scryfall_id[PG_SCRYFALL_ID_LEN];
+    uint8_t *pixels;
+    uint16_t width;
+    uint16_t height;
+    uint32_t stamp;
+    lv_img_dsc_t dsc;
+} deck_decoded_cache_entry_t;
+
+static deck_decoded_cache_entry_t decoded_art_cache[DECK_DECODED_CACHE_SLOTS];
+static uint32_t decoded_art_stamp = 1;
+
+static void clear_decoded_art_cache(void)
+{
+    for (int i = 0; i < DECK_DECODED_CACHE_SLOTS; i++) {
+        if (decoded_art_cache[i].pixels != NULL) {
+            commander_image_free_pixels(decoded_art_cache[i].pixels);
+            decoded_art_cache[i].pixels = NULL;
+        }
+        decoded_art_cache[i].scryfall_id[0] = '\0';
+        decoded_art_cache[i].width = 0;
+        decoded_art_cache[i].height = 0;
+        decoded_art_cache[i].stamp = 0;
+        memset(&decoded_art_cache[i].dsc, 0, sizeof(decoded_art_cache[i].dsc));
+    }
+}
+
+static deck_decoded_cache_entry_t *find_decoded_art(const char *scryfall_id)
+{
+    if (scryfall_id == NULL || scryfall_id[0] == '\0')
+        return NULL;
+
+    for (int i = 0; i < DECK_DECODED_CACHE_SLOTS; i++) {
+        if (decoded_art_cache[i].pixels != NULL &&
+            strcmp(decoded_art_cache[i].scryfall_id, scryfall_id) == 0) {
+            decoded_art_cache[i].stamp = decoded_art_stamp++;
+            return &decoded_art_cache[i];
+        }
+    }
+    return NULL;
+}
+
+static deck_decoded_cache_entry_t *store_decoded_art(const char *scryfall_id,
+                                                      uint8_t *pixels,
+                                                      uint16_t width,
+                                                      uint16_t height)
+{
+    int slot = -1;
+    uint32_t oldest = UINT32_MAX;
+
+    if (scryfall_id == NULL || pixels == NULL || width == 0 || height == 0)
+        return NULL;
+
+    for (int i = 0; i < DECK_DECODED_CACHE_SLOTS; i++) {
+        if (decoded_art_cache[i].pixels == NULL) {
+            slot = i;
+            break;
+        }
+        if (decoded_art_cache[i].stamp < oldest) {
+            oldest = decoded_art_cache[i].stamp;
+            slot = i;
+        }
+    }
+
+    if (slot < 0)
+        return NULL;
+
+    if (decoded_art_cache[slot].pixels != NULL)
+        commander_image_free_pixels(decoded_art_cache[slot].pixels);
+
+    memset(&decoded_art_cache[slot], 0, sizeof(decoded_art_cache[slot]));
+    snprintf(decoded_art_cache[slot].scryfall_id,
+             sizeof(decoded_art_cache[slot].scryfall_id),
+             "%s", scryfall_id);
+    decoded_art_cache[slot].pixels = pixels;
+    decoded_art_cache[slot].width = width;
+    decoded_art_cache[slot].height = height;
+    decoded_art_cache[slot].stamp = decoded_art_stamp++;
+
+    decoded_art_cache[slot].dsc.header.always_zero = 0;
+    decoded_art_cache[slot].dsc.header.w = width;
+    decoded_art_cache[slot].dsc.header.h = height;
+    decoded_art_cache[slot].dsc.header.cf = LV_IMG_CF_TRUE_COLOR;
+    decoded_art_cache[slot].dsc.data_size = (uint32_t)width * (uint32_t)height * 2U;
+    decoded_art_cache[slot].dsc.data = pixels;
+
+    return &decoded_art_cache[slot];
+}
+
+static void show_decoded_art(deck_decoded_cache_entry_t *entry)
+{
+    uint32_t zoom_w;
+    uint32_t zoom_h;
+    uint16_t zoom;
+
+    if (entry == NULL || deck_image == NULL)
+        return;
+
+    zoom_w = (360U * 256U + entry->width - 1U) / entry->width;
+    zoom_h = (360U * 256U + entry->height - 1U) / entry->height;
+    zoom = (uint16_t)((zoom_w > zoom_h) ? zoom_w : zoom_h);
+    if (zoom < 256U) zoom = 256U;
+    if (zoom > 1024U) zoom = 1024U;
+
+    lv_img_set_src(deck_image, &entry->dsc);
+    lv_img_set_zoom(deck_image, zoom);
+    lv_obj_align(deck_image, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_clear_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
+
+    printf("[Playgroup] Commander art cache display %ux%u; cover zoom %u\n",
+           (unsigned)entry->width, (unsigned)entry->height, (unsigned)zoom);
+}
 
 static void refresh_roster(void);
 static void refresh_mulligans(void);
@@ -100,6 +212,7 @@ static void event_local_play(lv_event_t *e)
     int i;
     (void)e;
 
+    clear_decoded_art_cache();
     playgroup_end_session();
     playgroup_roster_active = false;
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
@@ -415,6 +528,7 @@ static void event_member_select(lv_event_t *e)
 
     deck_picker_seat = member_picker_seat;
     deck_picker_index = 0;
+    clear_decoded_art_cache();
 
     if (!playgroup_refresh_decks(member->user_id)) {
         if (member_status_label != NULL)
@@ -445,28 +559,20 @@ static void event_member_select(lv_event_t *e)
 
 static void clear_deck_art(void)
 {
-    if (deck_image_clip != NULL)
-        lv_obj_add_flag(deck_image_clip, LV_OBJ_FLAG_HIDDEN);
-
-    if (deck_art_data != NULL) {
-        playgroup_free_image(deck_art_data);
-        deck_art_data = NULL;
-    }
-
-    if (deck_art_pixels != NULL) {
-        commander_image_free_pixels(deck_art_pixels);
-        deck_art_pixels = NULL;
-    }
-
-    memset(&deck_art_dsc, 0, sizeof(deck_art_dsc));
+    if (deck_image != NULL)
+        lv_obj_add_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void deck_art_timer_cb(lv_timer_t *timer)
 {
     const playgroup_deck_t *deck;
+    deck_decoded_cache_entry_t *decoded;
     uint8_t *data = NULL;
+    uint8_t *pixels = NULL;
     size_t data_size = 0;
-    uint16_t zoom = 256;
+    uint16_t decoded_w = 0;
+    uint16_t decoded_h = 0;
+    uint32_t decode_started;
 
     lv_timer_pause(timer);
 
@@ -474,16 +580,26 @@ static void deck_art_timer_cb(lv_timer_t *timer)
         return;
 
     deck = playgroup_cached_deck(deck_picker_index);
-    if (deck == NULL || deck->art_crop_url[0] == '\0')
+    if (deck == NULL || deck->scryfall_id[0] == '\0')
         return;
 
-    if (deck_commander_label != NULL) {
-        lv_label_set_text(deck_commander_label, "Loading commander art...");
-        lv_refr_now(NULL);
+    /* Fast path: already decoded during this player's deck session. */
+    decoded = find_decoded_art(deck->scryfall_id);
+    if (decoded != NULL) {
+        show_decoded_art(decoded);
+        if (deck_commander_label != NULL) {
+            char buf[96];
+            if (deck->partner[0])
+                snprintf(buf, sizeof(buf), "%s + %s", deck->commander, deck->partner);
+            else
+                snprintf(buf, sizeof(buf), "%s", deck->commander);
+            lv_label_set_text(deck_commander_label, buf);
+        }
+        return;
     }
 
     if (!playgroup_cached_image_copy(deck->scryfall_id, &data, &data_size)) {
-        /* Prefetch owns network I/O. Never block LVGL waiting for HTTPS. */
+        /* Background prefetch owns HTTPS. Keep UI responsive and poll cache. */
         if (deck_commander_label != NULL)
             lv_label_set_text(deck_commander_label, "Loading commander art...");
         lv_timer_set_period(timer, 350);
@@ -491,49 +607,27 @@ static void deck_art_timer_cb(lv_timer_t *timer)
         return;
     }
 
-    clear_deck_art();
-    deck_art_data = data;
-
-    {
-        uint16_t decoded_w = 0;
-        uint16_t decoded_h = 0;
-        uint32_t decode_started = lv_tick_get();
-
-        if (!commander_image_decode_rgb565(deck_art_data, data_size,
-                                           &deck_art_pixels, &decoded_w, &decoded_h)) {
-            printf("[Playgroup] Commander art stb JPEG decode failed.\n");
-            return;
-        }
-
-        printf("[Playgroup] Commander art stb decode completed in %lu ms\n",
-               (unsigned long)(lv_tick_get() - decode_started));
-
-        memset(&deck_art_dsc, 0, sizeof(deck_art_dsc));
-        deck_art_dsc.header.always_zero = 0;
-        deck_art_dsc.header.w = decoded_w;
-        deck_art_dsc.header.h = decoded_h;
-        deck_art_dsc.header.cf = LV_IMG_CF_TRUE_COLOR;
-        deck_art_dsc.data_size = (uint32_t)decoded_w * (uint32_t)decoded_h * 2U;
-        deck_art_dsc.data = deck_art_pixels;
-
-        {
-            uint32_t zoom_w = (190U * 256U) / decoded_w;
-            uint32_t zoom_h = (130U * 256U) / decoded_h;
-            zoom = (uint16_t)((zoom_w < zoom_h) ? zoom_w : zoom_h);
-            if (zoom > 256U) zoom = 256U;
-            if (zoom < 32U) zoom = 32U;
-        }
-
-        lv_img_set_src(deck_image, &deck_art_dsc);
-        lv_img_set_zoom(deck_image, zoom);
-        lv_obj_center(deck_image);
-        if (deck_image_clip != NULL)
-            lv_obj_clear_flag(deck_image_clip, LV_OBJ_FLAG_HIDDEN);
-        lv_refr_now(NULL);
-
-        printf("[Playgroup] Commander art shown %ux%u; zoom %u\n",
-               (unsigned)decoded_w, (unsigned)decoded_h, (unsigned)zoom);
+    decode_started = lv_tick_get();
+    if (!commander_image_decode_rgb565(data, data_size,
+                                       &pixels, &decoded_w, &decoded_h)) {
+        playgroup_free_image(data);
+        printf("[Playgroup] Commander art stb JPEG decode failed.\n");
+        return;
     }
+    playgroup_free_image(data);
+
+    printf("[Playgroup] Commander art stb decode completed in %lu ms\n",
+           (unsigned long)(lv_tick_get() - decode_started));
+
+    decoded = store_decoded_art(deck->scryfall_id, pixels, decoded_w, decoded_h);
+    if (decoded == NULL) {
+        commander_image_free_pixels(pixels);
+        printf("[Playgroup] Commander decoded-art cache store failed.\n");
+        return;
+    }
+
+    show_decoded_art(decoded);
+    lv_refr_now(NULL);
 
     if (deck_commander_label != NULL) {
         char buf[96];
@@ -1207,6 +1301,22 @@ void build_pregame_screens(void)
     lv_obj_set_style_bg_color(screen_pregame_deck, lv_color_black(), 0);
     lv_obj_set_style_border_width(screen_pregame_deck, 0, 0);
 
+    /* Commander art fills the deck screen. The root screen clips the zoomed
+       image to 360x360; a dark overlay keeps text/buttons readable. */
+    deck_image = lv_img_create(screen_pregame_deck);
+    lv_obj_add_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(deck_image, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(deck_image, LV_ALIGN_CENTER, 0, 0);
+
+    deck_image_overlay = lv_obj_create(screen_pregame_deck);
+    lv_obj_remove_style_all(deck_image_overlay);
+    lv_obj_set_size(deck_image_overlay, 360, 360);
+    lv_obj_set_style_bg_color(deck_image_overlay, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(deck_image_overlay, LV_OPA_60, 0);
+    lv_obj_clear_flag(deck_image_overlay, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(deck_image_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(deck_image_overlay, LV_ALIGN_CENTER, 0, 0);
+
     {
         lv_obj_t *hint;
         lv_obj_t *minus;
@@ -1226,23 +1336,6 @@ void build_pregame_screens(void)
         lv_obj_set_style_text_color(hint, lv_color_hex(0x778391), 0);
         lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
         lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 47);
-
-        deck_image_clip = lv_obj_create(screen_pregame_deck);
-        lv_obj_remove_style_all(deck_image_clip);
-        lv_obj_set_size(deck_image_clip, 130, 130);
-        lv_obj_set_style_radius(deck_image_clip, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_clip_corner(deck_image_clip, true, 0);
-        lv_obj_set_style_bg_opa(deck_image_clip, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(deck_image_clip, lv_color_hex(0x0C0F13), 0);
-        lv_obj_set_style_border_width(deck_image_clip, 2, 0);
-        lv_obj_set_style_border_color(deck_image_clip, lv_color_hex(0x4A5563), 0);
-        lv_obj_clear_flag(deck_image_clip, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_clear_flag(deck_image_clip, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_align(deck_image_clip, LV_ALIGN_CENTER, 0, -40);
-        lv_obj_add_flag(deck_image_clip, LV_OBJ_FLAG_HIDDEN);
-
-        deck_image = lv_img_create(deck_image_clip);
-        lv_obj_clear_flag(deck_image, LV_OBJ_FLAG_CLICKABLE);
 
         minus = pregame_button(screen_pregame_deck, "<", 42, 42,
                                event_deck_adjust, LV_EVENT_CLICKED,
