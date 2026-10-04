@@ -120,7 +120,7 @@ void turn_timer_start_fresh(void)
     turn_timer_start_for_player(0);
 }
 
-void turn_timer_reset(void)
+static void turn_timer_reset_internal(bool repaint)
 {
     turn_timer_enabled = false;
     turn_elapsed_ms = 0;
@@ -155,10 +155,22 @@ void turn_timer_reset(void)
         lv_timer_pause(turn_reminder_flash_timer);
     }
 
-    if (nvs_get_players_to_track() > 1)
-        refresh_multiplayer_turn_state();
-    else
-        refresh_turn_ui();
+    if (repaint) {
+        if (nvs_get_players_to_track() > 1)
+            refresh_multiplayer_turn_state();
+        else
+            refresh_turn_ui();
+    }
+}
+
+void turn_timer_reset(void)
+{
+    turn_timer_reset_internal(true);
+}
+
+void turn_timer_reset_silent(void)
+{
+    turn_timer_reset_internal(false);
 }
 
 void turn_advance(void)
