@@ -6,6 +6,7 @@
 #include "hw.h"
 #include "timer.h"
 #include "ui_damage_resolver.h"
+#include "pregame.h"
 
 static lv_obj_t *add_low_battery_icon(lv_obj_t *parent)
 {
@@ -260,6 +261,8 @@ static void refresh_commander_markers(const mp_panel_spec_t *spec,
         if (markers[source] == NULL) {
             lv_obj_t *marker = make_plain_box(panel, 28, 34);
             lv_obj_t *dot = lv_obj_create(marker);
+            lv_obj_t *art_clip = lv_obj_create(marker);
+            lv_obj_t *art = lv_img_create(art_clip);
             lv_obj_t *value;
 
             lv_obj_remove_style_all(dot);
@@ -267,6 +270,18 @@ static void refresh_commander_markers(const mp_panel_spec_t *spec,
             lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
             lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
             lv_obj_align(dot, LV_ALIGN_TOP_MID, 0, 1);
+
+            lv_obj_remove_style_all(art_clip);
+            lv_obj_set_size(art_clip, 18, 18);
+            lv_obj_set_style_radius(art_clip, LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_clip_corner(art_clip, true, 0);
+            lv_obj_clear_flag(art_clip, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_align(art_clip, LV_ALIGN_TOP_MID, 0, 0);
+            lv_obj_add_flag(art_clip, LV_OBJ_FLAG_HIDDEN);
+
+            lv_obj_remove_style_all(art);
+            lv_obj_clear_flag(art, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_align(art, LV_ALIGN_CENTER, 0, 0);
 
             value = lv_label_create(marker);
             lv_label_set_text(value, "0");
@@ -292,15 +307,43 @@ static void refresh_commander_markers(const mp_panel_spec_t *spec,
         char buf[8];
         lv_obj_t *marker = markers[src];
         lv_obj_t *dot = lv_obj_get_child(marker, 0);
-        lv_obj_t *value = lv_obj_get_child(marker, 1);
+        lv_obj_t *art_clip = lv_obj_get_child(marker, 1);
+        lv_obj_t *art = (art_clip != NULL) ? lv_obj_get_child(art_clip, 0) : NULL;
+        lv_obj_t *value = lv_obj_get_child(marker, 2);
         lv_coord_t xoff;
         lv_coord_t yoff;
 
         snprintf(buf, sizeof(buf), "%d", cmd_damage_totals[src][target_player]);
 
-        if (dot != NULL) {
-            lv_obj_set_style_bg_color(
-                dot, get_effective_player_color(src, src, LIFE_VIB_VIV), 0);
+        if (dot != NULL && art_clip != NULL) {
+            const lv_img_dsc_t *commander_art =
+                pregame_get_player_commander_art(src);
+            bool use_art =
+                nvs_get_cmd_marker_mode() == CMD_MARKER_ART &&
+                commander_art != NULL &&
+                art != NULL;
+
+            if (use_art) {
+                uint32_t zoom_w =
+                    (18U * 256U + commander_art->header.w - 1U) /
+                    commander_art->header.w;
+                uint32_t zoom_h =
+                    (18U * 256U + commander_art->header.h - 1U) /
+                    commander_art->header.h;
+                uint16_t zoom = (uint16_t)((zoom_w > zoom_h) ? zoom_w : zoom_h);
+
+                if (zoom < 1U) zoom = 1U;
+                lv_img_set_src(art, commander_art);
+                lv_img_set_zoom(art, zoom);
+                lv_obj_align(art, LV_ALIGN_CENTER, 0, 0);
+                lv_obj_add_flag(dot, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(art_clip, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_set_style_bg_color(
+                    dot, get_effective_player_color(src, src, LIFE_VIB_VIV), 0);
+                lv_obj_clear_flag(dot, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(art_clip, LV_OBJ_FLAG_HIDDEN);
+            }
         }
         if (value != NULL) {
             lv_label_set_text(value, buf);
