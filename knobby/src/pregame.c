@@ -1011,15 +1011,36 @@ static void event_deck_select(lv_event_t *e)
              sizeof(selected_deck_name[deck_picker_seat]),
              "%s", deck->name);
 
-    /* Persist only the deck the player actually chose. This keeps flash
-       usage focused on frequently used decks and keeps commander preload
-       free of blocking filesystem writes. */
-    if (deck->scryfall_id[0] != '\0')
-        playgroup_persist_cached_image(deck->scryfall_id);
-
     {
         deck_decoded_cache_entry_t *selected_art =
             find_decoded_art(deck->scryfall_id);
+
+        /* Usually the async picker fetch has already decoded this art.
+           If the user selects unusually quickly, guarantee the chosen deck
+           still gets an in-game image instead of silently losing Pizza Art. */
+        if (selected_art == NULL && deck->scryfall_id[0] != '\0') {
+            uint8_t *data = NULL;
+            uint8_t *pixels = NULL;
+            size_t data_size = 0;
+            uint16_t decoded_w = 0;
+            uint16_t decoded_h = 0;
+
+            if (playgroup_download_deck_image(deck->art_crop_url,
+                                              deck->scryfall_id,
+                                              &data, &data_size)) {
+                if (commander_image_decode_rgb565(data, data_size,
+                                                  &pixels,
+                                                  &decoded_w, &decoded_h)) {
+                    selected_art = store_decoded_art(deck->scryfall_id,
+                                                     pixels,
+                                                     decoded_w, decoded_h);
+                    if (selected_art == NULL)
+                        commander_image_free_pixels(pixels);
+                }
+                playgroup_free_image(data);
+            }
+        }
+
         if (selected_art != NULL) {
             if (!set_selected_player_art(deck_picker_seat, selected_art)) {
                 printf("[Playgroup] Could not preserve selected commander art for P%d.\n",
@@ -1029,6 +1050,11 @@ static void event_deck_select(lv_event_t *e)
                        deck_picker_seat + 1);
             }
         }
+
+        /* Persist only the chosen deck after its compressed image is known
+           to be cached. */
+        if (deck->scryfall_id[0] != '\0')
+            playgroup_persist_cached_image(deck->scryfall_id);
     }
 
     clear_deck_art();
