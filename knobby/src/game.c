@@ -977,8 +977,8 @@ static void player_select_anim_cb(lv_timer_t *timer)
     } else {
         /* Smooth roulette deceleration: fast enough to read as motion at
            the start, then progressively slower so the winner feels earned. */
-        player_select_anim_period += 12;
-        if (player_select_anim_period > 340) player_select_anim_period = 340;
+        player_select_anim_period += 7;
+        if (player_select_anim_period > 180) player_select_anim_period = 180;
         lv_timer_set_period(player_select_anim_timer, player_select_anim_period);
     }
 }
@@ -989,7 +989,7 @@ void start_player_selection_animation(void)
     int start_player;
     int winner;
     int offset;
-    int full_cycles = 3;
+    int full_cycles = 2;
 
     if (track <= 1) return;
     if (!nvs_get_random_first()) return;
@@ -1015,7 +1015,7 @@ void start_player_selection_animation(void)
     if (offset == 0) offset = track;
 
     player_select_anim_steps = (full_cycles * track) + offset;
-    player_select_anim_period = 80;
+    player_select_anim_period = 45;
 
     roulette_idx = start_player;
     last_roulette_winner = winner;
