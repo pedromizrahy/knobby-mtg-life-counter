@@ -9,6 +9,7 @@
 extern void refresh_player_ui(void);
 extern void refresh_life_preview_ui(void);
 extern void refresh_multiplayer_player_state(int player);
+extern void refresh_multiplayer_player_name(int player);
 extern void refresh_multiplayer_selection_animation(void);
 extern void refresh_multiplayer_selection_step(int previous_player, int current_player);
 extern void refresh_multiplayer_selection_finish(void);
@@ -17,6 +18,11 @@ extern void refresh_damage_ui(void);
 extern void refresh_all_damage_ui(void);
 extern void refresh_rename_ui(void);
 extern void select_kick_timer(void);
+extern lv_obj_t *screen_1p;
+extern lv_obj_t *screen_multiplayer;
+extern lv_obj_t *screen_select;
+extern lv_obj_t *screen_damage;
+extern lv_obj_t *screen_player_name;
 
 // ---------- state ----------
 int active_enemy_count = 3;
@@ -1124,6 +1130,8 @@ void net_sync_fill_names(net_sync_names_t *out)
 void net_sync_apply_names(const net_sync_names_t *in, int wins_ties)
 {
     int16_t newer = (int16_t)(in->version - names_version);
+    uint8_t changed_mask = 0;
+    lv_obj_t *active_screen;
     int i;
 
     if (newer < 0) {
@@ -1135,15 +1143,40 @@ void net_sync_apply_names(const net_sync_names_t *in, int wins_ties)
     if (newer == 0 && !wins_ties) return;
     names_version = in->version;
     if (memcmp(player_names, in->names, sizeof(player_names)) == 0) return;
+
+    for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
+        if (strncmp(player_names[i], in->names[i],
+                    sizeof(player_names[i])) != 0) {
+            changed_mask |= (uint8_t)(1U << i);
+        }
+    }
+
     memcpy(player_names, in->names, sizeof(player_names));
     /* Wire bytes are untrusted: every name must terminate. */
     for (i = 0; i < MAX_GAME_PLAYERS; i++)
         player_names[i][sizeof(player_names[i]) - 1] = '\0';
-    /* Same refresh set as a local rename (rename.c). */
-    refresh_player_ui();
-    refresh_select_ui();
-    refresh_damage_ui();
-    refresh_rename_ui();
+
+    /*
+     * Remote roster updates should touch only what is visible. Hidden
+     * Select/Damage/Rename screens refresh on entry, so updating all of them
+     * on every sync packet only creates avoidable LVGL invalidation.
+     */
+    active_screen = lv_scr_act();
+    if (active_screen == screen_multiplayer) {
+        for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
+            if ((changed_mask & (1U << i)) != 0)
+                refresh_multiplayer_player_name(i);
+        }
+    } else if (active_screen == screen_1p) {
+        if ((changed_mask & 0x01U) != 0)
+            refresh_player_ui();
+    } else if (active_screen == screen_select) {
+        refresh_select_ui();
+    } else if (active_screen == screen_damage) {
+        refresh_damage_ui();
+    } else if (active_screen == screen_player_name) {
+        refresh_rename_ui();
+    }
 }
 
 void net_sync_fill_state(net_sync_state_t *out)
