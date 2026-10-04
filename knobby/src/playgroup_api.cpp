@@ -17,7 +17,7 @@ extern "C" void knob_print_reset_diagnostics(void);
 #define PG_NVS_NAMESPACE "playgroup"
 #define PG_API_HOST "playgroup.gg"
 #define PG_API_BASE "https://" PG_API_HOST "/api/public/v1"
-#define PG_WIFI_FIRST_ATTEMPT_MS 2500UL
+#define PG_WIFI_FIRST_ATTEMPT_MS 4000UL
 #define PG_WIFI_RETRY_ATTEMPT_MS 4500UL
 #define PG_WIFI_RETRIES 3
 #define PG_HTTP_TIMEOUT_MS 10000U
@@ -645,6 +645,11 @@ static bool wifi_connect_saved(void)
     Serial.println("[Playgroup] Wi-Fi connection failed after retries.");
     wifi_power_down();
     return false;
+}
+
+bool playgroup_prepare_connection(void)
+{
+    return wifi_connect_saved();
 }
 
 bool playgroup_network_active(void)
