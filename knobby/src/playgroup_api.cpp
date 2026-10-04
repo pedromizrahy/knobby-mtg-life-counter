@@ -1092,6 +1092,17 @@ static bool parse_deck_object(const String &obj, void *ctx)
     json_extract_long_from_object(obj, "user_id", &deck->user_id);
     json_extract_bool_from_object(obj, "archived", &deck->archived);
     json_extract_float_from_object(obj, "power_level", &deck->power_level);
+    {
+        long wins = 0;
+        long losses = 0;
+        json_extract_long_from_object(obj, "games_won", &wins);
+        json_extract_long_from_object(obj, "games_lost", &losses);
+        deck->games_won = (int)wins;
+        deck->games_lost = (int)losses;
+    }
+    json_extract_string_from_object(obj, "last_game_played_at",
+                                    deck->last_game_played_at,
+                                    sizeof(deck->last_game_played_at));
     json_extract_string_from_object(obj, "name", deck->name, sizeof(deck->name));
     json_extract_nested_name(obj, "commander", deck->commander, sizeof(deck->commander));
     json_extract_nested_name(obj, "partner", deck->partner, sizeof(deck->partner));
@@ -1167,6 +1178,42 @@ const playgroup_member_t *playgroup_cached_member(int index)
     return &cached_members[index];
 }
 
+static int deck_usage_compare(const playgroup_deck_t *a,
+                              const playgroup_deck_t *b)
+{
+    int games_a = a->games_won + a->games_lost;
+    int games_b = b->games_won + b->games_lost;
+
+    if (games_a != games_b)
+        return (games_a > games_b) ? -1 : 1;
+
+    /* Playgroup timestamps are YYYY-MM-DD..., so lexical order matches
+       chronological order. Null/missing timestamps stay behind played decks. */
+    if (a->last_game_played_at[0] != '\0' ||
+        b->last_game_played_at[0] != '\0') {
+        int cmp = strcmp(a->last_game_played_at, b->last_game_played_at);
+        if (cmp != 0)
+            return (cmp > 0) ? -1 : 1;
+    }
+
+    /* Stable, deterministic fallback. */
+    return (a->id < b->id) ? -1 : (a->id > b->id ? 1 : 0);
+}
+
+static void sort_cached_decks_by_usage(void)
+{
+    for (int i = 1; i < cached_deck_count; i++) {
+        playgroup_deck_t key = cached_decks[i];
+        int j = i - 1;
+
+        while (j >= 0 && deck_usage_compare(&key, &cached_decks[j]) < 0) {
+            cached_decks[j + 1] = cached_decks[j];
+            j--;
+        }
+        cached_decks[j + 1] = key;
+    }
+}
+
 bool playgroup_refresh_decks(long user_id)
 {
     String response;
@@ -1181,6 +1228,7 @@ bool playgroup_refresh_decks(long user_id)
     }
 
     json_for_each_top_level_object(response, parse_deck_object, NULL, PG_MAX_DECKS);
+    sort_cached_decks_by_usage();
     return true;
 }
 
