@@ -1061,35 +1061,35 @@ static void refresh_roster(void)
 
     switch (pregame_player_count) {
         case 1:
-            button_h = 82; button_w = 258; gap = 0;
+            button_h = 70; button_w = 252; gap = 0;
             font = &lv_font_montserrat_22;
             break;
         case 2:
-            button_h = 68; button_w = 252; gap = 14;
+            button_h = 58; button_w = 248; gap = 10;
             font = &lv_font_montserrat_16;
             break;
         case 3:
-            button_h = 56; button_w = 246; gap = 10;
+            button_h = 48; button_w = 244; gap = 8;
             font = &lv_font_montserrat_16;
             break;
         case 4:
-            button_h = 46; button_w = 242; gap = 8;
+            button_h = 40; button_w = 240; gap = 5;
             font = &lv_font_montserrat_14;
             break;
         case 5:
-            button_h = 38; button_w = 236; gap = 5;
+            button_h = 34; button_w = 232; gap = 4;
             font = &lv_font_montserrat_14;
             break;
         default:
-            button_h = 33; button_w = 228; gap = 3;
+            button_h = 30; button_w = 224; gap = 3;
             font = &lv_font_montserrat_14;
             break;
     }
 
     total_h = (pregame_player_count * button_h) +
               ((pregame_player_count - 1) * gap);
-    top_y = 72 + ((202 - total_h) / 2);
-    if (top_y < 68) top_y = 68;
+    top_y = 84 + ((194 - total_h) / 2);
+    if (top_y < 80) top_y = 80;
 
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
         lv_obj_t *btn;
@@ -1536,14 +1536,14 @@ void build_pregame_screens(void)
         lv_label_set_text(title, "PLAYERS & DECKS");
         lv_obj_set_style_text_color(title, lv_color_white(), 0);
         lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
-        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 18);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 40);
 
         {
             lv_obj_t *hint = lv_label_create(screen_pregame_roster);
             lv_label_set_text(hint, "Review players and decks");
             lv_obj_set_style_text_color(hint, lv_color_hex(0x778391), 0);
             lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
-            lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 44);
+            lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 66);
         }
 
         for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
@@ -1554,14 +1554,14 @@ void build_pregame_screens(void)
             lv_obj_add_event_cb(btn, event_roster_open_decks,
                                 LV_EVENT_LONG_PRESSED,
                                 (void *)(intptr_t)i);
-            lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 62 + (i * 37));
+            lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 84 + (i * 34));
             roster_labels[i] = lv_obj_get_child(btn, 0);
             lv_obj_set_style_text_font(roster_labels[i], &lv_font_montserrat_14, 0);
         }
 
         lv_obj_t *next = pregame_button(screen_pregame_roster, "MULLIGANS", 142, 42,
                                         event_roster_continue, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(next, LV_ALIGN_BOTTOM_MID, 0, -18);
+        lv_obj_align(next, LV_ALIGN_BOTTOM_MID, 0, -14);
     }
 
     screen_pregame_deck = lv_obj_create(NULL);
