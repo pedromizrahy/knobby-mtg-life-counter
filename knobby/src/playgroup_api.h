@@ -63,6 +63,13 @@ const playgroup_deck_t *playgroup_cached_deck(int index);
 /* Fetch one public commander image into PSRAM. Caller owns the returned
    buffer and must release it with playgroup_free_image(). */
 bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_t *out_size);
+
+/* Prefer the direct art_crop_url already returned by Playgroup. Falls back
+   to the Scryfall card-image endpoint when the direct CDN URL fails. */
+bool playgroup_download_deck_image(const char *art_crop_url,
+                                   const char *scryfall_id,
+                                   uint8_t **out_data,
+                                   size_t *out_size);
 void playgroup_free_image(uint8_t *data);
 
 /* Start a low-priority background prefetch for the currently cached deck list.
