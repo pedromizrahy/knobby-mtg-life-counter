@@ -936,6 +936,66 @@ void refresh_multiplayer_turn_ui(void)
     }
 }
 
+void refresh_multiplayer_player_state(int player)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+    int orientation_mode;
+
+    if (layout == NULL || player < 0)
+        return;
+
+    orientation_mode = nvs_get_orientation();
+
+    for (int i = 0; i < layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &layout->panels[i];
+        lv_obj_t *panel;
+        lv_obj_t *life_lbl;
+        lv_obj_t *name_lbl;
+        int16_t angle;
+        int16_t counter_angle;
+        lv_color_t text_color;
+        lv_opa_t shade_opa = LV_OPA_50;
+
+        if (spec->player_index != player)
+            continue;
+
+        panel = mp_state.panels[i];
+        life_lbl = mp_state.life_labels[i];
+        name_lbl = mp_state.name_labels[i];
+        angle = layout->angle_fn(orientation_mode, i);
+        counter_angle =
+            get_counter_row_angle(orientation_mode, spec, panel, angle);
+
+        /*
+         * State-only refresh: life/name/color + counters + commander markers.
+         * Geometry, image source, zoom and object tree stay untouched.
+         */
+        text_color = refresh_mp_panel(panel, life_lbl, name_lbl,
+                                      spec->player_index, spec->color_index);
+
+        if (nvs_get_color_mode() == COLOR_MODE_ART &&
+            mp_state.art_overlays[i] != NULL) {
+            if (turn_timer_enabled && active_turn_player >= 0) {
+                shade_opa = (spec->player_index == active_turn_player)
+                          ? LV_OPA_20
+                          : LV_OPA_60;
+            }
+            mp_set_bg_opa_if_changed(mp_state.art_overlays[i], shade_opa);
+        }
+
+        refresh_counter_rows(spec, wedge_geom[i].bis_deg, panel,
+                             mp_state.counter_rows[i],
+                             mp_state.counter_values[i],
+                             spec->player_index, text_color,
+                             angle, counter_angle);
+
+        refresh_commander_markers(spec, panel, mp_state.cmd_markers[i], i,
+                                  spec->player_index, text_color,
+                                  counter_angle);
+        return;
+    }
+}
+
 void refresh_multiplayer_turn_state(void)
 {
     const mp_layout_spec_t *layout = mp_state.layout;
