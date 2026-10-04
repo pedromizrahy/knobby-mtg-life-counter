@@ -764,6 +764,63 @@ static void event_member_adjust(lv_event_t *e)
     pregame_change_member(delta);
 }
 
+static bool prepare_current_player_deck_art(void)
+{
+    int count = playgroup_cached_deck_count();
+
+    for (int i = 0; i < count; i++) {
+        const playgroup_deck_t *deck = playgroup_cached_deck(i);
+        deck_decoded_cache_entry_t *decoded;
+        uint8_t *data = NULL;
+        uint8_t *pixels = NULL;
+        size_t data_size = 0;
+        uint16_t decoded_w = 0;
+        uint16_t decoded_h = 0;
+        char status[64];
+
+        if (deck == NULL || deck->scryfall_id[0] == '\0')
+            continue;
+
+        decoded = find_decoded_art(deck->scryfall_id);
+        if (decoded != NULL)
+            continue;
+
+        if (member_status_label != NULL) {
+            snprintf(status, sizeof(status), "Preparing commanders %d/%d",
+                     i + 1, count);
+            lv_label_set_text(member_status_label, status);
+            lv_refr_now(NULL);
+        }
+
+        if (!playgroup_download_deck_image(deck->art_crop_url,
+                                           deck->scryfall_id,
+                                           &data, &data_size)) {
+            printf("[Playgroup] Commander prepare download failed for deck %d.\n",
+                   i + 1);
+            continue;
+        }
+
+        if (!commander_image_decode_rgb565(data, data_size,
+                                           &pixels, &decoded_w, &decoded_h)) {
+            playgroup_free_image(data);
+            printf("[Playgroup] Commander prepare decode failed for deck %d.\n",
+                   i + 1);
+            continue;
+        }
+        playgroup_free_image(data);
+
+        if (store_decoded_art(deck->scryfall_id, pixels,
+                              decoded_w, decoded_h) == NULL) {
+            commander_image_free_pixels(pixels);
+            printf("[Playgroup] Commander prepare cache failed for deck %d.\n",
+                   i + 1);
+            continue;
+        }
+    }
+
+    return true;
+}
+
 static void event_member_select(lv_event_t *e)
 {
     const playgroup_member_t *member;
@@ -815,15 +872,23 @@ static void event_member_select(lv_event_t *e)
         lv_label_set_text(deck_title_label, title);
     }
 
-    /* Open the picker immediately. The current commander image is fetched
-       asynchronously; browsing never waits for the entire player's deck
-       list to preload. */
+    /* Prepare every commander before entering the browser. Once the deck
+       picker is visible, turning the dial must never wait on network I/O. */
+    prepare_current_player_deck_art();
+
     if (member_status_label != NULL)
         lv_label_set_text(member_status_label, "");
 
     refresh_deck_picker(false);
     lv_scr_load(screen_pregame_deck);
-    schedule_deck_art();
+
+    {
+        const playgroup_deck_t *first = playgroup_cached_deck(deck_picker_index);
+        deck_decoded_cache_entry_t *decoded =
+            first != NULL ? find_decoded_art(first->scryfall_id) : NULL;
+        if (decoded != NULL)
+            show_decoded_art(decoded);
+    }
 }
 
 static void clear_deck_art(void)
@@ -972,7 +1037,16 @@ void pregame_change_deck(int delta)
     deck_picker_index += (delta < 0) ? -1 : 1;
     if (deck_picker_index < 0) deck_picker_index = count - 1;
     if (deck_picker_index >= count) deck_picker_index = 0;
-    refresh_deck_picker(true);
+
+    refresh_deck_picker(false);
+    {
+        const playgroup_deck_t *deck = playgroup_cached_deck(deck_picker_index);
+        deck_decoded_cache_entry_t *decoded =
+            deck != NULL ? find_decoded_art(deck->scryfall_id) : NULL;
+        clear_deck_art();
+        if (decoded != NULL)
+            show_decoded_art(decoded);
+    }
 }
 
 static void event_deck_adjust(lv_event_t *e)
@@ -1011,9 +1085,16 @@ static void event_roster_open_decks(lv_event_t *e)
         return;
     }
 
+    prepare_current_player_deck_art();
     refresh_deck_picker(false);
     lv_scr_load(screen_pregame_deck);
-    schedule_deck_art();
+    {
+        const playgroup_deck_t *first = playgroup_cached_deck(deck_picker_index);
+        deck_decoded_cache_entry_t *decoded =
+            first != NULL ? find_decoded_art(first->scryfall_id) : NULL;
+        if (decoded != NULL)
+            show_decoded_art(decoded);
+    }
 }
 
 static void event_deck_select(lv_event_t *e)
