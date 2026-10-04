@@ -556,6 +556,7 @@ bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
     int target;
     int track = nvs_get_players_to_track();
     int total_lifelink = 0;
+    uint8_t changed_mask = 0;
     bool applied = false;
 
     if (source < 0 || source >= MAX_GAME_PLAYERS) return false;
@@ -638,6 +639,7 @@ bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
         game_event_add(&event);
         check_player_elimination(target);
         net_sync_commit_player(target);
+        changed_mask |= (uint8_t)(1U << target);
         applied = true;
     }
 
@@ -645,12 +647,20 @@ bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
         source >= 0 && source < MAX_DISPLAY_PLAYERS &&
         !player_eliminated[source]) {
         apply_life_delta(source, total_lifelink);
+        changed_mask |= (uint8_t)(1U << source);
     }
 
     damage_log_end_action();
 
     if (applied) {
-        refresh_player_ui();
+        if (nvs_get_players_to_track() <= 1) {
+            refresh_player_ui();
+        } else {
+            for (target = 0; target < track; target++) {
+                if (changed_mask & (uint8_t)(1U << target))
+                    refresh_multiplayer_player_state(target);
+            }
+        }
         refresh_select_ui();
     }
 
@@ -677,6 +687,7 @@ bool apply_sourced_damage(int source, int target, int amount,
 void life_preview_commit_cb(lv_timer_t *timer)
 {
     int track = nvs_get_players_to_track();
+    uint8_t changed_mask = 0;
     int i;
 
     (void)timer;
@@ -692,6 +703,7 @@ void life_preview_commit_cb(lv_timer_t *timer)
 
     for (i = 0; i < track && i < MAX_DISPLAY_PLAYERS; i++) {
         if (!player_selected[i]) continue;
+        changed_mask |= (uint8_t)(1U << i);
         apply_life_delta(i, pending_life_delta);
     }
     pending_life_delta = 0;
@@ -706,7 +718,15 @@ void life_preview_commit_cb(lv_timer_t *timer)
         selection_clear();
         select_kick_timer();
     }
-    refresh_player_ui();
+
+    if (track <= 1) {
+        refresh_player_ui();
+    } else {
+        for (i = 0; i < track && i < MAX_DISPLAY_PLAYERS; i++) {
+            if (changed_mask & (uint8_t)(1U << i))
+                refresh_multiplayer_player_state(i);
+        }
+    }
 }
 
 // ---------- life changes ----------
