@@ -12,6 +12,8 @@
 #include "playgroup_api.h"
 #include "../knobby_net.h"
 
+extern "C" void knob_print_reset_diagnostics(void);
+
 #define PG_NVS_NAMESPACE "playgroup"
 #define PG_API_HOST "playgroup.gg"
 #define PG_API_BASE "https://" PG_API_HOST "/api/public/v1"
@@ -1876,6 +1878,7 @@ static void print_help(void)
     Serial.println("  PG WIFI <ssid>|<password>");
     Serial.println("  PG KEY <api-key>");
     Serial.println("  PG STATUS");
+    Serial.println("  PG RESET");
     Serial.println("  PG TEST");
     Serial.println("  PG DISCOVER");
     Serial.println("  PG MYDECKS");
@@ -1898,6 +1901,11 @@ static void handle_command(char *line)
 
     if (strcmp(line, "PG STATUS") == 0) {
         print_status();
+        return;
+    }
+
+    if (strcmp(line, "PG RESET") == 0) {
+        knob_print_reset_diagnostics();
         return;
     }
 
