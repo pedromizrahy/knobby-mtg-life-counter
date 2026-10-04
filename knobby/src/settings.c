@@ -839,13 +839,16 @@ static void event_start_new_game(lv_event_t *e)
 {
     (void)e;
 
-    /* This is the only destructive "new match" action in the main HUD.
-       Clear the current game, stop any roulette/timer that reset_all_values
-       would otherwise start, then return to the pregame flow. */
+    /*
+     * Entering pregame is not a game start. Clear match state directly
+     * instead of reset_all_values(), which would repaint every gameplay
+     * screen, start Random First/turn tracking, then immediately stop both.
+     */
     net_sync_leave_game();
-    reset_all_values();
     stop_player_selection_animation();
+    knob_life_reset();
     turn_timer_reset();
+    mana_clear_all();
     open_pregame_home();
     lv_indev_wait_release(lv_indev_get_act());
 }
