@@ -7,6 +7,7 @@
 #include "timer.h"
 // Forward declarations for UI refresh (defined in screen modules)
 extern void refresh_player_ui(void);
+extern void refresh_life_preview_ui(void);
 extern void refresh_select_ui(void);
 extern void refresh_damage_ui(void);
 extern void refresh_all_damage_ui(void);
@@ -799,7 +800,10 @@ void change_player_life(int delta)
         }
     }
 
-    refresh_player_ui();
+    /* Dialing can arrive much faster than a full Art-mode pizza redraw.
+       Only update the life preview labels here; the full UI refresh still
+       happens when the staged change commits. */
+    refresh_life_preview_ui();
 }
 
 void prepare_cmd_damage_for_player(int target)
