@@ -8,6 +8,7 @@
 // Forward declarations for UI refresh (defined in screen modules)
 extern void refresh_player_ui(void);
 extern void refresh_life_preview_ui(void);
+extern void refresh_multiplayer_selection_animation(void);
 extern void refresh_select_ui(void);
 extern void refresh_damage_ui(void);
 extern void refresh_all_damage_ui(void);
@@ -959,11 +960,9 @@ static void player_select_anim_cb(lv_timer_t *timer)
     // Move to next player (clockwise logic mapping to bottom/left/top/right)
     roulette_idx = (roulette_idx + 1) % track;
     selection_set_single(roulette_idx);
-    /* Restart the deselect-timeout countdown like any selection change,
-       so a timer left running from before the reset can't fire mid-spin
-       and blank the selection for a tick. */
-    select_kick_timer();
-    refresh_player_ui();
+    /* Roulette owns selection while spinning. Do not restart the
+       deselect timer or redraw the entire pizza on every step. */
+    refresh_multiplayer_selection_animation();
 
     player_select_anim_steps--;
     if (player_select_anim_steps <= 0) {
@@ -972,6 +971,9 @@ static void player_select_anim_cb(lv_timer_t *timer)
         if (nvs_get_turn_timer_enabled()) {
             turn_timer_start_for_player(roulette_idx);
         }
+        /* One full refresh after the winner is known restores the normal
+           turn/selection styling and updates all dependent HUD elements. */
+        refresh_player_ui();
     } else {
         /* Smooth roulette deceleration: fast enough to read as motion at
            the start, then progressively slower so the winner feels earned. */
@@ -1019,6 +1021,7 @@ void start_player_selection_animation(void)
     last_roulette_winner = winner;
     selection_set_single(roulette_idx);
     select_kick_timer();
+    refresh_multiplayer_selection_animation();
 
     lv_timer_set_period(player_select_anim_timer, player_select_anim_period);
     lv_timer_resume(player_select_anim_timer);
