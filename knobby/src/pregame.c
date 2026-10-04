@@ -35,6 +35,7 @@ static lv_obj_t *playgroup_name_label = NULL;
 static lv_obj_t *playgroup_meta_label = NULL;
 static int selected_playgroup_index = 0;
 static int selected_member_index[MAX_DISPLAY_PLAYERS] = {0};
+static bool selected_member_set[MAX_DISPLAY_PLAYERS] = {false};
 static int member_picker_seat = 0;
 static int member_picker_index = 0;
 static lv_obj_t *member_title_label = NULL;
@@ -176,6 +177,8 @@ static void refresh_member_picker(void);
 static void refresh_deck_picker(bool schedule_art);
 static void schedule_deck_art(void);
 static bool preload_current_player_deck_art(void);
+static bool member_index_used_by_other_seat(int member_index, int current_seat);
+static int first_eligible_member_index(int current_seat);
 
 static lv_obj_t *pregame_button(lv_obj_t *parent, const char *text,
                                 lv_coord_t w, lv_coord_t h,
@@ -423,9 +426,16 @@ static void event_playgroup_select(lv_event_t *e)
         return;
     }
 
+    if (member_count < pregame_player_count) {
+        if (playgroup_meta_label != NULL)
+            lv_label_set_text(playgroup_meta_label, "Not enough members for these seats");
+        return;
+    }
+
     playgroup_roster_active = true;
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
         selected_member_index[i] = 0;
+        selected_member_set[i] = false;
         selected_deck_id[i] = 0;
         selected_deck_name[i][0] = '\0';
     }
@@ -440,31 +450,118 @@ static void event_roster_member_cycle(lv_event_t *e)
 {
     int seat = (int)(intptr_t)lv_event_get_user_data(e);
     int member_count = playgroup_cached_member_count();
+    int candidate;
 
     if (!playgroup_roster_active || seat < 0 || seat >= pregame_player_count ||
         member_count <= 0)
         return;
 
-    selected_member_index[seat] = (selected_member_index[seat] + 1) % member_count;
-    selected_deck_id[seat] = 0;
-    selected_deck_name[seat][0] = '\0';
-    refresh_roster();
+    candidate = selected_member_index[seat];
+    for (int tries = 0; tries < member_count; tries++) {
+        candidate = (candidate + 1) % member_count;
+        if (!member_index_used_by_other_seat(candidate, seat)) {
+            selected_member_index[seat] = candidate;
+            selected_member_set[seat] = true;
+            selected_deck_id[seat] = 0;
+            selected_deck_name[seat][0] = '\0';
+            refresh_roster();
+            return;
+        }
+    }
+}
+
+static bool member_index_used_by_other_seat(int member_index, int current_seat)
+{
+    const playgroup_member_t *candidate = playgroup_cached_member(member_index);
+
+    if (candidate == NULL)
+        return true;
+
+    for (int seat = 0; seat < pregame_player_count; seat++) {
+        const playgroup_member_t *selected;
+
+        if (seat == current_seat || !selected_member_set[seat])
+            continue;
+
+        selected = playgroup_cached_member(selected_member_index[seat]);
+        if (selected != NULL && selected->user_id == candidate->user_id)
+            return true;
+    }
+
+    return false;
+}
+
+static int eligible_member_count(int current_seat)
+{
+    int count = playgroup_cached_member_count();
+    int eligible = 0;
+
+    for (int i = 0; i < count; i++) {
+        if (!member_index_used_by_other_seat(i, current_seat))
+            eligible++;
+    }
+    return eligible;
+}
+
+static int first_eligible_member_index(int current_seat)
+{
+    int count = playgroup_cached_member_count();
+
+    for (int i = 0; i < count; i++) {
+        if (!member_index_used_by_other_seat(i, current_seat))
+            return i;
+    }
+    return -1;
+}
+
+static int member_eligible_position(int member_index, int current_seat)
+{
+    int count = playgroup_cached_member_count();
+    int pos = 0;
+
+    for (int i = 0; i < count; i++) {
+        if (member_index_used_by_other_seat(i, current_seat))
+            continue;
+        pos++;
+        if (i == member_index)
+            return pos;
+    }
+    return 0;
 }
 
 static void refresh_member_picker(void)
 {
     const playgroup_member_t *member;
     int count = playgroup_cached_member_count();
+    int eligible;
+    int position;
     char title[32];
     char pos[24];
 
-    if (count <= 0) return;
+    if (count <= 0)
+        return;
 
-    if (member_picker_index < 0) member_picker_index = count - 1;
-    if (member_picker_index >= count) member_picker_index = 0;
+    if (member_picker_index < 0 || member_picker_index >= count ||
+        member_index_used_by_other_seat(member_picker_index, member_picker_seat)) {
+        member_picker_index = first_eligible_member_index(member_picker_seat);
+    }
+
+    if (member_picker_index < 0) {
+        if (member_name_label != NULL)
+            lv_label_set_text(member_name_label, "No player available");
+        if (member_position_label != NULL)
+            lv_label_set_text(member_position_label, "0 / 0");
+        if (member_status_label != NULL)
+            lv_label_set_text(member_status_label, "Not enough unique members");
+        return;
+    }
 
     member = playgroup_cached_member(member_picker_index);
-    if (member == NULL) return;
+    if (member == NULL)
+        return;
+
+    eligible = eligible_member_count(member_picker_seat);
+    position = member_eligible_position(member_picker_index, member_picker_seat);
 
     if (member_title_label != NULL) {
         snprintf(title, sizeof(title), "PLAYER %d OF %d",
@@ -476,7 +573,7 @@ static void refresh_member_picker(void)
         lv_label_set_text(member_name_label, member->username);
 
     if (member_position_label != NULL) {
-        snprintf(pos, sizeof(pos), "%d / %d", member_picker_index + 1, count);
+        snprintf(pos, sizeof(pos), "%d / %d", position, eligible);
         lv_label_set_text(member_position_label, pos);
     }
 
@@ -487,14 +584,29 @@ static void refresh_member_picker(void)
 void pregame_change_member(int delta)
 {
     int count = playgroup_cached_member_count();
+    int step;
+    int candidate;
 
     if (count <= 0 || delta == 0 || lv_scr_act() != screen_pregame_member)
         return;
 
-    member_picker_index += (delta < 0) ? -1 : 1;
-    if (member_picker_index < 0) member_picker_index = count - 1;
-    if (member_picker_index >= count) member_picker_index = 0;
-    refresh_member_picker();
+    step = (delta < 0) ? -1 : 1;
+    candidate = member_picker_index;
+
+    for (int tries = 0; tries < count; tries++) {
+        candidate += step;
+        if (candidate < 0) candidate = count - 1;
+        if (candidate >= count) candidate = 0;
+
+        if (!member_index_used_by_other_seat(candidate, member_picker_seat)) {
+            member_picker_index = candidate;
+            refresh_member_picker();
+            return;
+        }
+    }
+
+    if (member_status_label != NULL)
+        lv_label_set_text(member_status_label, "Not enough unique members");
 }
 
 static void event_member_adjust(lv_event_t *e)
@@ -570,7 +682,13 @@ static void event_member_select(lv_event_t *e)
     if (member == NULL)
         return;
 
+    if (member_index_used_by_other_seat(member_picker_index, member_picker_seat)) {
+        refresh_member_picker();
+        return;
+    }
+
     selected_member_index[member_picker_seat] = member_picker_index;
+    selected_member_set[member_picker_seat] = true;
     selected_deck_id[member_picker_seat] = 0;
     selected_deck_name[member_picker_seat][0] = '\0';
     snprintf(player_names[member_picker_seat], sizeof(player_names[member_picker_seat]),
@@ -833,7 +951,7 @@ static void event_deck_select(lv_event_t *e)
 
     if (deck_picker_seat + 1 < pregame_player_count) {
         member_picker_seat = deck_picker_seat + 1;
-        member_picker_index = 0;
+        member_picker_index = first_eligible_member_index(member_picker_seat);
         refresh_member_picker();
         lv_scr_load(screen_pregame_member);
         return;
