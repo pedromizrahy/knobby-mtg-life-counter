@@ -48,6 +48,7 @@ typedef struct {
 /* USB/Serial provisioning + diagnostics. */
 void playgroup_process_serial(void);
 bool playgroup_credentials_ready(void);
+bool playgroup_prepare_connection(void);
 
 /* On-demand API cache for pregame UI. Wi-Fi stays connected for the whole
    Playgroup setup session and is explicitly released when setup ends. */
