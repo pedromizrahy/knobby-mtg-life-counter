@@ -170,6 +170,9 @@ public:
     size_t write(uint8_t value) override {
         if (pos_ >= capacity_) return 0;
         buffer_[pos_++] = value;
+        /* Background HTTPS can otherwise monopolize CPU0 long enough to
+           starve IDLE0 and trigger the task watchdog. */
+        vTaskDelay(1);
         return 1;
     }
 
@@ -179,6 +182,8 @@ public:
         size_t count = size < room ? size : room;
         memcpy(buffer_ + pos_, data, count);
         pos_ += count;
+        /* Let the idle task and Wi-Fi/TLS housekeeping run between chunks. */
+        vTaskDelay(1);
         return count;
     }
 
@@ -1114,6 +1119,9 @@ static void playgroup_art_prefetch_task(void *param)
 
         if (playgroup_download_image(job->ids[i], &data, &size))
             playgroup_free_image(data);
+
+        /* Prefetch is opportunistic; never compete with UI/system tasks. */
+        vTaskDelay(pdMS_TO_TICKS(25));
     }
 
     if (job->generation == art_prefetch_generation)
@@ -1147,7 +1155,7 @@ void playgroup_prefetch_deck_images(void)
         strlcpy(job->ids[i], cached_decks[i].scryfall_id, sizeof(job->ids[i]));
 
     if (xTaskCreatePinnedToCore(playgroup_art_prefetch_task, "pg_art_prefetch",
-                                6144, job, 1, NULL, 0) != pdPASS) {
+                                6144, job, 0, NULL, 0) != pdPASS) {
         Serial.println("[Playgroup] Could not start art prefetch task.");
         heap_caps_free(job);
     }
