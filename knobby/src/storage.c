@@ -24,6 +24,7 @@ static int cached_turn_alert_duration_seconds = 3;
 static int cached_turn_visual_alert = 1;
 static int cached_timer_face_player = 1;
 static int cached_cmd_marker_mode = CMD_MARKER_DOT;
+static int cached_pizza_art = 0;
 static int cached_multi_select = 0; /* 0=OFF (default), 1=ON */
 static char cached_name_list[NAME_LIST_COUNT][NAME_LIST_LEN];
 
@@ -89,6 +90,7 @@ void knob_nvs_init(void)
         int8_t tv_val = 1;
         int8_t tf_val = 1;
         int8_t cm_val = CMD_MARKER_DOT;
+        int8_t pa_val = 0;
         nvs_get_i8(handle, "turn_timer", &tt_val);
         nvs_get_i8(handle, "turn_name", &tn_val);
         nvs_get_i8(handle, "turn_rem", &tr_val);
@@ -96,6 +98,7 @@ void knob_nvs_init(void)
         nvs_get_i8(handle, "turn_visual", &tv_val);
         nvs_get_i8(handle, "timer_face", &tf_val);
         nvs_get_i8(handle, "cmd_marker", &cm_val);
+        nvs_get_i8(handle, "pizza_art", &pa_val);
         cached_turn_timer_enabled = (tt_val != 0) ? 1 : 0;
         cached_turn_show_name = (tn_val != 0) ? 1 : 0;
         cached_turn_reminder_minutes =
@@ -107,6 +110,7 @@ void knob_nvs_init(void)
         cached_timer_face_player = (tf_val != 0) ? 1 : 0;
         cached_cmd_marker_mode =
             (cm_val < 0 || cm_val >= CMD_MARKER_COUNT) ? CMD_MARKER_DOT : cm_val;
+        cached_pizza_art = (pa_val != 0) ? 1 : 0;
 
         int8_t ms_val = 0;
         nvs_get_i8(handle, "multi_sel", &ms_val);
@@ -347,6 +351,17 @@ void nvs_set_cmd_marker_mode(int value)
     settings_dirty = true;
 }
 
+int nvs_get_pizza_art(void)
+{
+    return cached_pizza_art;
+}
+
+void nvs_set_pizza_art(int value)
+{
+    cached_pizza_art = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
 // ---------- multi-select ----------
 int nvs_get_multi_select(void)
 {
@@ -395,6 +410,7 @@ void settings_save(void)
         nvs_set_i8(handle, "turn_visual", (int8_t)cached_turn_visual_alert);
         nvs_set_i8(handle, "timer_face", (int8_t)cached_timer_face_player);
         nvs_set_i8(handle, "cmd_marker", (int8_t)cached_cmd_marker_mode);
+        nvs_set_i8(handle, "pizza_art", (int8_t)cached_pizza_art);
         nvs_set_i8(handle, "multi_sel", (int8_t)cached_multi_select);
         nvs_set_i8(handle, "menu_face", (int8_t)cached_menu_facing);
         nvs_set_blob(handle, "name_list", cached_name_list, sizeof(cached_name_list));
