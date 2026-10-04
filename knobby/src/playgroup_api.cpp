@@ -571,6 +571,7 @@ static bool wifi_connect_saved(void)
     char password[PG_PASSWORD_MAX];
 
     if (WiFi.status() == WL_CONNECTED) {
+        WiFi.setSleep(false);
         Serial.print("[Playgroup] Wi-Fi already connected; RSSI ");
         Serial.print(WiFi.RSSI());
         Serial.println(" dBm.");
@@ -612,6 +613,7 @@ static bool wifi_connect_saved(void)
         Serial.println();
 
         if (WiFi.status() == WL_CONNECTED) {
+            WiFi.setSleep(false);
             Serial.print("[Playgroup] Wi-Fi connected in ");
             Serial.print((unsigned long)(millis() - started));
             Serial.print(" ms; RSSI ");
