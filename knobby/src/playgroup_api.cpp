@@ -1154,8 +1154,12 @@ void playgroup_prefetch_deck_images(void)
     for (int i = 0; i < job->count; i++)
         strlcpy(job->ids[i], cached_decks[i].scryfall_id, sizeof(job->ids[i]));
 
+    /* Keep HTTPS prefetch off CPU0. Wi-Fi/system work and IDLE0 are
+       watchdog-sensitive there on this board. CPU1 is also where the
+       previously stable foreground HTTPS path ran; priority 0 keeps UI/game
+       work ahead of opportunistic art downloads. */
     if (xTaskCreatePinnedToCore(playgroup_art_prefetch_task, "pg_art_prefetch",
-                                6144, job, 0, NULL, 0) != pdPASS) {
+                                6144, job, 0, NULL, 1) != pdPASS) {
         Serial.println("[Playgroup] Could not start art prefetch task.");
         heap_caps_free(job);
     }
