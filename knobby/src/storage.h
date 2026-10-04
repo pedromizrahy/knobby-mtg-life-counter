@@ -51,6 +51,9 @@ void nvs_set_timer_face_player(int value);
 int nvs_get_cmd_marker_mode(void);
 void nvs_set_cmd_marker_mode(int value);
 
+int nvs_get_pizza_art(void);
+void nvs_set_pizza_art(int value);
+
 int nvs_get_multi_select(void);
 void nvs_set_multi_select(int value);
 
