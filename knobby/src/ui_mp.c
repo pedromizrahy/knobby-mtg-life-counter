@@ -1013,26 +1013,27 @@ void refresh_multiplayer_life_preview(void)
     }
 }
 
-void refresh_multiplayer_selection_animation(void)
+static void refresh_multiplayer_roulette_player(int player, bool selected)
 {
     const mp_layout_spec_t *layout = mp_state.layout;
-    int i;
 
-    if (layout == NULL)
+    if (layout == NULL || player < 0)
         return;
 
-    for (i = 0; i < layout->panel_count; i++) {
+    for (int i = 0; i < layout->panel_count; i++) {
         const mp_panel_spec_t *spec = &layout->panels[i];
-        int player = spec->player_index;
-        bool selected = is_player_selected(player);
-        lv_obj_t *panel = mp_state.panels[i];
-        lv_obj_t *life_lbl = mp_state.life_labels[i];
-        lv_obj_t *name_lbl = mp_state.name_labels[i];
+        lv_obj_t *panel;
+        lv_obj_t *life_lbl;
+        lv_obj_t *name_lbl;
+
+        if (spec->player_index != player)
+            continue;
+
+        panel = mp_state.panels[i];
+        life_lbl = mp_state.life_labels[i];
+        name_lbl = mp_state.name_labels[i];
 
         if (nvs_get_color_mode() == COLOR_MODE_ART) {
-            /* Roulette highlight for photo backgrounds: selected slice is
-               bright, the rest dim. This only changes the overlay opacity,
-               avoiding the expensive full panel/counter/marker refresh. */
             if (mp_state.art_overlays[i] != NULL) {
                 lv_obj_set_style_bg_opa(mp_state.art_overlays[i],
                                         selected ? LV_OPA_10 : LV_OPA_60, 0);
@@ -1058,7 +1059,38 @@ void refresh_multiplayer_selection_animation(void)
             if (name_lbl != NULL)
                 lv_obj_set_style_text_color(name_lbl, text_color, 0);
         }
+        return;
     }
+}
+
+void refresh_multiplayer_selection_animation(void)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+
+    if (layout == NULL)
+        return;
+
+    /* One-time roulette initialization: dim all seats, then light the
+       selected one. Subsequent ticks use the two-seat step function below. */
+    for (int i = 0; i < layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &layout->panels[i];
+        refresh_multiplayer_roulette_player(
+            spec->player_index,
+            is_player_selected(spec->player_index));
+    }
+}
+
+void refresh_multiplayer_selection_step(int previous_player, int current_player)
+{
+    if (previous_player == current_player) {
+        refresh_multiplayer_roulette_player(current_player, true);
+        return;
+    }
+
+    /* Only two seats visually change on a roulette hop. Avoid walking and
+       restyling every pizza slice at 50+ Hz. */
+    refresh_multiplayer_roulette_player(previous_player, false);
+    refresh_multiplayer_roulette_player(current_player, true);
 }
 
 /* ---------- unified refresh ---------- */
