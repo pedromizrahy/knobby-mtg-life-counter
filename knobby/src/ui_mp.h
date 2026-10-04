@@ -14,6 +14,7 @@ void refresh_multiplayer_ui(void);
 void refresh_multiplayer_life_preview(void);
 void refresh_multiplayer_selection_animation(void);
 void refresh_multiplayer_turn_ui(void);
+void refresh_multiplayer_turn_state(void);
 
 int mp_player_seat_rotation(int player);
 
