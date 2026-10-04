@@ -1268,19 +1268,24 @@ static void refresh_roster(void)
 
             lv_label_set_text(roster_labels[i], buf);
             lv_label_set_long_mode(roster_labels[i], LV_LABEL_LONG_DOT);
-            lv_obj_set_width(roster_labels[i], button_w - 28);
+            lv_obj_set_size(roster_labels[i], button_w - 28,
+                            (pregame_player_count <= 4) ? 18 : button_h);
             lv_obj_set_style_text_align(roster_labels[i], LV_TEXT_ALIGN_CENTER, 0);
             lv_obj_set_style_text_font(roster_labels[i], font, 0);
 
             if (pregame_player_count <= 4 && roster_deck_labels[i] != NULL) {
-                lv_obj_set_width(roster_deck_labels[i], button_w - 34);
+                /* Review cards are intentionally two fixed single-line rows:
+                   player on top, deck/commander below. A long deck name must
+                   ellipsize instead of growing to a second line and colliding
+                   with the next player's card. */
+                lv_obj_set_size(roster_deck_labels[i], button_w - 34, 18);
                 lv_label_set_long_mode(roster_deck_labels[i], LV_LABEL_LONG_DOT);
                 lv_obj_set_style_text_align(roster_deck_labels[i], LV_TEXT_ALIGN_CENTER, 0);
                 lv_obj_set_style_text_font(roster_deck_labels[i], &lv_font_montserrat_14, 0);
                 lv_obj_set_style_text_color(roster_deck_labels[i],
                                             lv_color_hex(0x9AA6B2), 0);
                 lv_obj_align(roster_labels[i], LV_ALIGN_TOP_MID, 0, 4);
-                lv_obj_align(roster_deck_labels[i], LV_ALIGN_BOTTOM_MID, 0, -4);
+                lv_obj_align(roster_deck_labels[i], LV_ALIGN_BOTTOM_MID, 0, -3);
             } else {
                 lv_obj_center(roster_labels[i]);
             }
