@@ -35,6 +35,9 @@ typedef struct {
     long user_id;
     bool archived;
     float power_level;
+    int games_won;
+    int games_lost;
+    char last_game_played_at[40];
     char name[PG_DECK_NAME_LEN];
     char commander[PG_COMMANDER_NAME_LEN];
     char partner[PG_COMMANDER_NAME_LEN];
