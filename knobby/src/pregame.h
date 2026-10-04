@@ -20,4 +20,8 @@ void pregame_change_member(int delta);
 void pregame_change_deck(int delta);
 bool pregame_handle_back(lv_obj_t *screen);
 
+/* Selected commander art for in-game rendering. The descriptor remains valid
+   until the next pregame selection/reset. Returns NULL when no art is set. */
+const lv_img_dsc_t *pregame_get_player_commander_art(int player_index);
+
 #endif // _PREGAME_H
