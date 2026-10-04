@@ -2,6 +2,7 @@
 #include <HTTPClient.h>
 #include <NetworkClientSecure.h>
 #include <WiFi.h>
+#include <SPIFFS.h>
 #include <nvs.h>
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
@@ -60,6 +61,189 @@ static NetworkClientSecure art_tls;
 static HTTPClient art_http;
 static bool art_http_configured = false;
 static volatile bool art_background_prefetch_active = false;
+#define PG_ART_FILE_MAGIC 0x50474131UL
+#define PG_ART_FILE_VERSION 1U
+
+typedef struct {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t reserved;
+    uint32_t jpeg_size;
+    char scryfall_id[PG_SCRYFALL_ID_LEN];
+} pg_art_file_header_t;
+
+static bool art_fs_checked = false;
+static bool art_fs_ready = false;
+
+static bool art_fs_begin(void)
+{
+    if (art_fs_checked)
+        return art_fs_ready;
+
+    art_fs_checked = true;
+    art_fs_ready = SPIFFS.begin(false);
+
+    if (art_fs_ready) {
+        Serial.print("[Playgroup] Persistent art cache ready; used ");
+        Serial.print((unsigned)SPIFFS.usedBytes());
+        Serial.print("/");
+        Serial.print((unsigned)SPIFFS.totalBytes());
+        Serial.println(" bytes.");
+    } else {
+        Serial.println("[Playgroup] SPIFFS mount failed; persistent art cache disabled.");
+    }
+
+    return art_fs_ready;
+}
+
+static uint64_t art_id_hash(const char *id)
+{
+    uint64_t hash = 1469598103934665603ULL;
+
+    if (id == NULL)
+        return 0;
+
+    while (*id) {
+        hash ^= (uint8_t)*id++;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+static void art_file_path(const char *id, char *out, size_t out_size)
+{
+    uint64_t hash = art_id_hash(id);
+    snprintf(out, out_size, "/pga_%08lx%08lx.bin",
+             (unsigned long)(hash >> 32),
+             (unsigned long)(hash & 0xffffffffUL));
+}
+
+static bool art_persistent_load(const char *id,
+                                uint8_t **out_data,
+                                size_t *out_size)
+{
+    char path[32];
+    pg_art_file_header_t header;
+    File file;
+    uint8_t *data;
+    size_t read_count;
+    uint32_t started;
+
+    if (id == NULL || id[0] == '\0' || out_data == NULL || out_size == NULL)
+        return false;
+
+    *out_data = NULL;
+    *out_size = 0;
+
+    if (!art_fs_begin())
+        return false;
+
+    art_file_path(id, path, sizeof(path));
+    if (!SPIFFS.exists(path))
+        return false;
+
+    started = millis();
+    file = SPIFFS.open(path, FILE_READ);
+    if (!file)
+        return false;
+
+    if (file.read((uint8_t *)&header, sizeof(header)) != sizeof(header) ||
+        header.magic != PG_ART_FILE_MAGIC ||
+        header.version != PG_ART_FILE_VERSION ||
+        header.jpeg_size == 0 ||
+        header.jpeg_size > PG_ART_CACHE_MAX_BYTES ||
+        strncmp(header.scryfall_id, id, sizeof(header.scryfall_id)) != 0 ||
+        file.size() != (size_t)sizeof(header) + (size_t)header.jpeg_size) {
+        file.close();
+        SPIFFS.remove(path);
+        return false;
+    }
+
+    data = (uint8_t *)heap_caps_malloc((size_t)header.jpeg_size,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (data == NULL) {
+        file.close();
+        return false;
+    }
+
+    read_count = file.read(data, (size_t)header.jpeg_size);
+    file.close();
+
+    if (read_count != (size_t)header.jpeg_size) {
+        heap_caps_free(data);
+        return false;
+    }
+
+    *out_data = data;
+    *out_size = read_count;
+
+    Serial.print("[Playgroup] Commander art flash cache hit in ");
+    Serial.print((unsigned long)(millis() - started));
+    Serial.print(" ms: ");
+    Serial.println(id);
+    return true;
+}
+
+static void art_persistent_store(const char *id,
+                                 const uint8_t *data,
+                                 size_t size)
+{
+    char path[32];
+    char temp_path[32];
+    pg_art_file_header_t header;
+    File file;
+    size_t written;
+    uint32_t started;
+
+    if (id == NULL || id[0] == '\0' || data == NULL || size == 0 ||
+        size > PG_ART_CACHE_MAX_BYTES || !art_fs_begin())
+        return;
+
+    art_file_path(id, path, sizeof(path));
+    if (SPIFFS.exists(path))
+        return;
+
+    snprintf(temp_path, sizeof(temp_path), "/pgt_%08lx.tmp",
+             (unsigned long)(art_id_hash(id) & 0xffffffffUL));
+
+    memset(&header, 0, sizeof(header));
+    header.magic = PG_ART_FILE_MAGIC;
+    header.version = PG_ART_FILE_VERSION;
+    header.jpeg_size = (uint32_t)size;
+    strlcpy(header.scryfall_id, id, sizeof(header.scryfall_id));
+
+    started = millis();
+    SPIFFS.remove(temp_path);
+    file = SPIFFS.open(temp_path, FILE_WRITE);
+    if (!file)
+        return;
+
+    written = file.write((const uint8_t *)&header, sizeof(header));
+    if (written == sizeof(header))
+        written = file.write(data, size);
+    else
+        written = 0;
+
+    file.close();
+
+    if (written != size) {
+        SPIFFS.remove(temp_path);
+        Serial.println("[Playgroup] Commander art flash cache write failed.");
+        return;
+    }
+
+    SPIFFS.remove(path);
+    if (!SPIFFS.rename(temp_path, path)) {
+        SPIFFS.remove(temp_path);
+        return;
+    }
+
+    Serial.print("[Playgroup] Commander art saved to flash in ");
+    Serial.print((unsigned long)(millis() - started));
+    Serial.print(" ms: ");
+    Serial.println(id);
+}
+
 
 static void art_http_reset(void)
 {
@@ -1098,6 +1282,12 @@ bool playgroup_download_deck_image(const char *art_crop_url,
         return true;
     }
 
+    if (scryfall_id != NULL && scryfall_id[0] != '\0' &&
+        art_persistent_load(scryfall_id, out_data, out_size)) {
+        art_cache_store(scryfall_id, *out_data, *out_size);
+        return true;
+    }
+
     art_cache_init();
     if (art_http_mutex == NULL)
         return false;
@@ -1124,6 +1314,7 @@ bool playgroup_download_deck_image(const char *art_crop_url,
     if (ok && scryfall_id != NULL && scryfall_id[0] != '\0' &&
         *out_data != NULL && *out_size > 0) {
         art_cache_store(scryfall_id, *out_data, *out_size);
+        art_persistent_store(scryfall_id, *out_data, *out_size);
     }
 
     xSemaphoreGive(art_http_mutex);
