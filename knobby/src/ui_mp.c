@@ -1035,7 +1035,7 @@ void refresh_multiplayer_selection_animation(void)
                avoiding the expensive full panel/counter/marker refresh. */
             if (mp_state.art_overlays[i] != NULL) {
                 lv_obj_set_style_bg_opa(mp_state.art_overlays[i],
-                                        selected ? LV_OPA_15 : LV_OPA_65, 0);
+                                        selected ? LV_OPA_10 : LV_OPA_60, 0);
             }
 
             if (life_lbl != NULL)
