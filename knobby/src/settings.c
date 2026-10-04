@@ -241,6 +241,17 @@ static void cmd_marker_set(int mode)
     refresh_player_ui();
 }
 
+static const char *pizza_art_label(int enabled)
+{
+    return enabled ? "Pizza Art\nON" : "Pizza Art\nOFF";
+}
+
+static void pizza_art_set(int enabled)
+{
+    nvs_set_pizza_art(enabled);
+    rebuild_multiplayer_layout(nvs_get_players_to_track());
+}
+
 
 static const char *deselect_label(int index)
 {
@@ -645,6 +656,7 @@ static const setting_item_t settings_items[] = {
     { .id = "battery",        .fixed_label = "Battery",    .navigate = open_battery_screen, .nav_screen = &screen_battery },
     { .id = "color-mode",     .label = color_mode_label,       .color = color_mode_color,  .get = nvs_get_color_mode,       .set = nvs_set_color_mode,       .count = COLOR_MODE_COUNT },
     { .id = "cmd-marker",     .label = cmd_marker_label,       .color = color_mode_color,  .get = nvs_get_cmd_marker_mode,  .set = cmd_marker_set,           .count = CMD_MARKER_COUNT },
+    { .id = "pizza-art",      .label = pizza_art_label,        .color = toggle_color,      .get = nvs_get_pizza_art,        .set = pizza_art_set,            .count = 2 },
     { .id = "orientation",    .label = orientation_mode_label, .color = orientation_color, .get = nvs_get_orientation,      .set = nvs_set_orientation,      .count = ORIENTATION_MODE_COUNT },
     { .id = "auto-eliminate", .label = auto_eliminate_label,   .color = toggle_color,      .get = nvs_get_auto_eliminate,   .set = nvs_set_auto_eliminate,   .count = 2 },
     { .id = "random-first",   .label = random_first_label,     .color = toggle_color,      .get = nvs_get_random_first,     .set = nvs_set_random_first,     .count = 2 },
