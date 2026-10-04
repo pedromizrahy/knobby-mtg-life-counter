@@ -943,6 +943,7 @@ void knob_life_init(void)
 // ---------- player selection animation ----------
 static lv_timer_t *player_select_anim_timer = NULL;
 static int player_select_anim_steps = 0;
+static int player_select_anim_total_steps = 0;
 static int player_select_anim_period = 0;
 static int roulette_idx = 0;
 static int last_roulette_winner = -1;
@@ -975,10 +976,22 @@ static void player_select_anim_cb(lv_timer_t *timer)
            turn/selection styling and updates all dependent HUD elements. */
         refresh_player_ui();
     } else {
-        /* Smooth roulette deceleration: fast enough to read as motion at
-           the start, then progressively slower so the winner feels earned. */
-        player_select_anim_period += 7;
-        if (player_select_anim_period > 180) player_select_anim_period = 180;
+        /*
+         * "Burst + brake" roulette:
+         * - keep almost the whole spin extremely fast;
+         * - spend the visible suspense only on the last six hops.
+         *
+         * This mirrors prize/random selector easing: winner is fixed before
+         * animation, while the visual motion starts fast and eases out near
+         * the target instead of slowing from the very first hop.
+         */
+        static const uint16_t brake_ms[6] = {28, 42, 65, 95, 145, 220};
+
+        if (player_select_anim_steps <= 6) {
+            player_select_anim_period = brake_ms[6 - player_select_anim_steps];
+        } else {
+            player_select_anim_period = 18;
+        }
         lv_timer_set_period(player_select_anim_timer, player_select_anim_period);
     }
 }
@@ -989,7 +1002,7 @@ void start_player_selection_animation(void)
     int start_player;
     int winner;
     int offset;
-    int full_cycles = 2;
+    int full_cycles = 3;
 
     if (track <= 1) return;
     if (!nvs_get_random_first()) return;
@@ -1015,7 +1028,8 @@ void start_player_selection_animation(void)
     if (offset == 0) offset = track;
 
     player_select_anim_steps = (full_cycles * track) + offset;
-    player_select_anim_period = 45;
+    player_select_anim_total_steps = player_select_anim_steps;
+    player_select_anim_period = 18;
 
     roulette_idx = start_player;
     last_roulette_winner = winner;
@@ -1033,6 +1047,7 @@ void stop_player_selection_animation(void)
     int stopped_player = roulette_idx;
 
     player_select_anim_steps = 0;
+    player_select_anim_total_steps = 0;
     if (player_select_anim_timer != NULL) {
         lv_timer_del(player_select_anim_timer);
         player_select_anim_timer = NULL;
