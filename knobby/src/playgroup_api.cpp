@@ -100,7 +100,7 @@ typedef struct {
 static bool art_fs_checked = false;
 static bool art_fs_ready = false;
 
-static bool art_fs_begin(void)
+static bool art_fs_begin_read(void)
 {
     if (art_fs_checked)
         return art_fs_ready;
@@ -108,22 +108,38 @@ static bool art_fs_begin(void)
     art_fs_checked = true;
     art_fs_ready = SPIFFS.begin(false);
 
-    if (!art_fs_ready) {
-        /* A freshly flashed custom partition often has no filesystem yet.
-           Format once on mount failure so persistent commander caching
-           actually becomes available on-device. */
-        Serial.println("[Playgroup] SPIFFS mount failed; formatting art cache partition...");
-        art_fs_ready = SPIFFS.begin(true);
-    }
-
     if (art_fs_ready) {
         Serial.print("[Playgroup] Persistent art cache ready; used ");
         Serial.print((unsigned)SPIFFS.usedBytes());
         Serial.print("/");
         Serial.print((unsigned)SPIFFS.totalBytes());
         Serial.println(" bytes.");
-    } else {
-        Serial.println("[Playgroup] SPIFFS unavailable; persistent art cache disabled.");
+    }
+
+    return art_fs_ready;
+}
+
+static bool art_fs_begin_write(void)
+{
+    if (art_fs_ready)
+        return true;
+
+    if (!art_fs_checked) {
+        art_fs_checked = true;
+        art_fs_ready = SPIFFS.begin(false);
+    }
+
+    if (!art_fs_ready) {
+        Serial.println("[Playgroup] Initializing persistent art cache...");
+        art_fs_ready = SPIFFS.begin(true);
+    }
+
+    if (art_fs_ready) {
+        Serial.print("[Playgroup] Persistent art cache writable; used ");
+        Serial.print((unsigned)SPIFFS.usedBytes());
+        Serial.print("/");
+        Serial.print((unsigned)SPIFFS.totalBytes());
+        Serial.println(" bytes.");
     }
 
     return art_fs_ready;
@@ -168,7 +184,7 @@ static bool art_persistent_load(const char *id,
     *out_data = NULL;
     *out_size = 0;
 
-    if (!art_fs_begin())
+    if (!art_fs_begin_read())
         return false;
 
     art_file_path(id, path, sizeof(path));
@@ -229,7 +245,7 @@ static void art_persistent_store(const char *id,
     uint32_t started;
 
     if (id == NULL || id[0] == '\0' || data == NULL || size == 0 ||
-        size > PG_ART_CACHE_MAX_BYTES || !art_fs_begin())
+        size > PG_ART_CACHE_MAX_BYTES || !art_fs_begin_write())
         return;
 
     art_file_path(id, path, sizeof(path));
@@ -1390,7 +1406,6 @@ bool playgroup_download_deck_image(const char *art_crop_url,
     if (ok && scryfall_id != NULL && scryfall_id[0] != '\0' &&
         *out_data != NULL && *out_size > 0) {
         art_cache_store(scryfall_id, *out_data, *out_size);
-        art_persistent_store(scryfall_id, *out_data, *out_size);
     }
 
     xSemaphoreGive(art_http_mutex);
@@ -1405,6 +1420,22 @@ bool playgroup_cached_image_copy(const char *scryfall_id,
     *out_data = NULL;
     *out_size = 0;
     return art_cache_copy(scryfall_id, out_data, out_size);
+}
+
+bool playgroup_persist_cached_image(const char *scryfall_id)
+{
+    uint8_t *data = NULL;
+    size_t size = 0;
+
+    if (scryfall_id == NULL || scryfall_id[0] == '\0')
+        return false;
+
+    if (!art_cache_copy(scryfall_id, &data, &size))
+        return false;
+
+    art_persistent_store(scryfall_id, data, size);
+    heap_caps_free(data);
+    return true;
 }
 
 bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_t *out_size)
