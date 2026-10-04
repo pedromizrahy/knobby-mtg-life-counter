@@ -422,15 +422,16 @@ void reset_all_values(void)
 
     turn_timer_reset();
 
-    refresh_main_ui();
-    refresh_select_ui();
-    refresh_damage_ui();
-    refresh_settings_ui();
-    refresh_multiplayer_ui();
+    /*
+     * Only repaint the gameplay HUD that is about to be shown. Select,
+     * Damage, Rename, All Damage and Counter Edit all refresh on entry;
+     * repainting those hidden screens here made START GAME do unrelated work.
+     */
+    if (nvs_get_players_to_track() > 1)
+        refresh_multiplayer_ui();
+    else
+        refresh_main_ui();
 
-    refresh_rename_ui();
-    refresh_all_damage_ui();
-    refresh_counter_edit_ui();
     mana_clear_all();
 
     start_player_selection_animation();
