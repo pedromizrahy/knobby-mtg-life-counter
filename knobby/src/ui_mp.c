@@ -936,6 +936,33 @@ void refresh_multiplayer_turn_ui(void)
     }
 }
 
+void refresh_multiplayer_player_name(int player)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+
+    if (layout == NULL || player < 0)
+        return;
+
+    for (int i = 0; i < layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &layout->panels[i];
+
+        if (spec->player_index != player)
+            continue;
+
+        /*
+         * While a life preview is active, the name label temporarily shows
+         * the projected total ("= N"). Preserve that transient display; the
+         * real player name will be restored by the normal preview refresh.
+         */
+        if (life_preview_active && is_player_selected(player))
+            return;
+
+        mp_label_set_text_if_changed(mp_state.name_labels[i],
+                                     player_names[player]);
+        return;
+    }
+}
+
 void refresh_multiplayer_player_state(int player)
 {
     const mp_layout_spec_t *layout = mp_state.layout;
