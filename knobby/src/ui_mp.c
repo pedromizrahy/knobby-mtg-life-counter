@@ -996,6 +996,38 @@ void refresh_multiplayer_player_state(int player)
     }
 }
 
+void refresh_multiplayer_commander_markers(void)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+    int orientation_mode;
+    int i;
+
+    if (layout == NULL)
+        return;
+
+    orientation_mode = nvs_get_orientation();
+
+    for (i = 0; i < layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &layout->panels[i];
+        lv_obj_t *panel = mp_state.panels[i];
+        lv_obj_t *name_lbl = mp_state.name_labels[i];
+        int16_t angle = layout->angle_fn(orientation_mode, i);
+        int16_t counter_angle =
+            get_counter_row_angle(orientation_mode, spec, panel, angle);
+        lv_color_t text_color = (name_lbl != NULL)
+            ? lv_obj_get_style_text_color(name_lbl, LV_PART_MAIN)
+            : get_player_text_color(spec->player_index);
+
+        /*
+         * Commander Marker: Dot <-> Art changes only the marker contents.
+         * Do not repaint player panels, counters, labels, geometry or images.
+         */
+        refresh_commander_markers(spec, panel, mp_state.cmd_markers[i], i,
+                                  spec->player_index, text_color,
+                                  counter_angle);
+    }
+}
+
 void refresh_multiplayer_turn_state(void)
 {
     const mp_layout_spec_t *layout = mp_state.layout;
