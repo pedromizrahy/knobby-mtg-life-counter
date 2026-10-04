@@ -912,6 +912,42 @@ void refresh_multiplayer_turn_ui(void)
     }
 }
 
+void refresh_multiplayer_turn_state(void)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+    int i;
+
+    if (layout == NULL)
+        return;
+
+    for (i = 0; i < layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &layout->panels[i];
+
+        /* Turn changes affect panel emphasis and text contrast, but not
+           counters, commander markers, geometry, or image sources. */
+        refresh_mp_panel(mp_state.panels[i],
+                         mp_state.life_labels[i],
+                         mp_state.name_labels[i],
+                         spec->player_index,
+                         spec->color_index);
+
+        if (nvs_get_color_mode() == COLOR_MODE_ART &&
+            mp_state.art_overlays[i] != NULL) {
+            lv_opa_t shade_opa = LV_OPA_50;
+
+            if (turn_timer_enabled && active_turn_player >= 0) {
+                shade_opa = (spec->player_index == active_turn_player)
+                          ? LV_OPA_20
+                          : LV_OPA_60;
+            }
+
+            lv_obj_set_style_bg_opa(mp_state.art_overlays[i], shade_opa, 0);
+        }
+    }
+
+    refresh_multiplayer_turn_ui();
+}
+
 void refresh_multiplayer_life_preview(void)
 {
     const mp_layout_spec_t *layout = mp_state.layout;
