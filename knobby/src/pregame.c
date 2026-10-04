@@ -7,6 +7,7 @@
 #include "playgroup_api.h"
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include "esp_heap_caps.h"
 #include "commander_image_decode.h"
 
@@ -246,6 +247,84 @@ static void refresh_member_picker(void);
 static void refresh_deck_picker(bool schedule_art);
 static void schedule_deck_art(void);
 static bool preload_current_player_deck_art(void); /* retained for diagnostics; normal picker is on-demand */
+static void split_member_display_name(const char *full,
+                                      char *first, size_t first_size,
+                                      char *second_initial)
+{
+    const char *p;
+    size_t n = 0;
+
+    if (first != NULL && first_size > 0)
+        first[0] = '\0';
+    if (second_initial != NULL)
+        *second_initial = '\0';
+    if (full == NULL || first == NULL || first_size == 0)
+        return;
+
+    while (*full == ' ') full++;
+    p = full;
+    while (*p != '\0' && *p != ' ' && n + 1 < first_size)
+        first[n++] = *p++;
+    first[n] = '\0';
+
+    while (*p == ' ') p++;
+    if (second_initial != NULL && *p != '\0')
+        *second_initial = *p;
+}
+
+static void refresh_playgroup_display_names(void)
+{
+    char first[MAX_DISPLAY_PLAYERS][NAME_LIST_LEN];
+    char second_initial[MAX_DISPLAY_PLAYERS];
+    bool duplicate_first[MAX_DISPLAY_PLAYERS] = {false};
+
+    for (int i = 0; i < pregame_player_count; i++) {
+        const playgroup_member_t *member = NULL;
+
+        first[i][0] = '\0';
+        second_initial[i] = '\0';
+
+        if (!selected_member_set[i])
+            continue;
+
+        member = playgroup_cached_member(selected_member_index[i]);
+        if (member == NULL)
+            continue;
+
+        split_member_display_name(member->username,
+                                  first[i], sizeof(first[i]),
+                                  &second_initial[i]);
+    }
+
+    for (int i = 0; i < pregame_player_count; i++) {
+        if (!selected_member_set[i] || first[i][0] == '\0')
+            continue;
+
+        for (int j = i + 1; j < pregame_player_count; j++) {
+            if (!selected_member_set[j] || first[j][0] == '\0')
+                continue;
+
+            if (strcasecmp(first[i], first[j]) == 0) {
+                duplicate_first[i] = true;
+                duplicate_first[j] = true;
+            }
+        }
+    }
+
+    for (int i = 0; i < pregame_player_count; i++) {
+        if (!selected_member_set[i] || first[i][0] == '\0')
+            continue;
+
+        if (duplicate_first[i] && second_initial[i] != '\0') {
+            snprintf(player_names[i], sizeof(player_names[i]),
+                     "%s %c.", first[i], second_initial[i]);
+        } else {
+            snprintf(player_names[i], sizeof(player_names[i]),
+                     "%s", first[i]);
+        }
+    }
+}
+
 static bool member_index_used_by_other_seat(int member_index, int current_seat);
 static int first_eligible_member_index(int current_seat);
 
@@ -764,8 +843,7 @@ static void event_member_select(lv_event_t *e)
     selected_member_set[member_picker_seat] = true;
     selected_deck_id[member_picker_seat] = 0;
     selected_deck_name[member_picker_seat][0] = '\0';
-    snprintf(player_names[member_picker_seat], sizeof(player_names[member_picker_seat]),
-             "%s", member->username);
+    refresh_playgroup_display_names();
 
     if (member_status_label != NULL) {
         lv_label_set_text(member_status_label, "Loading decks...");
@@ -1075,6 +1153,9 @@ static void event_deck_select(lv_event_t *e)
 static void refresh_roster(void)
 {
     int i;
+
+    if (playgroup_roster_active)
+        refresh_playgroup_display_names();
     char buf[112];
     int member_count = playgroup_cached_member_count();
     int button_h;
@@ -1127,7 +1208,6 @@ static void refresh_roster(void)
                 const playgroup_member_t *member =
                     playgroup_cached_member(selected_member_index[i] % member_count);
                 if (member != NULL) {
-                    snprintf(player_names[i], sizeof(player_names[i]), "%s", member->username);
                     if (pregame_player_count <= 4) {
                         snprintf(buf, sizeof(buf), "P%d  %s", i + 1, member->username);
                         if (roster_deck_labels[i] != NULL) {
