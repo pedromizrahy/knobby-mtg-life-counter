@@ -70,6 +70,12 @@ bool playgroup_download_deck_image(const char *art_crop_url,
                                    const char *scryfall_id,
                                    uint8_t **out_data,
                                    size_t *out_size);
+
+/* Start one low-priority on-demand art fetch without blocking the LVGL task.
+   Returns true when the image is already cached or the fetch was started. */
+bool playgroup_prefetch_deck_image_async(const char *art_crop_url,
+                                         const char *scryfall_id);
+
 void playgroup_free_image(uint8_t *data);
 
 /* Start a low-priority background prefetch for the currently cached deck list.
