@@ -290,13 +290,14 @@ static void remove_log_offset(int offset)
     damage_log_count--;
 }
 
-void damage_log_undo_selected(void)
+static bool damage_log_undo_selected_internal(bool refresh_ui)
 {
     int buf_idx;
     uint16_t action_id;
     int offset;
 
-    if (damage_log_selected < 0 || damage_log_selected >= damage_log_count) return;
+    if (damage_log_selected < 0 || damage_log_selected >= damage_log_count)
+        return false;
 
     buf_idx = (damage_log_head - 1 - damage_log_selected + DAMAGE_LOG_MAX) % DAMAGE_LOG_MAX;
     action_id = damage_log[buf_idx].action_id;
@@ -323,17 +324,35 @@ void damage_log_undo_selected(void)
         damage_log_selected = (count > 0) ? offsets[0] : -1;
     }
 
-    refresh_damage_log_ui();
+    if (refresh_ui)
+        refresh_damage_log_ui();
+
+    return true;
+}
+
+void damage_log_undo_selected(void)
+{
+    damage_log_undo_selected_internal(true);
 }
 
 void damage_log_undo_all(void)
 {
     int offset;
+    bool changed = false;
 
+    /*
+     * Undo All used to rebuild the whole Event Log after every logical
+     * action. Undo state first, then rebuild the visible log once.
+     */
     while ((offset = newest_undoable_offset()) >= 0) {
         damage_log_selected = offset;
-        damage_log_undo_selected();
+        if (!damage_log_undo_selected_internal(false))
+            break;
+        changed = true;
     }
+
+    if (changed)
+        refresh_damage_log_ui();
 }
 
 // ---------- UI ----------
