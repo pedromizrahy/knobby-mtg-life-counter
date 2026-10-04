@@ -108,6 +108,14 @@ static bool art_fs_begin(void)
     art_fs_checked = true;
     art_fs_ready = SPIFFS.begin(false);
 
+    if (!art_fs_ready) {
+        /* A freshly flashed custom partition often has no filesystem yet.
+           Format once on mount failure so persistent commander caching
+           actually becomes available on-device. */
+        Serial.println("[Playgroup] SPIFFS mount failed; formatting art cache partition...");
+        art_fs_ready = SPIFFS.begin(true);
+    }
+
     if (art_fs_ready) {
         Serial.print("[Playgroup] Persistent art cache ready; used ");
         Serial.print((unsigned)SPIFFS.usedBytes());
@@ -115,7 +123,7 @@ static bool art_fs_begin(void)
         Serial.print((unsigned)SPIFFS.totalBytes());
         Serial.println(" bytes.");
     } else {
-        Serial.println("[Playgroup] SPIFFS mount failed; persistent art cache disabled.");
+        Serial.println("[Playgroup] SPIFFS unavailable; persistent art cache disabled.");
     }
 
     return art_fs_ready;
