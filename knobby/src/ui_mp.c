@@ -1041,12 +1041,21 @@ static void ensure_roulette_indicator(void)
      */
     mp_roulette_indicator = lv_obj_create(screen_multiplayer);
     lv_obj_remove_style_all(mp_roulette_indicator);
-    lv_obj_set_size(mp_roulette_indicator, 82, 82);
-    lv_obj_set_style_bg_opa(mp_roulette_indicator, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(mp_roulette_indicator, 4, 0);
-    lv_obj_set_style_border_color(mp_roulette_indicator, lv_color_white(), 0);
-    lv_obj_set_style_border_opa(mp_roulette_indicator, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(mp_roulette_indicator, LV_RADIUS_CIRCLE, 0);
+
+    /*
+     * A compact "light" behind the life/name stack gives the same visual
+     * language as an illuminated player without restyling the full pizza
+     * slice. No outline/ring: it should read as a glow, not a selector circle.
+     */
+    lv_obj_set_size(mp_roulette_indicator, 128, 96);
+    lv_obj_set_style_bg_color(mp_roulette_indicator, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(mp_roulette_indicator, LV_OPA_20, 0);
+    lv_obj_set_style_radius(mp_roulette_indicator, 22, 0);
+    lv_obj_set_style_border_width(mp_roulette_indicator, 0, 0);
+    lv_obj_set_style_shadow_color(mp_roulette_indicator, lv_color_white(), 0);
+    lv_obj_set_style_shadow_width(mp_roulette_indicator, 20, 0);
+    lv_obj_set_style_shadow_spread(mp_roulette_indicator, 4, 0);
+    lv_obj_set_style_shadow_opa(mp_roulette_indicator, LV_OPA_30, 0);
     lv_obj_clear_flag(mp_roulette_indicator,
                       LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(mp_roulette_indicator, LV_OBJ_FLAG_HIDDEN);
@@ -1069,8 +1078,8 @@ static void move_roulette_indicator_to_player(int player)
         return;
 
     lv_obj_get_coords(life_lbl, &coords);
-    x = (lv_coord_t)(((int32_t)coords.x1 + coords.x2) / 2 - 41);
-    y = (lv_coord_t)(((int32_t)coords.y1 + coords.y2) / 2 - 41);
+    x = (lv_coord_t)(((int32_t)coords.x1 + coords.x2) / 2 - 64);
+    y = (lv_coord_t)(((int32_t)coords.y1 + coords.y2) / 2 - 48);
 
     lv_obj_set_pos(mp_roulette_indicator, x, y);
     lv_obj_clear_flag(mp_roulette_indicator, LV_OBJ_FLAG_HIDDEN);
