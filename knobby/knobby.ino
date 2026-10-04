@@ -235,7 +235,10 @@ void loop()
 
   // Light sleep powers down the modem and would drop ESP-NOW packets, so
   // Table Sync keeps the CPU on capped vTaskDelay idles instead.
-  if (time_till_next >= ACTIVE_SLEEP_MIN_MS && !usb_host_active() && !knobby_net_active()) {
+  if (time_till_next >= ACTIVE_SLEEP_MIN_MS &&
+      !usb_host_active() &&
+      !knobby_net_active() &&
+      !playgroup_network_active()) {
     uint8_t level_a = gpio_get_level((gpio_num_t)ROTARY_ENC_PIN_A);
     uint8_t level_b = gpio_get_level((gpio_num_t)ROTARY_ENC_PIN_B);
     gpio_wakeup_enable((gpio_num_t)ROTARY_ENC_PIN_A, level_a ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL);
@@ -247,7 +250,8 @@ void loop()
   } else {
     gpio_wakeup_disable((gpio_num_t)ROTARY_ENC_PIN_A);
     gpio_wakeup_disable((gpio_num_t)ROTARY_ENC_PIN_B);
-    if (knobby_net_active() && time_till_next > NET_SYNC_IDLE_MAX_MS)
+    if ((knobby_net_active() || playgroup_network_active()) &&
+        time_till_next > NET_SYNC_IDLE_MAX_MS)
       time_till_next = NET_SYNC_IDLE_MAX_MS;
     vTaskDelay(pdMS_TO_TICKS(time_till_next));
   }
