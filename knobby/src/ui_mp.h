@@ -11,6 +11,7 @@ void build_multiplayer_screen(void);
 void rebuild_multiplayer_layout(int track);
 
 void refresh_multiplayer_ui(void);
+void refresh_multiplayer_player_state(int player);
 void refresh_multiplayer_life_preview(void);
 void refresh_multiplayer_selection_animation(void);
 void refresh_multiplayer_selection_step(int previous_player, int current_player);
