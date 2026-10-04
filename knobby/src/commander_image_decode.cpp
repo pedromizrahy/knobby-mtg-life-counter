@@ -38,8 +38,7 @@ bool commander_image_decode_rgb565(const uint8_t *jpeg, size_t jpeg_size,
     uint16_t dst_w;
     uint16_t dst_h;
     size_t dst_bytes;
-    const uint16_t max_w = 190;
-    const uint16_t max_h = 130;
+    /* Background art: enough detail for a 360 px display without decoding\n       the full Scryfall image into PSRAM. */\n    const uint16_t max_w = 300;\n    const uint16_t max_h = 220;
 
     if (!jpeg || jpeg_size == 0 || !out_pixels || !out_width || !out_height)
         return false;
