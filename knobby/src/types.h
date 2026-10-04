@@ -22,7 +22,7 @@
 
 // ---------- color modes ----------
 #define COLOR_MODE_PLAYER     0
-#define COLOR_MODE_LIFE       1
+#define COLOR_MODE_ART        1
 #define COLOR_MODE_COUNT      2
 
 #define CUSTOM_COLOR_COUNT 18
