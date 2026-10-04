@@ -57,6 +57,8 @@ static lv_obj_t *deck_title_label = NULL;
 static lv_obj_t *deck_name_label = NULL;
 static lv_obj_t *deck_commander_label = NULL;
 static lv_obj_t *deck_position_label = NULL;
+static lv_obj_t *deck_select_button = NULL;
+static lv_obj_t *deck_more_button = NULL;
 static lv_obj_t *deck_image = NULL;
 static lv_obj_t *deck_image_overlay = NULL;
 static lv_timer_t *deck_art_timer = NULL;
@@ -1119,6 +1121,29 @@ static void schedule_deck_art(void)
     lv_timer_resume(deck_art_timer);
 }
 
+static void set_deck_picker_more_visual(bool more)
+{
+    if (deck_more_button != NULL) {
+        if (more) lv_obj_clear_flag(deck_more_button, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(deck_more_button, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (deck_select_button != NULL) {
+        if (more) lv_obj_add_flag(deck_select_button, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_clear_flag(deck_select_button, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (deck_name_label != NULL) {
+        if (more) lv_obj_add_flag(deck_name_label, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_clear_flag(deck_name_label, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (deck_commander_label != NULL) {
+        if (more) lv_obj_add_flag(deck_commander_label, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_clear_flag(deck_commander_label, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void refresh_deck_picker(bool schedule_art)
 {
     const playgroup_deck_t *deck;
@@ -1128,6 +1153,7 @@ static void refresh_deck_picker(bool schedule_art)
     char commander[96];
 
     if (deck_count <= 0) {
+        set_deck_picker_more_visual(false);
         if (deck_name_label != NULL) lv_label_set_text(deck_name_label, "No decks");
         if (deck_commander_label != NULL) lv_label_set_text(deck_commander_label, "");
         if (deck_position_label != NULL) lv_label_set_text(deck_position_label, "0 / 0");
@@ -1139,10 +1165,7 @@ static void refresh_deck_picker(bool schedule_art)
     if (deck_picker_index >= item_count) deck_picker_index = 0;
 
     if (deck_picker_on_more()) {
-        if (deck_name_label != NULL)
-            lv_label_set_text(deck_name_label, "MORE DECKS");
-        if (deck_commander_label != NULL)
-            lv_label_set_text(deck_commander_label, "Show less-used decks");
+        set_deck_picker_more_visual(true);
         if (deck_position_label != NULL) {
             snprintf(pos, sizeof(pos), "%d / %d",
                      deck_picker_index + 1, item_count);
@@ -1152,6 +1175,7 @@ static void refresh_deck_picker(bool schedule_art)
         return;
     }
 
+    set_deck_picker_more_visual(false);
     deck = playgroup_cached_deck(deck_picker_index);
     if (deck == NULL) return;
 
@@ -1683,7 +1707,6 @@ void build_pregame_screens(void)
         lv_obj_t *hint;
         lv_obj_t *minus;
         lv_obj_t *plus;
-        lv_obj_t *select;
 
         lv_label_set_text(title, "PLAYERS");
         lv_obj_set_style_text_color(title, lv_color_white(), 0);
@@ -1956,9 +1979,23 @@ void build_pregame_screens(void)
         lv_obj_set_style_text_font(deck_position_label, &lv_font_montserrat_14, 0);
         lv_obj_align(deck_position_label, LV_ALIGN_BOTTOM_MID, 0, -40);
 
-        select = pregame_button(screen_pregame_deck, "SELECT", 132, 38,
-                                event_deck_select, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(select, LV_ALIGN_BOTTOM_MID, 0, -4);
+        deck_select_button = pregame_button(screen_pregame_deck, "SELECT", 132, 38,
+                                            event_deck_select, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(deck_select_button, LV_ALIGN_BOTTOM_MID, 0, -4);
+
+        deck_more_button = pregame_button(screen_pregame_deck, "MORE DECKS", 210, 74,
+                                          event_deck_select, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(deck_more_button, LV_ALIGN_CENTER, 0, 8);
+        lv_obj_set_style_radius(deck_more_button, 24, 0);
+        lv_obj_set_style_bg_color(deck_more_button, lv_color_hex(0x18222E), 0);
+        lv_obj_set_style_border_width(deck_more_button, 2, 0);
+        lv_obj_set_style_border_color(deck_more_button, lv_color_hex(0x6F8398), 0);
+        {
+            lv_obj_t *more_label = lv_obj_get_child(deck_more_button, 0);
+            if (more_label != NULL)
+                lv_obj_set_style_text_font(more_label, &lv_font_montserrat_22, 0);
+        }
+        lv_obj_add_flag(deck_more_button, LV_OBJ_FLAG_HIDDEN);
     }
 
     screen_pregame_mulligans = lv_obj_create(NULL);
