@@ -1531,7 +1531,6 @@ static void event_multiplayer_select(lv_event_t *e)
         }
     }
     select_kick_timer();
-    refresh_multiplayer_ui();
 }
 
 static void event_multiplayer_open_menu(lv_event_t *e)
@@ -1588,7 +1587,6 @@ static void select_timeout_cb(lv_timer_t *timer)
     selection_clear();
     if (select_timeout_timer != NULL)
         lv_timer_pause(select_timeout_timer);
-    refresh_multiplayer_ui();
 }
 
 void select_kick_timer(void)
