@@ -135,6 +135,8 @@ static struct {
     lv_obj_t *panels[MULTIPLAYER_COUNT];
     lv_obj_t *life_labels[MULTIPLAYER_COUNT];
     lv_obj_t *name_labels[MULTIPLAYER_COUNT];
+    lv_obj_t *art_images[MULTIPLAYER_COUNT];
+    lv_obj_t *art_overlays[MULTIPLAYER_COUNT];
     lv_obj_t *counter_rows[MULTIPLAYER_COUNT][COUNTER_TYPE_COUNT];
     lv_obj_t *counter_values[MULTIPLAYER_COUNT][COUNTER_TYPE_COUNT];
     lv_obj_t *cmd_markers[MULTIPLAYER_COUNT][MAX_DISPLAY_PLAYERS];
@@ -980,10 +982,10 @@ void refresh_multiplayer_ui(void)
             if (name_lbl != NULL) {
                 lv_obj_clear_flag(name_lbl, LV_OBJ_FLAG_HIDDEN);
                 lv_obj_align(name_lbl, LV_ALIGN_CENTER, bx,
-                             by + ((layout->panel_count >= 5) ? 24 : 30));
+                             by + ((layout->panel_count >= 5) ? 22 : 27));
             }
             apply_label_rotation(life_lbl, name_lbl, angle, life_pivot_y,
-                                 (layout->panel_count >= 5) ? -24 : -30);
+                                 (layout->panel_count >= 5) ? -22 : -27);
         } else {
             apply_label_rotation(life_lbl, name_lbl, angle, 10, -30);
         }
@@ -1364,8 +1366,9 @@ static void event_wedge_panel(lv_event_t *e)
         lv_draw_mask_angle_init(&wedge_mask_params[idx], WEDGE_CX, WEDGE_CY,
                                 spec->wedge_start, spec->wedge_end);
         wedge_mask_ids[idx] = lv_draw_mask_add(&wedge_mask_params[idx], NULL);
-    } else if (code == LV_EVENT_DRAW_MAIN_END) {
-        /* Remove before children draw so labels are not clipped */
+    } else if (code == LV_EVENT_DRAW_POST_END) {
+        /* Keep the angular mask through child drawing so commander-art
+           backgrounds are clipped to their own pizza slice as well. */
         lv_draw_mask_remove_id(wedge_mask_ids[idx]);
     } else if (code == LV_EVENT_HIT_TEST) {
         lv_hit_test_info_t *info = lv_event_get_param(e);
@@ -1451,7 +1454,7 @@ void rebuild_multiplayer_layout(int track)
                events (presses, draw phases) the handler doesn't act on */
             lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_COVER_CHECK, (void *)(intptr_t)i);
             lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_DRAW_MAIN_BEGIN, (void *)(intptr_t)i);
-            lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_DRAW_MAIN_END, (void *)(intptr_t)i);
+            lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_DRAW_POST_END, (void *)(intptr_t)i);
             lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_HIT_TEST, (void *)(intptr_t)i);
         } else {
             lv_obj_set_style_border_width(panel, 1, 0);
@@ -1465,13 +1468,49 @@ void rebuild_multiplayer_layout(int track)
         lv_obj_add_event_cb(panel, event_multiplayer_open_menu, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)p);
         mp_state.panels[i] = panel;
 
+        if (nvs_get_pizza_art()) {
+            const lv_img_dsc_t *commander_art = pregame_get_player_commander_art(p);
+            if (commander_art != NULL &&
+                commander_art->header.w > 0 && commander_art->header.h > 0) {
+                uint32_t zoom_w =
+                    ((uint32_t)spec->w * 256U + commander_art->header.w - 1U) /
+                    commander_art->header.w;
+                uint32_t zoom_h =
+                    ((uint32_t)spec->h * 256U + commander_art->header.h - 1U) /
+                    commander_art->header.h;
+                uint16_t zoom = (uint16_t)((zoom_w > zoom_h) ? zoom_w : zoom_h);
+                lv_obj_t *art = lv_img_create(panel);
+                lv_obj_t *shade = make_plain_box(panel, spec->w, spec->h);
+
+                if (zoom < 1U) zoom = 1U;
+                if (zoom > 1024U) zoom = 1024U;
+
+                lv_img_set_src(art, commander_art);
+                lv_img_set_zoom(art, zoom);
+                lv_obj_align(art, LV_ALIGN_CENTER, 0, 0);
+                lv_obj_set_style_img_opa(art, LV_OPA_80, 0);
+                lv_obj_clear_flag(art, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+                lv_obj_set_style_bg_color(shade, lv_color_black(), 0);
+                lv_obj_set_style_bg_opa(shade, LV_OPA_50, 0);
+                lv_obj_align(shade, LV_ALIGN_CENTER, 0, 0);
+
+                mp_state.art_images[i] = art;
+                mp_state.art_overlays[i] = shade;
+            }
+        }
+
         name_lbl = lv_label_create(panel);
         lv_label_set_text(name_lbl, player_names[p]);
         lv_obj_set_style_text_color(name_lbl, lv_color_white(), 0);
         lv_obj_set_style_text_font(name_lbl,
             (layout->panel_count >= 5) ? &lv_font_montserrat_14
                                        : &lv_font_montserrat_22, 0);
-        lv_obj_align(name_lbl, LV_ALIGN_CENTER, 0, 30);
+        lv_obj_set_width(name_lbl,
+            (layout->panel_count >= 5) ? 104 : 148);
+        lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_align(name_lbl, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(name_lbl, LV_ALIGN_CENTER, 0, 27);
         mp_state.name_labels[i] = name_lbl;
 
         life_lbl = lv_label_create(panel);
