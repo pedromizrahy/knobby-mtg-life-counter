@@ -1977,7 +1977,7 @@ void build_pregame_screens(void)
         lv_obj_set_style_text_align(deck_name_label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_color(deck_name_label, lv_color_white(), 0);
         lv_obj_set_style_text_font(deck_name_label, &lv_font_montserrat_16, 0);
-        lv_obj_align(deck_name_label, LV_ALIGN_BOTTOM_MID, 0, -88);
+        lv_obj_align(deck_name_label, LV_ALIGN_BOTTOM_MID, 0, -100);
 
         deck_commander_label = lv_label_create(screen_pregame_deck);
         lv_label_set_text(deck_commander_label, "");
@@ -1986,17 +1986,17 @@ void build_pregame_screens(void)
         lv_obj_set_style_text_align(deck_commander_label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_color(deck_commander_label, lv_color_hex(0x9CA8B5), 0);
         lv_obj_set_style_text_font(deck_commander_label, &lv_font_montserrat_14, 0);
-        lv_obj_align(deck_commander_label, LV_ALIGN_BOTTOM_MID, 0, -62);
+        lv_obj_align(deck_commander_label, LV_ALIGN_BOTTOM_MID, 0, -74);
 
         deck_position_label = lv_label_create(screen_pregame_deck);
         lv_label_set_text(deck_position_label, "");
         lv_obj_set_style_text_color(deck_position_label, lv_color_hex(0x778391), 0);
         lv_obj_set_style_text_font(deck_position_label, &lv_font_montserrat_14, 0);
-        lv_obj_align(deck_position_label, LV_ALIGN_BOTTOM_MID, 0, -52);
+        lv_obj_align(deck_position_label, LV_ALIGN_BOTTOM_MID, 0, -62);
 
         deck_select_button = pregame_button(screen_pregame_deck, "SELECT", 132, 38,
                                             event_deck_select, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(deck_select_button, LV_ALIGN_BOTTOM_MID, 0, -14);
+        lv_obj_align(deck_select_button, LV_ALIGN_BOTTOM_MID, 0, -22);
 
         deck_more_button = pregame_button(screen_pregame_deck, "MORE DECKS", 210, 74,
                                           event_deck_select, LV_EVENT_CLICKED, NULL);
