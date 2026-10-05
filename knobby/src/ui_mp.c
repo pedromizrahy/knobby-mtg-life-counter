@@ -1220,23 +1220,50 @@ static int roulette_panel_index_for_player(int player)
     return -1;
 }
 
-static void roulette_set_player_text_emphasis(int player, bool selected)
+static void roulette_set_player_slice_emphasis(int player, bool selected)
 {
     int panel_index = roulette_panel_index_for_player(player);
+    const mp_panel_spec_t *spec;
+    lv_obj_t *panel;
     lv_obj_t *life_lbl;
     lv_obj_t *name_lbl;
-    lv_opa_t opa = selected ? LV_OPA_COVER : LV_OPA_40;
 
-    if (panel_index < 0)
+    if (panel_index < 0 || mp_state.layout == NULL)
         return;
 
+    spec = &mp_state.layout->panels[panel_index];
+    panel = mp_state.panels[panel_index];
     life_lbl = mp_state.life_labels[panel_index];
     name_lbl = mp_state.name_labels[panel_index];
 
+    /*
+     * Roulette emphasis belongs to the whole pizza slice, not just the
+     * number. Only the previous and current slice are touched on each hop.
+     */
+    if (nvs_get_color_mode() == COLOR_MODE_ART &&
+        mp_state.art_overlays[panel_index] != NULL) {
+        mp_set_bg_opa_if_changed(
+            mp_state.art_overlays[panel_index],
+            selected ? LV_OPA_TRANSP : LV_OPA_90);
+    } else if (panel != NULL) {
+        lv_color_t bg = get_effective_player_color(
+            player, spec->color_index,
+            selected ? LIFE_VIB_VIV : LIFE_VIB_DIM);
+        lv_color_t text = color_is_light(bg)
+                        ? lv_color_black()
+                        : lv_color_white();
+
+        if (lv_obj_get_style_bg_color(panel, LV_PART_MAIN).full != bg.full)
+            lv_obj_set_style_bg_color(panel, bg, 0);
+        mp_set_text_color_if_changed(life_lbl, text);
+        mp_set_text_color_if_changed(name_lbl, text);
+    }
+
+    /* Text stays fully readable; the moving cue is the slice itself. */
     if (life_lbl != NULL)
-        lv_obj_set_style_text_opa(life_lbl, opa, 0);
+        lv_obj_set_style_text_opa(life_lbl, LV_OPA_COVER, 0);
     if (name_lbl != NULL)
-        lv_obj_set_style_text_opa(name_lbl, opa, 0);
+        lv_obj_set_style_text_opa(name_lbl, LV_OPA_COVER, 0);
 }
 
 void refresh_multiplayer_selection_animation(void)
@@ -1246,39 +1273,30 @@ void refresh_multiplayer_selection_animation(void)
     if (layout == NULL)
         return;
 
-    /* One-time setup. During the spin only two small text objects change. */
+    /* Initial roulette frame: dim every slice except the current seat. */
     for (int i = 0; i < layout->panel_count; i++) {
         int player = layout->panels[i].player_index;
-        roulette_set_player_text_emphasis(player, is_player_selected(player));
+        roulette_set_player_slice_emphasis(player, is_player_selected(player));
     }
 }
 
 void refresh_multiplayer_selection_step(int previous_player, int current_player)
 {
+    /* Hot path: exactly two slices change per hop. */
     if (previous_player != current_player)
-        roulette_set_player_text_emphasis(previous_player, false);
-    roulette_set_player_text_emphasis(current_player, true);
+        roulette_set_player_slice_emphasis(previous_player, false);
+    roulette_set_player_slice_emphasis(current_player, true);
 }
 
 void refresh_multiplayer_selection_finish(void)
 {
-    const mp_layout_spec_t *layout = mp_state.layout;
-
-    if (layout == NULL)
-        return;
-
-    for (int i = 0; i < layout->panel_count; i++) {
-        lv_obj_t *life_lbl = mp_state.life_labels[i];
-        lv_obj_t *name_lbl = mp_state.name_labels[i];
-
-        if (life_lbl != NULL)
-            lv_obj_set_style_text_opa(
-                life_lbl,
-                art_turn_life_opa_for_player(layout->panels[i].player_index),
-                0);
-        if (name_lbl != NULL)
-            lv_obj_set_style_text_opa(name_lbl, LV_OPA_COVER, 0);
-    }
+    /*
+     * player_select_anim_steps is already zero when this runs, so the normal
+     * refresh no longer sees roulette mode. Restore the table once; if turn
+     * tracking is enabled, turn_timer_start_for_player() immediately applies
+     * the winner's stronger turn emphasis afterwards.
+     */
+    refresh_multiplayer_turn_state();
 }
 
 /* ---------- unified refresh ---------- */
