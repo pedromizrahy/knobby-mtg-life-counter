@@ -888,9 +888,9 @@ void refresh_multiplayer_turn_ui(void)
     if (mp_turn_hold_fill != NULL) {
         if (turn_hold_active) {
             lv_coord_t fill_w =
-                (lv_coord_t)((100L * turn_hold_progress) / 1000L);
+                (lv_coord_t)((106L * turn_hold_progress) / 1000L);
             if (fill_w < 1) fill_w = 1;
-            if (fill_w > 100) fill_w = 100;
+            if (fill_w > 106) fill_w = 106;
 
             lv_obj_set_width(mp_turn_hold_fill, fill_w);
             lv_obj_set_style_bg_color(mp_turn_hold_fill, active_color, 0);
@@ -989,14 +989,14 @@ void refresh_multiplayer_player_name(int player)
 static lv_opa_t art_turn_shade_opa_for_player(int player)
 {
     /*
-     * ART mode uses luminance, not player color, to communicate turn owner.
-     * Keep idle art readable, make the active slice nearly unmasked, and
-     * push inactive slices clearly into the background.
+     * ART mode communicates turn ownership with luminance only.
+     * The active slice should read immediately as "lit", while inactive
+     * slices recede enough that the distinction is obvious at a glance.
      */
     if (!turn_timer_enabled || active_turn_player < 0)
-        return LV_OPA_40;
+        return LV_OPA_45;
 
-    return (player == active_turn_player) ? LV_OPA_10 : LV_OPA_70;
+    return (player == active_turn_player) ? LV_OPA_TRANSP : LV_OPA_80;
 }
 
 void refresh_multiplayer_player_state(int player)
@@ -1952,11 +1952,11 @@ void rebuild_multiplayer_layout(int track)
      */
     mp_turn_hold_fill = lv_obj_create(mp_turn_badge);
     lv_obj_remove_style_all(mp_turn_hold_fill);
-    lv_obj_set_size(mp_turn_hold_fill, 1, 54);
-    lv_obj_set_pos(mp_turn_hold_fill, 4, 4);
-    lv_obj_set_style_radius(mp_turn_hold_fill, 18, 0);
+    lv_obj_set_size(mp_turn_hold_fill, 1, 60);
+    lv_obj_set_pos(mp_turn_hold_fill, 1, 1);
+    lv_obj_set_style_radius(mp_turn_hold_fill, 21, 0);
     lv_obj_set_style_bg_color(mp_turn_hold_fill, lv_color_hex(0xCFEFFF), 0);
-    lv_obj_set_style_bg_opa(mp_turn_hold_fill, LV_OPA_20, 0);
+    lv_obj_set_style_bg_opa(mp_turn_hold_fill, LV_OPA_25, 0);
     lv_obj_clear_flag(mp_turn_hold_fill, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
 
