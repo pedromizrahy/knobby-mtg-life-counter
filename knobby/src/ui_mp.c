@@ -735,6 +735,12 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
         text_color = lv_color_hex(0x808080);
     }
 
+    if (nvs_get_color_mode() == COLOR_MODE_ART &&
+        turn_timer_enabled && active_turn_player >= 0 &&
+        active_turn_player != i && !player_eliminated[i]) {
+        text_color = lv_color_hex(0x8A949E);
+    }
+
     /* Only write the color when it actually changed: every style write
        invalidates the whole panel, which on full-screen wedge panels means
        a full-screen redraw. (bg_opa is set once at build time.) */
@@ -996,7 +1002,7 @@ static lv_opa_t art_turn_shade_opa_for_player(int player)
     if (!turn_timer_enabled || active_turn_player < 0)
         return LV_OPA_40;
 
-    return (player == active_turn_player) ? LV_OPA_TRANSP : LV_OPA_80;
+    return (player == active_turn_player) ? LV_OPA_TRANSP : LV_OPA_90;
 }
 
 void refresh_multiplayer_player_state(int player)
@@ -1108,13 +1114,8 @@ void refresh_multiplayer_turn_state(void)
 
         if (nvs_get_color_mode() == COLOR_MODE_ART &&
             mp_state.art_overlays[i] != NULL) {
-            lv_opa_t shade_opa = LV_OPA_50;
-
-            if (turn_timer_enabled && active_turn_player >= 0) {
-                shade_opa = (spec->player_index == active_turn_player)
-                          ? LV_OPA_20
-                          : LV_OPA_60;
-            }
+            lv_opa_t shade_opa =
+                art_turn_shade_opa_for_player(spec->player_index);
 
             mp_set_bg_opa_if_changed(mp_state.art_overlays[i], shade_opa);
         }
