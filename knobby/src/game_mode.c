@@ -219,11 +219,7 @@ static void event_gm_cmd_marker(lv_event_t *e)
     nvs_set_cmd_marker_mode((nvs_get_cmd_marker_mode() + 1) % CMD_MARKER_COUNT);
     settings_save();
 
-    if (nvs_get_players_to_track() > 1)
-        refresh_multiplayer_commander_markers();
-    else
-        refresh_main_ui();
-
+    /* Gameplay is hidden here and Apply refreshes/rebuilds it on return. */
     refresh_player_settings_ui();
 }
 
@@ -232,7 +228,7 @@ static void event_gm_orientation(lv_event_t *e)
     (void)e;
     nvs_set_orientation((nvs_get_orientation() + 1) % ORIENTATION_MODE_COUNT);
     settings_save();
-    refresh_player_ui();
+    /* Gameplay is hidden here and Apply refreshes/rebuilds it on return. */
     refresh_player_settings_ui();
 }
 
@@ -241,7 +237,7 @@ static void event_gm_name_display(lv_event_t *e)
     (void)e;
     nvs_set_turn_show_name(!nvs_get_turn_show_name());
     settings_save();
-    refresh_turn_ui();
+    /* Timer HUD is hidden here; Apply refreshes it with gameplay. */
     refresh_player_settings_ui();
 }
 
