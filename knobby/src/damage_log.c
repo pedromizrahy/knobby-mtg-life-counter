@@ -430,11 +430,12 @@ static void update_selection_highlight(void)
         lv_obj_t *row = lv_obj_get_child(damage_log_container, i);
         bool selected = rendered_offsets[i] == damage_log_selected;
 
-        lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_bg_color(row, lv_color_hex(0x171B20), 0);
+        lv_obj_set_style_bg_opa(row, selected ? LV_OPA_60 : LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(row, selected ? 3 : 0, 0);
         if (selected) {
             lv_obj_set_style_border_side(row, LV_BORDER_SIDE_LEFT, 0);
-            lv_obj_set_style_border_color(row, lv_color_hex(0xB0B0B0), 0);
+            lv_obj_set_style_border_color(row, lv_color_hex(0xCFEFFF), 0);
             lv_obj_update_layout(damage_log_container);
             lv_obj_scroll_to_view(row, LV_ANIM_ON);
         }
@@ -445,39 +446,6 @@ static void update_selection_highlight(void)
             lv_obj_clear_flag(delete_btn, LV_OBJ_FLAG_HIDDEN);
         else
             lv_obj_add_flag(delete_btn, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
-static void draw_undo_icon(lv_event_t *e)
-{
-    lv_obj_t *obj = lv_event_get_target(e);
-    lv_draw_ctx_t *draw_ctx = lv_event_get_draw_ctx(e);
-    lv_area_t a;
-    lv_draw_line_dsc_t dsc;
-    lv_point_t shaft[5];
-
-    lv_obj_get_coords(obj, &a);
-    lv_draw_line_dsc_init(&dsc);
-    dsc.color = lv_color_hex(0xD8D8D8);
-    dsc.width = 3;
-
-    /* Compact U-turn arrow: unmistakably "undo", without looking like
-       refresh/reload. The hook is deliberately simple at 28 px. */
-    shaft[0] = (lv_point_t){a.x1 + 20, a.y1 + 20};
-    shaft[1] = (lv_point_t){a.x1 + 15, a.y1 + 20};
-    shaft[2] = (lv_point_t){a.x1 + 11, a.y1 + 17};
-    shaft[3] = (lv_point_t){a.x1 + 11, a.y1 + 10};
-    shaft[4] = (lv_point_t){a.x1 + 19, a.y1 + 10};
-
-    for (int i = 0; i < 4; i++)
-        lv_draw_line(draw_ctx, &dsc, &shaft[i], &shaft[i + 1]);
-
-    {
-        lv_point_t tip = {a.x1 + 10, a.y1 + 10};
-        lv_point_t top = {a.x1 + 15, a.y1 + 5};
-        lv_point_t bot = {a.x1 + 15, a.y1 + 15};
-        lv_draw_line(draw_ctx, &dsc, &tip, &top);
-        lv_draw_line(draw_ctx, &dsc, &tip, &bot);
     }
 }
 
@@ -613,21 +581,33 @@ static void refresh_damage_log_ui(void)
             lv_label_set_text(event_lbl, line);
             lv_obj_set_style_text_color(event_lbl, event_color, 0);
             lv_obj_set_style_text_font(event_lbl, &lv_font_montserrat_14, 0);
-            lv_obj_set_width(event_lbl, raw == damage_log_selected ? 244 : 272);
+            lv_obj_set_width(event_lbl, raw == damage_log_selected ? 214 : 272);
+            lv_obj_set_height(event_lbl, 18);
+            lv_label_set_long_mode(event_lbl, LV_LABEL_LONG_DOT);
             lv_obj_align(event_lbl, LV_ALIGN_TOP_LEFT, 0, event_y);
         }
 
         if (raw == damage_log_selected && damage_log_offset_undoable(raw)) {
             lv_obj_t *undo = lv_btn_create(row);
+            lv_obj_t *undo_lbl;
+
             lv_obj_remove_style_all(undo);
-            lv_obj_set_size(undo, 28, 28);
-            lv_obj_align(undo, LV_ALIGN_RIGHT_MID, 0, new_group ? 10 : 0);
-            lv_obj_set_style_bg_opa(undo, LV_OPA_TRANSP, 0);
-            lv_obj_set_style_border_width(undo, 0, 0);
+            lv_obj_set_size(undo, 52, 22);
+            lv_obj_align(undo, LV_ALIGN_RIGHT_MID, -2, new_group ? 10 : 0);
+            lv_obj_set_style_radius(undo, 8, 0);
+            lv_obj_set_style_bg_color(undo, lv_color_hex(0x202830), 0);
+            lv_obj_set_style_bg_opa(undo, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(undo, 1, 0);
+            lv_obj_set_style_border_color(undo, lv_color_hex(0xCFEFFF), 0);
             lv_obj_set_ext_click_area(undo, 8);
-            lv_obj_add_event_cb(undo, draw_undo_icon, LV_EVENT_DRAW_MAIN, NULL);
             lv_obj_add_event_cb(undo, event_undo_selected_row,
                                 LV_EVENT_CLICKED, (void *)(intptr_t)raw);
+
+            undo_lbl = lv_label_create(undo);
+            lv_label_set_text(undo_lbl, "UNDO");
+            lv_obj_set_style_text_color(undo_lbl, lv_color_hex(0xEAF8FF), 0);
+            lv_obj_set_style_text_font(undo_lbl, &lv_font_montserrat_14, 0);
+            lv_obj_center(undo_lbl);
         }
     }
 
