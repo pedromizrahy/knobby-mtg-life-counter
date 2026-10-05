@@ -80,6 +80,21 @@ static void refresh_ring(void)
 
 void refresh_turn_ui(void)
 {
+    lv_obj_t *active_screen = lv_scr_act();
+
+    /*
+     * The timer ticks once per second even while menus, Playgroup setup or
+     * logs are open. Update only the gameplay HUD that is actually visible;
+     * back_to_main()/screen entry will refresh whichever HUD becomes visible
+     * later. This also avoids updating both 1P and multiplayer every tick.
+     */
+    if (active_screen == screen_multiplayer) {
+        refresh_multiplayer_turn_ui();
+        return;
+    }
+    if (active_screen != screen_1p)
+        return;
+
     char time_buf[24];
     char meta_buf[32];
     uint32_t total_seconds = get_current_turn_elapsed_ms() / 1000;
@@ -184,7 +199,6 @@ void refresh_turn_ui(void)
         }
     }
 
-    refresh_multiplayer_turn_ui();
 }
 
 static void refresh_life_digits(void)
