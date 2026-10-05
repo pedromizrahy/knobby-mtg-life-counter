@@ -237,11 +237,11 @@ static const char *cmd_marker_label(int mode)
 
 static void cmd_marker_set(int mode)
 {
+    /*
+     * Settings is the visible screen. The gameplay view refreshes when the
+     * user returns through the quad menu, so repainting it here is wasted.
+     */
     nvs_set_cmd_marker_mode(mode);
-    if (nvs_get_players_to_track() > 1)
-        refresh_multiplayer_commander_markers();
-    else
-        refresh_main_ui();
 }
 
 static void color_mode_set(int mode)
