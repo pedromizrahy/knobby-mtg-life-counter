@@ -74,7 +74,6 @@ static bool commander_prepare_from_roster = false;
 
 typedef struct {
     char scryfall_id[PG_SCRYFALL_ID_LEN];
-    char art_crop_url[PG_IMAGE_URL_LEN];
     uint8_t *pixels;
     uint16_t width;
     uint16_t height;
@@ -161,7 +160,6 @@ static void clear_decoded_art_cache(void)
             decoded_art_cache[i].pixels = NULL;
         }
         decoded_art_cache[i].scryfall_id[0] = '\0';
-        decoded_art_cache[i].art_crop_url[0] = '\0';
         decoded_art_cache[i].width = 0;
         decoded_art_cache[i].height = 0;
         decoded_art_cache[i].stamp = 0;
@@ -169,19 +167,14 @@ static void clear_decoded_art_cache(void)
     }
 }
 
-static deck_decoded_cache_entry_t *find_decoded_art(const char *art_crop_url,
-                                                        const char *scryfall_id)
+static deck_decoded_cache_entry_t *find_decoded_art(const char *scryfall_id)
 {
-    const char *url = (art_crop_url != NULL) ? art_crop_url : "";
-
-    if ((scryfall_id == NULL || scryfall_id[0] == '\0') && url[0] == '\0')
+    if (scryfall_id == NULL || scryfall_id[0] == '\0')
         return NULL;
 
     for (int i = 0; i < DECK_DECODED_CACHE_SLOTS; i++) {
         if (decoded_art_cache[i].pixels != NULL &&
-            strcmp(decoded_art_cache[i].scryfall_id,
-                   scryfall_id != NULL ? scryfall_id : "") == 0 &&
-            strcmp(decoded_art_cache[i].art_crop_url, url) == 0) {
+            strcmp(decoded_art_cache[i].scryfall_id, scryfall_id) == 0) {
             decoded_art_cache[i].stamp = decoded_art_stamp++;
             return &decoded_art_cache[i];
         }
@@ -189,8 +182,7 @@ static deck_decoded_cache_entry_t *find_decoded_art(const char *art_crop_url,
     return NULL;
 }
 
-static deck_decoded_cache_entry_t *store_decoded_art(const char *art_crop_url,
-                                                      const char *scryfall_id,
+static deck_decoded_cache_entry_t *store_decoded_art(const char *scryfall_id,
                                                       uint8_t *pixels,
                                                       uint16_t width,
                                                       uint16_t height)
@@ -198,9 +190,7 @@ static deck_decoded_cache_entry_t *store_decoded_art(const char *art_crop_url,
     int slot = -1;
     uint32_t oldest = UINT32_MAX;
 
-    if (((scryfall_id == NULL || scryfall_id[0] == '\0') &&
-         (art_crop_url == NULL || art_crop_url[0] == '\0')) ||
-        pixels == NULL || width == 0 || height == 0)
+    if (scryfall_id == NULL || pixels == NULL || width == 0 || height == 0)
         return NULL;
 
     for (int i = 0; i < DECK_DECODED_CACHE_SLOTS; i++) {
@@ -223,10 +213,7 @@ static deck_decoded_cache_entry_t *store_decoded_art(const char *art_crop_url,
     memset(&decoded_art_cache[slot], 0, sizeof(decoded_art_cache[slot]));
     snprintf(decoded_art_cache[slot].scryfall_id,
              sizeof(decoded_art_cache[slot].scryfall_id),
-             "%s", scryfall_id != NULL ? scryfall_id : "");
-    snprintf(decoded_art_cache[slot].art_crop_url,
-             sizeof(decoded_art_cache[slot].art_crop_url),
-             "%s", art_crop_url != NULL ? art_crop_url : "");
+             "%s", scryfall_id);
     decoded_art_cache[slot].pixels = pixels;
     decoded_art_cache[slot].width = width;
     decoded_art_cache[slot].height = height;
@@ -854,7 +841,7 @@ static void commander_prepare_worker(void *param)
         if (deck == NULL || deck->scryfall_id[0] == '\0')
             continue;
 
-        decoded = find_decoded_art(deck->art_crop_url, deck->scryfall_id);
+        decoded = find_decoded_art(deck->scryfall_id);
         if (decoded != NULL)
             continue;
 
@@ -869,8 +856,7 @@ static void commander_prepare_worker(void *param)
 
         /* Cache-warming is intentional: once fetched, keep the compressed
            JPEG in flash so later games do not pay the network cost again. */
-        playgroup_persist_cached_deck_image(deck->art_crop_url,
-                                             deck->scryfall_id);
+        playgroup_persist_cached_image(deck->scryfall_id);
 
         if (!commander_image_decode_rgb565(data, data_size,
                                            &pixels, &decoded_w, &decoded_h)) {
@@ -882,7 +868,7 @@ static void commander_prepare_worker(void *param)
         }
         playgroup_free_image(data);
 
-        if (store_decoded_art(deck->art_crop_url, deck->scryfall_id, pixels,
+        if (store_decoded_art(deck->scryfall_id, pixels,
                               decoded_w, decoded_h) == NULL) {
             commander_image_free_pixels(pixels);
             commander_prepare_failures++;
@@ -915,7 +901,7 @@ static void finish_commander_prepare_ui(void)
     lv_scr_load(screen_pregame_deck);
 
     first = playgroup_cached_deck(deck_picker_index);
-    decoded = first != NULL ? find_decoded_art(first->art_crop_url, first->scryfall_id) : NULL;
+    decoded = first != NULL ? find_decoded_art(first->scryfall_id) : NULL;
     clear_deck_art();
     if (decoded != NULL)
         show_decoded_art(decoded);
@@ -1078,7 +1064,7 @@ static void deck_art_timer_cb(lv_timer_t *timer)
         return;
 
     /* Fast path: already decoded during this player's deck session. */
-    decoded = find_decoded_art(deck->art_crop_url, deck->scryfall_id);
+    decoded = find_decoded_art(deck->scryfall_id);
     if (decoded != NULL) {
         show_decoded_art(decoded);
         if (deck_commander_label != NULL) {
@@ -1092,9 +1078,7 @@ static void deck_art_timer_cb(lv_timer_t *timer)
         return;
     }
 
-    if (!playgroup_cached_deck_image_copy(deck->art_crop_url,
-                                          deck->scryfall_id,
-                                          &data, &data_size)) {
+    if (!playgroup_cached_image_copy(deck->scryfall_id, &data, &data_size)) {
         /* The picker stays usable while the image arrives. Keep the deck and
            commander text visible; do not replace it with a loading state. */
         playgroup_prefetch_deck_image_async(deck->art_crop_url,
@@ -1116,7 +1100,7 @@ static void deck_art_timer_cb(lv_timer_t *timer)
     printf("[Playgroup] Commander art stb decode completed in %lu ms\n",
            (unsigned long)(lv_tick_get() - decode_started));
 
-    decoded = store_decoded_art(deck->art_crop_url, deck->scryfall_id, pixels, decoded_w, decoded_h);
+    decoded = store_decoded_art(deck->scryfall_id, pixels, decoded_w, decoded_h);
     if (decoded == NULL) {
         commander_image_free_pixels(pixels);
         printf("[Playgroup] Commander decoded-art cache store failed.\n");
@@ -1245,7 +1229,7 @@ void pregame_change_deck(int delta)
     if (!deck_picker_on_more()) {
         const playgroup_deck_t *deck = playgroup_cached_deck(deck_picker_index);
         deck_decoded_cache_entry_t *decoded =
-            deck != NULL ? find_decoded_art(deck->art_crop_url, deck->scryfall_id) : NULL;
+            deck != NULL ? find_decoded_art(deck->scryfall_id) : NULL;
 
         if (decoded != NULL) {
             show_decoded_art(decoded);
@@ -1327,7 +1311,7 @@ static void event_deck_select(lv_event_t *e)
 
     {
         deck_decoded_cache_entry_t *selected_art =
-            find_decoded_art(deck->art_crop_url, deck->scryfall_id);
+            find_decoded_art(deck->scryfall_id);
 
         /* The picker only opens after batch preparation. Never perform
            network I/O from SELECT DECK: a missing image is a cache/prep
@@ -1345,8 +1329,7 @@ static void event_deck_select(lv_event_t *e)
         /* Persist only the chosen deck after its compressed image is known
            to be cached. */
         if (deck->scryfall_id[0] != '\0')
-            playgroup_persist_cached_deck_image(deck->art_crop_url,
-                                                 deck->scryfall_id);
+            playgroup_persist_cached_image(deck->scryfall_id);
     }
 
     clear_deck_art();
