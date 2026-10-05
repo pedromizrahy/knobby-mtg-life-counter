@@ -89,6 +89,23 @@ static void refresh_game_player_state(int player)
         refresh_multiplayer_player_state(player);
 }
 
+static void refresh_game_player_state_if_visible(int player)
+{
+    lv_obj_t *active_screen = lv_scr_act();
+
+    if (active_screen == screen_1p) {
+        refresh_player_ui();
+    } else if (active_screen == screen_multiplayer) {
+        refresh_multiplayer_player_state(player);
+    }
+}
+
+static void refresh_select_if_visible(void)
+{
+    if (lv_scr_act() == screen_select)
+        refresh_select_ui();
+}
+
 static void net_sync_commit_player(int player)
 {
     player_version[player]++;
@@ -667,7 +684,7 @@ bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
                     refresh_multiplayer_player_state(target);
             }
         }
-        refresh_select_ui();
+        refresh_select_if_visible();
     }
 
     return applied;
@@ -790,7 +807,7 @@ void damage_apply(void)
     check_player_elimination(cmd_damage_target);
     net_sync_commit_player(cmd_damage_target);
 
-    refresh_select_ui();
+    refresh_select_if_visible();
 }
 
 void damage_cancel(void)
@@ -875,8 +892,8 @@ void undo_life_change(int player, int delta)
     player_life[player] = clamp_life(player_life[player] - delta);
     check_player_elimination(player);
     net_sync_commit_player(player);
-    refresh_game_player_state(player);
-    refresh_select_ui();
+    refresh_game_player_state_if_visible(player);
+    refresh_select_if_visible();
 }
 
 void undo_cmd_damage(int source, int target, int delta)
@@ -902,7 +919,7 @@ void undo_counter_change(int player, int counter_type, int delta)
         check_player_elimination(player);
     }
     net_sync_commit_player(player);
-    refresh_game_player_state(player);
+    refresh_game_player_state_if_visible(player);
 }
 
 // ---------- reset ----------
@@ -1312,15 +1329,20 @@ void net_sync_apply_state(const net_sync_state_t *in, int wins_ties)
     }
 
     if (changed) {
-        if (nvs_get_players_to_track() <= 1) {
+        lv_obj_t *active_screen = lv_scr_act();
+
+        if (active_screen == screen_1p) {
             refresh_player_ui();
-        } else {
+        } else if (active_screen == screen_multiplayer) {
             for (p = 0; p < MAX_DISPLAY_PLAYERS; p++) {
                 if (changed_mask & (uint8_t)(1U << p))
                     refresh_multiplayer_player_state(p);
             }
+        } else if (active_screen == screen_select) {
+            refresh_select_ui();
+        } else if (active_screen == screen_damage) {
+            refresh_damage_ui();
         }
-        refresh_select_ui();
     }
     /* The sender is behind and we adopted nothing: answer immediately
        so its lost-update window is one exchange, not a 5s beacon. */
