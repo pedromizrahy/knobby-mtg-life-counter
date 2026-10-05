@@ -1020,6 +1020,38 @@ static bool json_extract_nested_name(const String &obj, const char *key,
     return json_extract_nested_string_field(obj, key, "name", out, out_size);
 }
 
+static bool scryfall_id_from_image_url(const char *url,
+                                       char *out,
+                                       size_t out_size)
+{
+    const char *slash;
+    const char *dot;
+    size_t len;
+
+    if (url == NULL || out == NULL || out_size == 0)
+        return false;
+
+    out[0] = '\0';
+    slash = strrchr(url, '/');
+    if (slash == NULL || slash[1] == '\0')
+        return false;
+
+    slash++;
+    dot = strstr(slash, ".jpg");
+    if (dot == NULL)
+        dot = strchr(slash, '?');
+    if (dot == NULL)
+        dot = slash + strlen(slash);
+
+    len = (size_t)(dot - slash);
+    if (len != 36 || len + 1 > out_size)
+        return false;
+
+    memcpy(out, slash, len);
+    out[len] = '\0';
+    return true;
+}
+
 typedef bool (*json_object_cb_t)(const String &obj, void *ctx);
 
 static int json_for_each_top_level_object(const String &json, json_object_cb_t cb,
@@ -1098,14 +1130,6 @@ static bool parse_deck_object(const String &obj, void *ctx)
     (void)ctx;
     if (cached_deck_count >= PG_MAX_DECKS) return false;
 
-    /*
-     * Temporary schema diagnostic: this is the deck object already returned
-     * by /users/{id}/decks, so it performs zero extra requests/downloads.
-     * We need the raw object once to identify Playgroup's alternate commander
-     * art/theme field instead of guessing and re-downloading the wrong image.
-     */
-    Serial.print("[Playgroup][DeckJSON] ");
-    Serial.println(obj);
 
     playgroup_deck_t *deck = &cached_decks[cached_deck_count];
     memset(deck, 0, sizeof(*deck));
@@ -1132,6 +1156,26 @@ static bool parse_deck_object(const String &obj, void *ctx)
                                      deck->art_crop_url, sizeof(deck->art_crop_url));
     json_extract_nested_string_field(obj, "commander", "scryfall_id",
                                      deck->scryfall_id, sizeof(deck->scryfall_id));
+    json_extract_string_from_object(obj, "cover_image",
+                                    deck->cover_image, sizeof(deck->cover_image));
+
+    /*
+     * Playgroup stores the user-selected commander alternate art as the
+     * deck cover_image. Prefer it over commander.art_crop_url when present.
+     * Its Scryfall image URL contains the printing UUID, which also gives us
+     * a distinct cache identity so the old/default printing cannot win.
+     */
+    if (deck->cover_image[0] != '\0') {
+        char cover_id[PG_SCRYFALL_ID_LEN];
+
+        strlcpy(deck->art_crop_url, deck->cover_image,
+                sizeof(deck->art_crop_url));
+        if (scryfall_id_from_image_url(deck->cover_image,
+                                       cover_id, sizeof(cover_id))) {
+            strlcpy(deck->scryfall_id, cover_id,
+                    sizeof(deck->scryfall_id));
+        }
+    }
 
     cached_deck_count++;
     return true;
