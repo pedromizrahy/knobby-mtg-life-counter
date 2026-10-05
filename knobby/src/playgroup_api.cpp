@@ -52,7 +52,6 @@ typedef struct {
     uint32_t generation;
     int count;
     char ids[PG_MAX_DECKS][PG_SCRYFALL_ID_LEN];
-    char art_crop_urls[PG_MAX_DECKS][PG_IMAGE_URL_LEN];
 } pg_art_prefetch_job_t;
 
 typedef struct {
@@ -176,29 +175,6 @@ static void art_file_path(const char *id, char *out, size_t out_size)
              (unsigned long)(hash >> 32),
              (unsigned long)(hash & 0xffffffffUL));
 }
-
-static void deck_art_cache_key(const char *art_crop_url,
-                               const char *scryfall_id,
-                               char *out,
-                               size_t out_size)
-{
-    if (out == NULL || out_size == 0)
-        return;
-
-    out[0] = '\0';
-
-    if (art_crop_url != NULL && art_crop_url[0] != '\0') {
-        uint64_t hash = art_id_hash(art_crop_url);
-        snprintf(out, out_size, "url_%08lx%08lx",
-                 (unsigned long)(hash >> 32),
-                 (unsigned long)(hash & 0xffffffffUL));
-        return;
-    }
-
-    if (scryfall_id != NULL)
-        strlcpy(out, scryfall_id, out_size);
-}
-
 
 static bool art_persistent_load(const char *id,
                                 uint8_t **out_data,
@@ -1122,6 +1098,15 @@ static bool parse_deck_object(const String &obj, void *ctx)
     (void)ctx;
     if (cached_deck_count >= PG_MAX_DECKS) return false;
 
+    /*
+     * Temporary schema diagnostic: this is the deck object already returned
+     * by /users/{id}/decks, so it performs zero extra requests/downloads.
+     * We need the raw object once to identify Playgroup's alternate commander
+     * art/theme field instead of guessing and re-downloading the wrong image.
+     */
+    Serial.print("[Playgroup][DeckJSON] ");
+    Serial.println(obj);
+
     playgroup_deck_t *deck = &cached_decks[cached_deck_count];
     memset(deck, 0, sizeof(*deck));
 
@@ -1458,26 +1443,23 @@ bool playgroup_download_deck_image(const char *art_crop_url,
                                    size_t *out_size)
 {
     bool ok = false;
-    char cache_key[PG_SCRYFALL_ID_LEN];
 
     if (out_data == NULL || out_size == NULL)
         return false;
 
     *out_data = NULL;
     *out_size = 0;
-    deck_art_cache_key(art_crop_url, scryfall_id,
-                       cache_key, sizeof(cache_key));
 
-    if (cache_key[0] != '\0' &&
-        art_cache_copy(cache_key, out_data, out_size)) {
+    if (scryfall_id != NULL && scryfall_id[0] != '\0' &&
+        art_cache_copy(scryfall_id, out_data, out_size)) {
         Serial.print("[Playgroup] Commander art cache hit: ");
-        Serial.println(cache_key);
+        Serial.println(scryfall_id);
         return true;
     }
 
-    if (cache_key[0] != '\0' &&
-        art_persistent_load(cache_key, out_data, out_size)) {
-        art_cache_store(cache_key, *out_data, *out_size);
+    if (scryfall_id != NULL && scryfall_id[0] != '\0' &&
+        art_persistent_load(scryfall_id, out_data, out_size)) {
+        art_cache_store(scryfall_id, *out_data, *out_size);
         return true;
     }
 
@@ -1487,8 +1469,8 @@ bool playgroup_download_deck_image(const char *art_crop_url,
 
     xSemaphoreTake(art_http_mutex, portMAX_DELAY);
 
-    if (cache_key[0] != '\0' &&
-        art_cache_copy(cache_key, out_data, out_size)) {
+    if (scryfall_id != NULL && scryfall_id[0] != '\0' &&
+        art_cache_copy(scryfall_id, out_data, out_size)) {
         xSemaphoreGive(art_http_mutex);
         return true;
     }
@@ -1504,9 +1486,9 @@ bool playgroup_download_deck_image(const char *art_crop_url,
         ok = playgroup_download_image_network(scryfall_id, out_data, out_size);
     }
 
-    if (ok && cache_key[0] != '\0' &&
+    if (ok && scryfall_id != NULL && scryfall_id[0] != '\0' &&
         *out_data != NULL && *out_size > 0) {
-        art_cache_store(cache_key, *out_data, *out_size);
+        art_cache_store(scryfall_id, *out_data, *out_size);
     }
 
     xSemaphoreGive(art_http_mutex);
@@ -1523,26 +1505,6 @@ bool playgroup_cached_image_copy(const char *scryfall_id,
     return art_cache_copy(scryfall_id, out_data, out_size);
 }
 
-bool playgroup_cached_deck_image_copy(const char *art_crop_url,
-                                      const char *scryfall_id,
-                                      uint8_t **out_data,
-                                      size_t *out_size)
-{
-    char cache_key[PG_SCRYFALL_ID_LEN];
-
-    if (out_data == NULL || out_size == NULL)
-        return false;
-
-    *out_data = NULL;
-    *out_size = 0;
-    deck_art_cache_key(art_crop_url, scryfall_id,
-                       cache_key, sizeof(cache_key));
-    if (cache_key[0] == '\0')
-        return false;
-
-    return art_cache_copy(cache_key, out_data, out_size);
-}
-
 bool playgroup_persist_cached_image(const char *scryfall_id)
 {
     uint8_t *data = NULL;
@@ -1555,26 +1517,6 @@ bool playgroup_persist_cached_image(const char *scryfall_id)
         return false;
 
     art_persistent_store(scryfall_id, data, size);
-    heap_caps_free(data);
-    return true;
-}
-
-bool playgroup_persist_cached_deck_image(const char *art_crop_url,
-                                         const char *scryfall_id)
-{
-    char cache_key[PG_SCRYFALL_ID_LEN];
-    uint8_t *data = NULL;
-    size_t size = 0;
-
-    deck_art_cache_key(art_crop_url, scryfall_id,
-                       cache_key, sizeof(cache_key));
-    if (cache_key[0] == '\0')
-        return false;
-
-    if (!art_cache_copy(cache_key, &data, &size))
-        return false;
-
-    art_persistent_store(cache_key, data, size);
     heap_caps_free(data);
     return true;
 }
@@ -1636,12 +1578,10 @@ static void playgroup_art_prefetch_task(void *param)
 
         if (job->generation != art_prefetch_generation)
             break;
-        if (job->ids[i][0] == '\0' && job->art_crop_urls[i][0] == '\0')
+        if (job->ids[i][0] == '\0')
             continue;
 
-        if (playgroup_cached_deck_image_copy(job->art_crop_urls[i],
-                                             job->ids[i],
-                                             &data, &size)) {
+        if (art_cache_copy(job->ids[i], &data, &size)) {
             playgroup_free_image(data);
             continue;
         }
@@ -1654,9 +1594,7 @@ static void playgroup_art_prefetch_task(void *param)
         Serial.println(job->ids[i]);
 
         art_background_prefetch_active = true;
-        if (playgroup_download_deck_image(job->art_crop_urls[i],
-                                          job->ids[i],
-                                          &data, &size))
+        if (playgroup_download_image(job->ids[i], &data, &size))
             playgroup_free_image(data);
         art_background_prefetch_active = false;
 
@@ -1706,12 +1644,10 @@ bool playgroup_prefetch_deck_image_async(const char *art_crop_url,
     size_t cached_size = 0;
     pg_art_single_job_t *job;
 
-    if ((scryfall_id == NULL || scryfall_id[0] == '\0') &&
-        (art_crop_url == NULL || art_crop_url[0] == '\0'))
+    if (scryfall_id == NULL || scryfall_id[0] == '\0')
         return false;
 
-    if (playgroup_cached_deck_image_copy(art_crop_url, scryfall_id,
-                                         &cached, &cached_size)) {
+    if (art_cache_copy(scryfall_id, &cached, &cached_size)) {
         playgroup_free_image(cached);
         return true;
     }
@@ -1760,12 +1696,8 @@ void playgroup_prefetch_deck_images(void)
     if (job->count > PG_ART_CACHE_SLOTS)
         job->count = PG_ART_CACHE_SLOTS;
 
-    for (int i = 0; i < job->count; i++) {
-        strlcpy(job->ids[i], cached_decks[i].scryfall_id,
-                sizeof(job->ids[i]));
-        strlcpy(job->art_crop_urls[i], cached_decks[i].art_crop_url,
-                sizeof(job->art_crop_urls[i]));
-    }
+    for (int i = 0; i < job->count; i++)
+        strlcpy(job->ids[i], cached_decks[i].scryfall_id, sizeof(job->ids[i]));
 
     /* Keep HTTPS prefetch off CPU0. Wi-Fi/system work and IDLE0 are
        watchdog-sensitive there on this board. CPU1 is also where the
