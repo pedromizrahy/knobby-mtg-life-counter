@@ -774,6 +774,14 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
             mp_label_set_text_if_changed(life_lbl, buf);
             mp_set_text_color_if_changed(life_lbl, text_color);
         }
+
+        if (!player_selection_animation_active()) {
+            lv_obj_set_style_text_opa(
+                life_lbl,
+                preview_here ? LV_OPA_COVER
+                             : art_turn_life_opa_for_player(i),
+                0);
+        }
     }
 
     if (name_lbl != NULL) {
@@ -1002,6 +1010,15 @@ static lv_opa_t art_turn_shade_opa_for_player(int player)
         return LV_OPA_40;
 
     return (player == active_turn_player) ? LV_OPA_TRANSP : LV_OPA_90;
+}
+
+static lv_opa_t art_turn_life_opa_for_player(int player)
+{
+    if (nvs_get_color_mode() != COLOR_MODE_ART ||
+        !turn_timer_enabled || active_turn_player < 0)
+        return LV_OPA_COVER;
+
+    return (player == active_turn_player) ? LV_OPA_COVER : LV_OPA_50;
 }
 
 void refresh_multiplayer_player_state(int player)
@@ -1254,7 +1271,10 @@ void refresh_multiplayer_selection_finish(void)
         lv_obj_t *name_lbl = mp_state.name_labels[i];
 
         if (life_lbl != NULL)
-            lv_obj_set_style_text_opa(life_lbl, LV_OPA_COVER, 0);
+            lv_obj_set_style_text_opa(
+                life_lbl,
+                art_turn_life_opa_for_player(layout->panels[i].player_index),
+                0);
         if (name_lbl != NULL)
             lv_obj_set_style_text_opa(name_lbl, LV_OPA_COVER, 0);
     }
@@ -1305,13 +1325,8 @@ void refresh_multiplayer_ui(void)
            active player's commander art becomes noticeably brighter. */
         if (nvs_get_color_mode() == COLOR_MODE_ART &&
             mp_state.art_overlays[i] != NULL) {
-            lv_opa_t shade_opa = LV_OPA_50;
-
-            if (turn_timer_enabled && active_turn_player >= 0) {
-                shade_opa = (spec->player_index == active_turn_player)
-                          ? LV_OPA_20
-                          : LV_OPA_60;
-            }
+            lv_opa_t shade_opa =
+                art_turn_shade_opa_for_player(spec->player_index);
 
             mp_set_bg_opa_if_changed(mp_state.art_overlays[i], shade_opa);
         }
