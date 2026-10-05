@@ -856,7 +856,8 @@ static void commander_prepare_worker(void *param)
 
         /* Cache-warming is intentional: once fetched, keep the compressed
            JPEG in flash so later games do not pay the network cost again. */
-        playgroup_persist_cached_image(deck->scryfall_id);
+        playgroup_persist_cached_deck_image(deck->art_crop_url,
+                                             deck->scryfall_id);
 
         if (!commander_image_decode_rgb565(data, data_size,
                                            &pixels, &decoded_w, &decoded_h)) {
@@ -1078,7 +1079,9 @@ static void deck_art_timer_cb(lv_timer_t *timer)
         return;
     }
 
-    if (!playgroup_cached_image_copy(deck->scryfall_id, &data, &data_size)) {
+    if (!playgroup_cached_deck_image_copy(deck->art_crop_url,
+                                          deck->scryfall_id,
+                                          &data, &data_size)) {
         /* The picker stays usable while the image arrives. Keep the deck and
            commander text visible; do not replace it with a loading state. */
         playgroup_prefetch_deck_image_async(deck->art_crop_url,
@@ -1329,7 +1332,8 @@ static void event_deck_select(lv_event_t *e)
         /* Persist only the chosen deck after its compressed image is known
            to be cached. */
         if (deck->scryfall_id[0] != '\0')
-            playgroup_persist_cached_image(deck->scryfall_id);
+            playgroup_persist_cached_deck_image(deck->art_crop_url,
+                                                 deck->scryfall_id);
     }
 
     clear_deck_art();
