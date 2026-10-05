@@ -994,7 +994,7 @@ static lv_opa_t art_turn_shade_opa_for_player(int player)
      * slices recede enough that the distinction is obvious at a glance.
      */
     if (!turn_timer_enabled || active_turn_player < 0)
-        return LV_OPA_45;
+        return LV_OPA_40;
 
     return (player == active_turn_player) ? LV_OPA_TRANSP : LV_OPA_80;
 }
