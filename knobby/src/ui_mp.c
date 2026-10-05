@@ -1829,6 +1829,7 @@ void rebuild_multiplayer_layout(int track)
                 lv_obj_set_style_bg_color(shade, lv_color_black(), 0);
                 lv_obj_set_style_bg_opa(shade, LV_OPA_50, 0);
                 lv_obj_align(shade, LV_ALIGN_CENTER, 0, 0);
+                mp_state.art_overlays[i] = shade;
 
             }
         }
