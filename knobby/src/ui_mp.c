@@ -892,17 +892,15 @@ void refresh_multiplayer_turn_ui(void)
     }
 
     if (mp_turn_hold_fill != NULL) {
-        if (turn_hold_active) {
-            lv_coord_t fill_w =
-                (lv_coord_t)((106L * turn_hold_progress) / 1000L);
-            if (fill_w < 1) fill_w = 1;
-            if (fill_w > 106) fill_w = 106;
+        lv_obj_set_style_bg_color(mp_turn_hold_fill, active_color,
+                                  LV_PART_INDICATOR);
 
-            lv_obj_set_width(mp_turn_hold_fill, fill_w);
-            lv_obj_set_style_bg_color(mp_turn_hold_fill, active_color, 0);
+        if (turn_hold_active) {
+            lv_bar_set_value(mp_turn_hold_fill, turn_hold_progress,
+                             LV_ANIM_OFF);
             lv_obj_clear_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_set_width(mp_turn_hold_fill, 1);
+            lv_bar_set_value(mp_turn_hold_fill, 0, LV_ANIM_OFF);
             lv_obj_add_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
         }
     }
@@ -931,7 +929,8 @@ void refresh_multiplayer_turn_ui(void)
             (lv_opa_t)(55U + (turn_reminder_pulse_level * 165U) / 100U), 0);
 
         if (mp_turn_hold_fill != NULL)
-            lv_obj_set_style_bg_color(mp_turn_hold_fill, alert, 0);
+            lv_obj_set_style_bg_color(mp_turn_hold_fill, alert,
+                                      LV_PART_INDICATOR);
     } else {
         lv_obj_set_style_text_color(mp_turn_label, lv_color_white(), 0);
         lv_obj_set_style_text_color(
@@ -1951,14 +1950,21 @@ void rebuild_multiplayer_layout(int track)
      * translucent layer sits behind the labels, so progress is obvious
      * without reading as a loading spinner.
      */
-    mp_turn_hold_fill = lv_obj_create(mp_turn_badge);
+    mp_turn_hold_fill = lv_bar_create(mp_turn_badge);
     lv_obj_remove_style_all(mp_turn_hold_fill);
-    lv_obj_set_size(mp_turn_hold_fill, 1, 60);
-    lv_obj_set_pos(mp_turn_hold_fill, 1, 1);
-    lv_obj_set_style_radius(mp_turn_hold_fill, 21, 0);
-    lv_obj_set_style_bg_color(mp_turn_hold_fill, lv_color_hex(0xCFEFFF), 0);
-    lv_obj_set_style_bg_opa(mp_turn_hold_fill, LV_OPA_20, 0);
-    lv_obj_clear_flag(mp_turn_hold_fill, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(mp_turn_hold_fill, 104, 58);
+    lv_obj_align(mp_turn_hold_fill, LV_ALIGN_CENTER, 0, 0);
+    lv_bar_set_range(mp_turn_hold_fill, 0, 1000);
+    lv_bar_set_value(mp_turn_hold_fill, 0, LV_ANIM_OFF);
+    lv_obj_set_style_radius(mp_turn_hold_fill, 20, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(mp_turn_hold_fill, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_radius(mp_turn_hold_fill, 20, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(mp_turn_hold_fill, lv_color_hex(0xCFEFFF),
+                              LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(mp_turn_hold_fill, LV_OPA_20,
+                            LV_PART_INDICATOR);
+    lv_obj_clear_flag(mp_turn_hold_fill,
+                      LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
 
     mp_turn_label = lv_label_create(mp_turn_badge);
