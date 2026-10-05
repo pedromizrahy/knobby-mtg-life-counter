@@ -90,9 +90,18 @@ void playgroup_prefetch_deck_images(void);
 bool playgroup_cached_image_copy(const char *scryfall_id,
                                  uint8_t **out_data, size_t *out_size);
 
+/* Deck-aware cache helpers. When Playgroup points the same commander card at
+   a different selected art URL, the URL becomes part of the cache identity
+   so an older/default printing cannot mask the newly selected artwork. */
+bool playgroup_cached_deck_image_copy(const char *art_crop_url,
+                                      const char *scryfall_id,
+                                      uint8_t **out_data, size_t *out_size);
+
 /* Persist only an art image that is already present in the compressed RAM
    cache. Used after the user actually selects a deck, never during preload. */
 bool playgroup_persist_cached_image(const char *scryfall_id);
+bool playgroup_persist_cached_deck_image(const char *art_crop_url,
+                                         const char *scryfall_id);
 
 bool playgroup_network_active(void);
 void playgroup_end_session(void);
