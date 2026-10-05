@@ -23,7 +23,7 @@ static lv_obj_t *mp_battery_icon = NULL;
 static lv_obj_t *mp_turn_badge = NULL;
 static lv_obj_t *mp_turn_label = NULL;
 static lv_obj_t *mp_turn_round_label = NULL;
-static lv_obj_t *mp_turn_hold_arc = NULL;
+static lv_obj_t *mp_turn_hold_fill = NULL;
 static lv_obj_t *mp_reminder_overlay = NULL;
 static lv_obj_t *mp_reminder_overlay_label = NULL;
 
@@ -715,10 +715,19 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
         } else {
             vib = LIFE_VIB_MID;
         }
-        bg_color = get_effective_player_color(i, color_i, vib);
-        text_color = (nvs_get_color_mode() == COLOR_MODE_ART)
-                   ? lv_color_white()
-                   : (color_is_light(bg_color) ? lv_color_black() : lv_color_white());
+        if (nvs_get_color_mode() == COLOR_MODE_ART) {
+            /* Commander art is the color language in ART mode. Keep the
+               substrate neutral so image opacity never tints a slice with
+               that player's assigned color. Turn ownership is expressed only
+               by neutral light/dark art exposure. */
+            bg_color = lv_color_hex(0x080A0D);
+            text_color = lv_color_white();
+        } else {
+            bg_color = get_effective_player_color(i, color_i, vib);
+            text_color = color_is_light(bg_color)
+                       ? lv_color_black()
+                       : lv_color_white();
+        }
     }
 
     if (player_eliminated[i]) {
@@ -797,6 +806,35 @@ static int16_t timer_facing_angle_for_player(int player)
     return 0;
 }
 
+static lv_color_t multiplayer_timer_accent(int player)
+{
+    /*
+     * Commander Art already supplies the table's color. Keep the timer
+     * deliberately neutral/premium there; Color mode continues to identify
+     * the active seat with its assigned player color.
+     */
+    if (nvs_get_color_mode() == COLOR_MODE_ART)
+        return lv_color_hex(0xCFEFFF);
+
+    if (player >= 0 && player < MAX_GAME_PLAYERS) {
+        int color_index = player;
+
+        if (mp_state.layout != NULL) {
+            for (int i = 0; i < mp_state.layout->panel_count; i++) {
+                const mp_panel_spec_t *spec = &mp_state.layout->panels[i];
+                if (spec->player_index == player) {
+                    color_index = spec->color_index;
+                    break;
+                }
+            }
+        }
+
+        return get_effective_player_color(player, color_index, LIFE_VIB_VIV);
+    }
+
+    return lv_color_hex(0xCFEFFF);
+}
+
 void refresh_multiplayer_turn_ui(void)
 {
     char time_buf[24];
@@ -813,8 +851,8 @@ void refresh_multiplayer_turn_ui(void)
 
     if (!turn_ui_visible || active_turn_player < 0) {
         lv_obj_add_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
-        if (mp_turn_hold_arc != NULL)
-            lv_obj_add_flag(mp_turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
+        if (mp_turn_hold_fill != NULL)
+            lv_obj_add_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
@@ -822,33 +860,12 @@ void refresh_multiplayer_turn_ui(void)
     minutes = total_seconds / 60;
     seconds = total_seconds % 60;
 
-    if (active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS) {
-        int color_index = active_turn_player;
-        int i;
-
+    if (active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS)
         name = player_names[active_turn_player];
-
-        /* Match the timer border to the exact color assignment used by the
-           active panel. This matters in layouts where seat/player order and
-           color order are not identical (notably 2P). */
-        if (mp_state.layout != NULL) {
-            for (i = 0; i < mp_state.layout->panel_count; i++) {
-                const mp_panel_spec_t *spec = &mp_state.layout->panels[i];
-                if (spec->player_index == active_turn_player) {
-                    color_index = spec->color_index;
-                    break;
-                }
-            }
-        }
-
-        active_color =
-            get_effective_player_color(active_turn_player,
-                                       color_index,
-                                       LIFE_VIB_VIV);
-    } else {
+    else
         name = "P?";
-        active_color = lv_color_white();
-    }
+
+    active_color = multiplayer_timer_accent(active_turn_player);
 
     snprintf(time_buf, sizeof(time_buf), "%lu:%02lu",
              (unsigned long)minutes, (unsigned long)seconds);
@@ -868,15 +885,19 @@ void refresh_multiplayer_turn_ui(void)
         apply_object_rotation(mp_reminder_overlay_label, timer_angle, 0, 0);
     }
 
-    if (mp_turn_hold_arc != NULL) {
-        lv_obj_set_style_arc_color(mp_turn_hold_arc, active_color,
-                                   LV_PART_INDICATOR);
+    if (mp_turn_hold_fill != NULL) {
         if (turn_hold_active) {
-            lv_arc_set_value(mp_turn_hold_arc, turn_hold_progress);
-            lv_obj_clear_flag(mp_turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
+            lv_coord_t fill_w =
+                (lv_coord_t)((100L * turn_hold_progress) / 1000L);
+            if (fill_w < 1) fill_w = 1;
+            if (fill_w > 100) fill_w = 100;
+
+            lv_obj_set_width(mp_turn_hold_fill, fill_w);
+            lv_obj_set_style_bg_color(mp_turn_hold_fill, active_color, 0);
+            lv_obj_clear_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_arc_set_value(mp_turn_hold_arc, 0);
-            lv_obj_add_flag(mp_turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_width(mp_turn_hold_fill, 1);
+            lv_obj_add_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -903,13 +924,15 @@ void refresh_multiplayer_turn_ui(void)
             mp_turn_badge,
             (lv_opa_t)(55U + (turn_reminder_pulse_level * 165U) / 100U), 0);
 
-        if (mp_turn_hold_arc != NULL)
-            lv_obj_set_style_arc_color(mp_turn_hold_arc, alert,
-                                       LV_PART_INDICATOR);
+        if (mp_turn_hold_fill != NULL)
+            lv_obj_set_style_bg_color(mp_turn_hold_fill, alert, 0);
     } else {
         lv_obj_set_style_text_color(mp_turn_label, lv_color_white(), 0);
-        lv_obj_set_style_text_color(mp_turn_round_label,
-                                    lv_color_hex(0xB8B8B8), 0);
+        lv_obj_set_style_text_color(
+            mp_turn_round_label,
+            nvs_get_color_mode() == COLOR_MODE_ART
+                ? lv_color_hex(0xB9D5E3)
+                : lv_color_hex(0xB8B8B8), 0);
         lv_obj_set_style_border_color(mp_turn_badge, active_color, 0);
         lv_obj_set_style_border_width(mp_turn_badge, 2, 0);
         lv_obj_set_style_bg_color(mp_turn_badge, lv_color_hex(0x0C0C0C), 0);
@@ -1746,7 +1769,7 @@ void rebuild_multiplayer_layout(int track)
     mp_turn_badge = NULL;
     mp_turn_label = NULL;
     mp_turn_round_label = NULL;
-    mp_turn_hold_arc = NULL;
+    mp_turn_hold_fill = NULL;
     drag_hint = NULL;
     drag_hint_label = NULL;
     damage_drag_reset();
@@ -1899,21 +1922,6 @@ void rebuild_multiplayer_layout(int track)
     lv_obj_set_style_text_align(drag_hint_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(drag_hint_label);
 
-    mp_turn_hold_arc = lv_arc_create(screen_multiplayer);
-    lv_obj_set_size(mp_turn_hold_arc, 116, 116);
-    lv_obj_align(mp_turn_hold_arc, LV_ALIGN_CENTER, 0, 0);
-    lv_arc_set_rotation(mp_turn_hold_arc, 270);
-    lv_arc_set_bg_angles(mp_turn_hold_arc, 0, 360);
-    lv_arc_set_range(mp_turn_hold_arc, 0, 1000);
-    lv_arc_set_value(mp_turn_hold_arc, 0);
-    lv_obj_remove_style(mp_turn_hold_arc, NULL, LV_PART_KNOB);
-    lv_obj_set_style_arc_width(mp_turn_hold_arc, 4, LV_PART_MAIN);
-    lv_obj_set_style_arc_color(mp_turn_hold_arc, lv_color_hex(0x333333), LV_PART_MAIN);
-    lv_obj_set_style_arc_width(mp_turn_hold_arc, 6, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(mp_turn_hold_arc, lv_color_white(), LV_PART_INDICATOR);
-    lv_obj_clear_flag(mp_turn_hold_arc, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_flag(mp_turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
-
     mp_turn_badge = lv_btn_create(screen_multiplayer);
     lv_obj_remove_style_all(mp_turn_badge);
     lv_obj_set_size(mp_turn_badge, 108, 62);
@@ -1927,6 +1935,21 @@ void rebuild_multiplayer_layout(int track)
     lv_obj_add_event_cb(mp_turn_badge, event_turn_hold, LV_EVENT_RELEASED, NULL);
     lv_obj_add_event_cb(mp_turn_badge, event_turn_hold, LV_EVENT_PRESS_LOST, NULL);
     lv_obj_add_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
+
+    /*
+     * Hold-to-pass progress fills the timer card from left to right. The
+     * translucent layer sits behind the labels, so progress is obvious
+     * without reading as a loading spinner.
+     */
+    mp_turn_hold_fill = lv_obj_create(mp_turn_badge);
+    lv_obj_remove_style_all(mp_turn_hold_fill);
+    lv_obj_set_size(mp_turn_hold_fill, 1, 54);
+    lv_obj_set_pos(mp_turn_hold_fill, 4, 4);
+    lv_obj_set_style_radius(mp_turn_hold_fill, 18, 0);
+    lv_obj_set_style_bg_color(mp_turn_hold_fill, lv_color_hex(0xCFEFFF), 0);
+    lv_obj_set_style_bg_opa(mp_turn_hold_fill, LV_OPA_20, 0);
+    lv_obj_clear_flag(mp_turn_hold_fill, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
 
     mp_turn_label = lv_label_create(mp_turn_badge);
     lv_label_set_text(mp_turn_label, "0:00");
