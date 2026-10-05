@@ -513,7 +513,7 @@ static void event_choose_players(lv_event_t *e)
     if (players_status_label != NULL) {
         lv_label_set_text(players_status_label, "Connected");
         lv_refr_now(NULL);
-        delay(300);
+        vTaskDelay(pdMS_TO_TICKS(300));
         lv_label_set_text(players_status_label, "Loading account...");
         lv_refr_now(NULL);
     }
