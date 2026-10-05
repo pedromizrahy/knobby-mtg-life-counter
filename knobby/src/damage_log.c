@@ -449,6 +449,43 @@ static void update_selection_highlight(void)
     }
 }
 
+static void draw_undo_arrow(lv_event_t *e)
+{
+    lv_obj_t *obj = lv_event_get_target(e);
+    lv_draw_ctx_t *draw_ctx = lv_event_get_draw_ctx(e);
+    lv_area_t a;
+    lv_draw_line_dsc_t dsc;
+    lv_point_t pts[7];
+
+    lv_obj_get_coords(obj, &a);
+    lv_draw_line_dsc_init(&dsc);
+    dsc.color = lv_color_hex(0xEAF8FF);
+    dsc.width = 2;
+    dsc.round_start = 1;
+    dsc.round_end = 1;
+
+    /*
+     * Familiar counter-clockwise "undo" arrow: arrowhead on the left,
+     * then a rounded return path. The surrounding button border makes the
+     * control read as an action, not as decoration.
+     */
+    pts[0] = (lv_point_t){a.x1 + 9,  a.y1 + 14};
+    pts[1] = (lv_point_t){a.x1 + 14, a.y1 + 9};
+    pts[2] = (lv_point_t){a.x1 + 14, a.y1 + 12};
+    pts[3] = (lv_point_t){a.x1 + 20, a.y1 + 12};
+    pts[4] = (lv_point_t){a.x1 + 23, a.y1 + 15};
+    pts[5] = (lv_point_t){a.x1 + 23, a.y1 + 19};
+    pts[6] = (lv_point_t){a.x1 + 18, a.y1 + 22};
+
+    for (int i = 0; i < 6; i++)
+        lv_draw_line(draw_ctx, &dsc, &pts[i], &pts[i + 1]);
+
+    {
+        lv_point_t wing = {a.x1 + 14, a.y1 + 19};
+        lv_draw_line(draw_ctx, &dsc, &pts[0], &wing);
+    }
+}
+
 static uint32_t duration_for_turn(const damage_log_entry_t *entry)
 {
     uint32_t fallback = 0;
@@ -520,6 +557,8 @@ static void refresh_damage_log_ui(void)
         bool turn_only = entry->event_type == LOG_EVT_TURN_END;
         lv_obj_t *row = lv_obj_create(damage_log_container);
         int event_y = new_group ? 22 : 1;
+        int event_lines = 1;
+        int event_height = 18;
 
         rendered_offsets[rendered_count++] = raw;
 
@@ -578,36 +617,50 @@ static void refresh_damage_log_ui(void)
             }
 
             lv_obj_t *event_lbl = lv_label_create(row);
+            lv_coord_t text_w = raw == damage_log_selected ? 232 : 272;
+            lv_point_t text_size;
+
             lv_label_set_text(event_lbl, line);
             lv_obj_set_style_text_color(event_lbl, event_color, 0);
             lv_obj_set_style_text_font(event_lbl, &lv_font_montserrat_14, 0);
-            lv_obj_set_width(event_lbl, raw == damage_log_selected ? 214 : 272);
-            lv_obj_set_height(event_lbl, 18);
+            lv_obj_set_width(event_lbl, text_w);
+
+            lv_txt_get_size(&text_size, line, &lv_font_montserrat_14,
+                            0, 0, text_w, LV_TEXT_FLAG_NONE);
+            event_lines = (text_size.y > 20) ? 2 : 1;
+            event_height = (event_lines == 2) ? 36 : 18;
+
+            /*
+             * Keep the full useful text when it fits in two lines. If a very
+             * long event would need a third line, LV_LABEL_LONG_DOT clips it
+             * cleanly inside the fixed two-line height instead of letting it
+             * overlap the next row.
+             */
+            lv_obj_set_height(event_lbl, event_height);
             lv_label_set_long_mode(event_lbl, LV_LABEL_LONG_DOT);
             lv_obj_align(event_lbl, LV_ALIGN_TOP_LEFT, 0, event_y);
+
+            /* Row height follows the rendered event, so wrapped text owns its
+               vertical space and can never collide with the next action. */
+            lv_obj_set_height(row, event_y + event_height + 5);
         }
 
         if (raw == damage_log_selected && damage_log_offset_undoable(raw)) {
             lv_obj_t *undo = lv_btn_create(row);
-            lv_obj_t *undo_lbl;
 
             lv_obj_remove_style_all(undo);
-            lv_obj_set_size(undo, 52, 22);
-            lv_obj_align(undo, LV_ALIGN_RIGHT_MID, -2, new_group ? 10 : 0);
-            lv_obj_set_style_radius(undo, 8, 0);
+            lv_obj_set_size(undo, 34, 30);
+            lv_obj_align(undo, LV_ALIGN_RIGHT_MID, -2,
+                         new_group ? ((event_y - 2) / 2) : 0);
+            lv_obj_set_style_radius(undo, 10, 0);
             lv_obj_set_style_bg_color(undo, lv_color_hex(0x202830), 0);
             lv_obj_set_style_bg_opa(undo, LV_OPA_COVER, 0);
             lv_obj_set_style_border_width(undo, 1, 0);
             lv_obj_set_style_border_color(undo, lv_color_hex(0xCFEFFF), 0);
             lv_obj_set_ext_click_area(undo, 8);
+            lv_obj_add_event_cb(undo, draw_undo_arrow, LV_EVENT_DRAW_MAIN, NULL);
             lv_obj_add_event_cb(undo, event_undo_selected_row,
                                 LV_EVENT_CLICKED, (void *)(intptr_t)raw);
-
-            undo_lbl = lv_label_create(undo);
-            lv_label_set_text(undo_lbl, "UNDO");
-            lv_obj_set_style_text_color(undo_lbl, lv_color_hex(0xEAF8FF), 0);
-            lv_obj_set_style_text_font(undo_lbl, &lv_font_montserrat_14, 0);
-            lv_obj_center(undo_lbl);
         }
     }
 
