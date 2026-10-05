@@ -986,6 +986,19 @@ void refresh_multiplayer_player_name(int player)
     }
 }
 
+static lv_opa_t art_turn_shade_opa_for_player(int player)
+{
+    /*
+     * ART mode uses luminance, not player color, to communicate turn owner.
+     * Keep idle art readable, make the active slice nearly unmasked, and
+     * push inactive slices clearly into the background.
+     */
+    if (!turn_timer_enabled || active_turn_player < 0)
+        return LV_OPA_40;
+
+    return (player == active_turn_player) ? LV_OPA_10 : LV_OPA_70;
+}
+
 void refresh_multiplayer_player_state(int player)
 {
     const mp_layout_spec_t *layout = mp_state.layout;
@@ -1025,11 +1038,7 @@ void refresh_multiplayer_player_state(int player)
 
         if (nvs_get_color_mode() == COLOR_MODE_ART &&
             mp_state.art_overlays[i] != NULL) {
-            if (turn_timer_enabled && active_turn_player >= 0) {
-                shade_opa = (spec->player_index == active_turn_player)
-                          ? LV_OPA_20
-                          : LV_OPA_60;
-            }
+            shade_opa = art_turn_shade_opa_for_player(spec->player_index);
             mp_set_bg_opa_if_changed(mp_state.art_overlays[i], shade_opa);
         }
 
@@ -1846,11 +1855,11 @@ void rebuild_multiplayer_layout(int track)
                 lv_img_set_src(art, commander_art);
                 lv_img_set_zoom(art, zoom);
                 lv_obj_align(art, LV_ALIGN_CENTER, 0, 0);
-                lv_obj_set_style_img_opa(art, LV_OPA_80, 0);
+                lv_obj_set_style_img_opa(art, LV_OPA_COVER, 0);
                 lv_obj_clear_flag(art, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 
                 lv_obj_set_style_bg_color(shade, lv_color_black(), 0);
-                lv_obj_set_style_bg_opa(shade, LV_OPA_50, 0);
+                lv_obj_set_style_bg_opa(shade, LV_OPA_40, 0);
                 lv_obj_align(shade, LV_ALIGN_CENTER, 0, 0);
                 mp_state.art_overlays[i] = shade;
 
