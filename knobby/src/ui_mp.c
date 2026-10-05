@@ -129,6 +129,7 @@ typedef struct {
 } mp_layout_spec_t;
 
 static bool wedge_contains_angle(const mp_panel_spec_t *spec, int angle);
+static lv_opa_t art_turn_life_opa_for_player(int player);
 
 /* ---------- shared widget state ---------- */
 static struct {
