@@ -1956,7 +1956,7 @@ void rebuild_multiplayer_layout(int track)
     lv_obj_set_pos(mp_turn_hold_fill, 1, 1);
     lv_obj_set_style_radius(mp_turn_hold_fill, 21, 0);
     lv_obj_set_style_bg_color(mp_turn_hold_fill, lv_color_hex(0xCFEFFF), 0);
-    lv_obj_set_style_bg_opa(mp_turn_hold_fill, LV_OPA_25, 0);
+    lv_obj_set_style_bg_opa(mp_turn_hold_fill, LV_OPA_20, 0);
     lv_obj_clear_flag(mp_turn_hold_fill, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
 
