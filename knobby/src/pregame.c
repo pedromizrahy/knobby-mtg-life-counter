@@ -500,7 +500,7 @@ static void event_choose_players(lv_event_t *e)
     }
 
     if (players_status_label != NULL) {
-        lv_label_set_text(players_status_label, "Connecting to Wi-Fi...");
+        lv_label_set_text(players_status_label, "Connecting...");
         lv_refr_now(NULL);
     }
 
@@ -511,7 +511,10 @@ static void event_choose_players(lv_event_t *e)
     }
 
     if (players_status_label != NULL) {
-        lv_label_set_text(players_status_label, "Connected  |  Loading account...");
+        lv_label_set_text(players_status_label, "Connected");
+        lv_refr_now(NULL);
+        delay(300);
+        lv_label_set_text(players_status_label, "Loading account...");
         lv_refr_now(NULL);
     }
 
@@ -582,7 +585,7 @@ static void event_playgroup_select(lv_event_t *e)
     if (pg == NULL) return;
 
     if (playgroup_meta_label != NULL) {
-        lv_label_set_text(playgroup_meta_label, "Connected  |  Loading players...");
+        lv_label_set_text(playgroup_meta_label, "Loading players...");
         lv_refr_now(NULL);
     }
 
@@ -1004,7 +1007,7 @@ static void event_member_select(lv_event_t *e)
     refresh_playgroup_display_names();
 
     if (member_status_label != NULL) {
-        lv_label_set_text(member_status_label, "Connected  |  Loading decks...");
+        lv_label_set_text(member_status_label, "Loading decks...");
         lv_refr_now(NULL);
     }
 
