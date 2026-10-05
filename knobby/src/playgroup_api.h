@@ -43,6 +43,7 @@ typedef struct {
     char partner[PG_COMMANDER_NAME_LEN];
     char art_crop_url[PG_IMAGE_URL_LEN];
     char scryfall_id[PG_SCRYFALL_ID_LEN];
+    char cover_image[PG_IMAGE_URL_LEN];
 } playgroup_deck_t;
 
 /* USB/Serial provisioning + diagnostics. */
