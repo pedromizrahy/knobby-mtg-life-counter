@@ -1354,6 +1354,11 @@ void net_sync_apply_state(const net_sync_state_t *in, int wins_ties)
         } else if (active_screen == screen_damage) {
             refresh_damage_ui();
         }
+
+        /* A peer can be the device that records the final elimination.
+           Reconcile after applying the complete remote snapshot so a tracked
+           Playgroup game finishes consistently on either Dial. */
+        playgroup_pending_reconcile_outcome();
     }
     /* The sender is behind and we adopted nothing: answer immediately
        so its lost-update window is one exchange, not a 5s beacon. */
