@@ -1058,7 +1058,13 @@ void start_player_selection_animation(void)
     int start_player;
     int winner;
     int offset;
-    int full_cycles = 5;
+    /*
+     * Whole-slice roulette is intentionally more expensive than the old
+     * text-only animation because each hop redraws clipped wedge content.
+     * Keep the longer spin for small tables, but cap work on 5/6-player
+     * layouts where the same five cycles create noticeably more redraws.
+     */
+    int full_cycles = (track >= 5) ? 2 : 5;
 
     if (track <= 1) return;
     if (!nvs_get_random_first()) return;
