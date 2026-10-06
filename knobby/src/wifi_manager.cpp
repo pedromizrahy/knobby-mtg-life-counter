@@ -18,6 +18,14 @@ typedef struct {
 
 static bool initialized = false;
 
+typedef struct {
+    char ssid[WIFI_MANAGER_SSID_MAX];
+    int rssi;
+} wifi_scan_entry_t;
+
+static wifi_scan_entry_t scan_results[WIFI_MANAGER_MAX_SCAN_RESULTS];
+static int scan_result_count = 0;
+
 static bool read_string_ns(const char *ns, const char *key,
                            char *out, size_t out_size)
 {
@@ -453,4 +461,88 @@ bool wifi_manager_current_ssid(char *out, size_t out_size)
 
     strlcpy(out, WiFi.SSID().c_str(), out_size);
     return out[0] != '\0';
+}
+
+
+int wifi_manager_scan(void)
+{
+    int found;
+
+    wifi_manager_init();
+    if (knobby_net_active()) {
+        Serial.println("[WiFi] Scan skipped while Table Sync is active.");
+        return -1;
+    }
+
+    if (WiFi.getMode() == WIFI_OFF)
+        WiFi.mode(WIFI_STA);
+
+    Serial.println("[WiFi] Manual scan started.");
+    found = WiFi.scanNetworks(false, true);
+    scan_result_count = 0;
+
+    if (found <= 0) {
+        WiFi.scanDelete();
+        Serial.println("[WiFi] Manual scan found no networks.");
+        return 0;
+    }
+
+    for (int i = 0; i < found && scan_result_count < WIFI_MANAGER_MAX_SCAN_RESULTS; i++) {
+        String ssid = WiFi.SSID(i);
+        bool duplicate = false;
+
+        if (ssid.length() == 0 || ssid.length() >= WIFI_MANAGER_SSID_MAX)
+            continue;
+
+        for (int j = 0; j < scan_result_count; j++) {
+            if (strcmp(scan_results[j].ssid, ssid.c_str()) == 0) {
+                duplicate = true;
+                if (WiFi.RSSI(i) > scan_results[j].rssi)
+                    scan_results[j].rssi = WiFi.RSSI(i);
+                break;
+            }
+        }
+        if (duplicate)
+            continue;
+
+        strlcpy(scan_results[scan_result_count].ssid, ssid.c_str(),
+                sizeof(scan_results[scan_result_count].ssid));
+        scan_results[scan_result_count].rssi = WiFi.RSSI(i);
+        scan_result_count++;
+    }
+
+    WiFi.scanDelete();
+
+    /* Strongest networks first for the small on-device picker. */
+    for (int i = 0; i < scan_result_count - 1; i++) {
+        for (int j = i + 1; j < scan_result_count; j++) {
+            if (scan_results[j].rssi > scan_results[i].rssi) {
+                wifi_scan_entry_t tmp = scan_results[i];
+                scan_results[i] = scan_results[j];
+                scan_results[j] = tmp;
+            }
+        }
+    }
+
+    Serial.print("[WiFi] Manual scan found ");
+    Serial.print(scan_result_count);
+    Serial.println(" network(s).");
+    return scan_result_count;
+}
+
+int wifi_manager_scan_count(void)
+{
+    return scan_result_count;
+}
+
+bool wifi_manager_scan_ssid(int index, char *out, size_t out_size, int *rssi)
+{
+    if (out == NULL || out_size == 0 ||
+        index < 0 || index >= scan_result_count)
+        return false;
+
+    strlcpy(out, scan_results[index].ssid, out_size);
+    if (rssi != NULL)
+        *rssi = scan_results[index].rssi;
+    return true;
 }
