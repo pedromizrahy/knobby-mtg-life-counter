@@ -5,6 +5,7 @@
 #include "ui_1p.h"
 #include "net_sync.h"
 #include "playgroup_api.h"
+#include "settings.h"
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -370,6 +371,18 @@ static lv_obj_t *pregame_button(lv_obj_t *parent, const char *text,
         lv_obj_center(label);
     }
     return btn;
+}
+
+static void event_home_wifi(lv_event_t *e)
+{
+    (void)e;
+    open_wifi_screen();
+}
+
+static void event_home_settings(lv_event_t *e)
+{
+    (void)e;
+    open_device_settings();
 }
 
 static void event_local_play(lv_event_t *e)
@@ -1668,6 +1681,42 @@ void build_pregame_screens(void)
         lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
         lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 82);
+
+        {
+            lv_obj_t *wifi_btn = lv_btn_create(screen_pregame_home);
+            lv_obj_remove_style_all(wifi_btn);
+            lv_obj_set_size(wifi_btn, 42, 42);
+            lv_obj_set_style_radius(wifi_btn, LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_bg_color(wifi_btn, lv_color_hex(0x111820), 0);
+            lv_obj_set_style_bg_opa(wifi_btn, LV_OPA_80, 0);
+            lv_obj_set_style_border_width(wifi_btn, 1, 0);
+            lv_obj_set_style_border_color(wifi_btn, lv_color_hex(0x455667), 0);
+            lv_obj_align(wifi_btn, LV_ALIGN_TOP_MID, -95, 38);
+            lv_obj_add_event_cb(wifi_btn, event_home_wifi, LV_EVENT_CLICKED, NULL);
+
+            lv_obj_t *wifi_icon = lv_label_create(wifi_btn);
+            lv_label_set_text(wifi_icon, LV_SYMBOL_WIFI);
+            lv_obj_set_style_text_color(wifi_icon, lv_color_hex(0xCFEFFF), 0);
+            lv_obj_set_style_text_font(wifi_icon, &lv_font_montserrat_20, 0);
+            lv_obj_center(wifi_icon);
+
+            lv_obj_t *settings_btn = lv_btn_create(screen_pregame_home);
+            lv_obj_remove_style_all(settings_btn);
+            lv_obj_set_size(settings_btn, 42, 42);
+            lv_obj_set_style_radius(settings_btn, LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_bg_color(settings_btn, lv_color_hex(0x111820), 0);
+            lv_obj_set_style_bg_opa(settings_btn, LV_OPA_80, 0);
+            lv_obj_set_style_border_width(settings_btn, 1, 0);
+            lv_obj_set_style_border_color(settings_btn, lv_color_hex(0x455667), 0);
+            lv_obj_align(settings_btn, LV_ALIGN_TOP_MID, 95, 38);
+            lv_obj_add_event_cb(settings_btn, event_home_settings, LV_EVENT_CLICKED, NULL);
+
+            lv_obj_t *settings_icon = lv_label_create(settings_btn);
+            lv_label_set_text(settings_icon, LV_SYMBOL_SETTINGS);
+            lv_obj_set_style_text_color(settings_icon, lv_color_hex(0xD5D9DE), 0);
+            lv_obj_set_style_text_font(settings_icon, &lv_font_montserrat_20, 0);
+            lv_obj_center(settings_icon);
+        }
 
         lv_obj_t *local = pregame_button(
             screen_pregame_home, "LOCAL PLAY", 176, 46,
