@@ -37,6 +37,7 @@ void playgroup_pending_reconcile_outcome(void);
 /* Diagnostics for the persistent queue. */
 int playgroup_pending_count(void);
 void playgroup_pending_print_status(void);
+bool playgroup_pending_selftest(void);
 
 #ifdef __cplusplus
 }
