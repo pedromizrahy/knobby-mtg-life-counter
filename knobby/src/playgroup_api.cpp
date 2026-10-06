@@ -10,6 +10,7 @@
 #include <freertos/semphr.h>
 
 #include "playgroup_api.h"
+#include "wifi_manager.h"
 #include "../knobby_net.h"
 
 extern "C" void knob_print_reset_diagnostics(void);
@@ -513,22 +514,25 @@ static bool nvs_clear_credentials(void)
     err = nvs_erase_all(handle);
     if (err == ESP_OK) err = nvs_commit(handle);
     nvs_close(handle);
+
+    if (err == ESP_OK)
+        wifi_manager_clear_all();
+
     return err == ESP_OK;
 }
 
 bool playgroup_credentials_ready(void)
 {
-    char ssid[PG_SSID_MAX];
     char api_key[PG_API_KEY_MAX];
 
-    return nvs_read_string("ssid", ssid, sizeof(ssid)) &&
+    wifi_manager_init();
+    return wifi_manager_has_saved_network() &&
            nvs_read_string("api_key", api_key, sizeof(api_key));
 }
 
 static void wifi_power_down(void)
 {
-    WiFi.disconnect(true, false);
-    WiFi.mode(WIFI_OFF);
+    wifi_manager_disconnect();
 }
 
 static bool sync_clock_for_tls(void)
@@ -567,84 +571,17 @@ static bool sync_clock_for_tls(void)
     return false;
 }
 
-
 static bool wifi_connect_saved(void)
 {
-    char ssid[PG_SSID_MAX];
-    char password[PG_PASSWORD_MAX];
+    if (!wifi_manager_connect())
+        return false;
 
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.print("[Playgroup] Wi-Fi already connected; RSSI ");
-        Serial.print(WiFi.RSSI());
-        Serial.println(" dBm.");
-        return sync_clock_for_tls();
-    }
-
-    if (!nvs_read_string("ssid", ssid, sizeof(ssid))) {
-        Serial.println("[Playgroup] Wi-Fi is not configured.");
+    if (!sync_clock_for_tls()) {
+        wifi_power_down();
         return false;
     }
 
-    nvs_read_string("wifi_pass", password, sizeof(password));
-
-    if (knobby_net_active()) {
-        Serial.println("[Playgroup] Table Sync is active. Leave Table Sync before using the online API.");
-        return false;
-    }
-
-    WiFi.persistent(false);
-    WiFi.setAutoReconnect(true);
-    WiFi.mode(WIFI_STA);
-
-    for (int attempt = 1; attempt <= PG_WIFI_RETRIES; attempt++) {
-        uint32_t started = millis();
-        uint32_t attempt_timeout =
-            (attempt == 1) ? PG_WIFI_FIRST_ATTEMPT_MS
-                           : PG_WIFI_RETRY_ATTEMPT_MS;
-
-        Serial.print("[Playgroup] Connecting to Wi-Fi (");
-        Serial.print(attempt);
-        Serial.print("/");
-        Serial.print(PG_WIFI_RETRIES);
-        Serial.print(")");
-
-        WiFi.begin(ssid, password);
-
-        uint32_t last_dot = started;
-        while (WiFi.status() != WL_CONNECTED &&
-               (millis() - started) < attempt_timeout) {
-            delay(100);
-            if ((millis() - last_dot) >= 500) {
-                Serial.print(".");
-                last_dot = millis();
-            }
-        }
-        Serial.println();
-
-        if (WiFi.status() == WL_CONNECTED) {
-            Serial.print("[Playgroup] Wi-Fi connected in ");
-            Serial.print((unsigned long)(millis() - started));
-            Serial.print(" ms; RSSI ");
-            Serial.print(WiFi.RSSI());
-            Serial.println(" dBm.");
-
-            if (!sync_clock_for_tls()) {
-                wifi_power_down();
-                return false;
-            }
-            return true;
-        }
-
-        Serial.print("[Playgroup] Wi-Fi attempt ");
-        Serial.print(attempt);
-        Serial.println(" failed.");
-        WiFi.disconnect(false, false);
-        delay(250);
-    }
-
-    Serial.println("[Playgroup] Wi-Fi connection failed after retries.");
-    wifi_power_down();
-    return false;
+    return true;
 }
 
 bool playgroup_prepare_connection(void)
@@ -654,7 +591,7 @@ bool playgroup_prepare_connection(void)
 
 bool playgroup_network_active(void)
 {
-    return WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_OFF;
+    return wifi_manager_is_active();
 }
 
 void playgroup_end_session(void)
@@ -664,7 +601,7 @@ void playgroup_end_session(void)
     art_http_reset();
     api_http_reset();
 
-    if (WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_OFF) {
+    if (wifi_manager_is_active()) {
         Serial.println("[Playgroup] Ending Wi-Fi session.");
         wifi_power_down();
     }
@@ -1979,12 +1916,12 @@ static bool playgroup_test_me(void)
 static void print_status(void)
 {
     char tmp[PG_API_KEY_MAX];
-    bool has_ssid = nvs_read_string("ssid", tmp, sizeof(tmp));
     bool has_key = nvs_read_string("api_key", tmp, sizeof(tmp));
 
+    wifi_manager_init();
     Serial.println("[Playgroup] Configuration:");
-    Serial.print("  Wi-Fi: ");
-    Serial.println(has_ssid ? "configured" : "missing");
+    Serial.print("  Wi-Fi networks: ");
+    Serial.println(wifi_manager_saved_count());
     Serial.print("  API key: ");
     Serial.println(has_key ? "configured" : "missing");
     Serial.print("  Table Sync: ");
@@ -2063,17 +2000,16 @@ static void handle_command(char *line)
         const char *ssid = value;
         const char *password = separator + 1;
 
-        if (ssid[0] == '\0' || strlen(ssid) >= PG_SSID_MAX ||
-            strlen(password) >= PG_PASSWORD_MAX) {
+        if (ssid[0] == '\0' || strlen(ssid) >= WIFI_MANAGER_SSID_MAX ||
+            strlen(password) >= WIFI_MANAGER_PASSWORD_MAX) {
             Serial.println("[Playgroup] Invalid Wi-Fi credential length.");
             return;
         }
 
-        if (nvs_write_string("ssid", ssid) &&
-            nvs_write_string("wifi_pass", password)) {
-            Serial.println("[Playgroup] Wi-Fi credentials saved.");
+        if (wifi_manager_save_network(ssid, password, true)) {
+            Serial.println("[Playgroup] Wi-Fi network saved as preferred.");
         } else {
-            Serial.println("[Playgroup] Could not save Wi-Fi credentials.");
+            Serial.println("[Playgroup] Could not save Wi-Fi network.");
         }
         return;
     }
