@@ -122,6 +122,38 @@ void damage_log_reset(void)
     active_action_depth = 0;
 }
 
+int damage_log_record_count(void)
+{
+    return damage_log_count;
+}
+
+bool damage_log_record_get_oldest(int oldest_index, damage_log_record_t *out)
+{
+    int idx;
+    const damage_log_entry_t *entry;
+
+    if (out == NULL || oldest_index < 0 || oldest_index >= damage_log_count)
+        return false;
+
+    idx = (damage_log_head - damage_log_count + oldest_index + DAMAGE_LOG_MAX)
+          % DAMAGE_LOG_MAX;
+    entry = &damage_log[idx];
+
+    out->timestamp_ms = entry->timestamp_ms;
+    out->player = entry->player;
+    out->source = entry->source;
+    out->event_type = entry->event_type;
+    out->delta = entry->delta;
+    out->turn_number = entry->turn_number;
+    out->round_number = entry->round_number;
+    out->turn_in_round = entry->turn_in_round;
+    out->turn_player = entry->turn_player;
+    out->duration_ms = entry->duration_ms;
+    out->turn_elapsed_ms = entry->turn_elapsed_ms;
+    out->action_id = entry->action_id;
+    return true;
+}
+
 /* Remove the newest entry matching player + event_type (used by elimination
    undo so the eliminating event can't also be undone from the log). */
 void damage_log_remove_last_for(int player, uint8_t event_type)
