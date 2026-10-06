@@ -18,6 +18,15 @@ typedef struct {
     bool preferred;
 } wifi_manager_network_t;
 
+typedef enum {
+    WIFI_CONNECT_OK = 0,
+    WIFI_CONNECT_NO_SSID,
+    WIFI_CONNECT_AUTH_FAILED,
+    WIFI_CONNECT_TIMEOUT,
+    WIFI_CONNECT_BLOCKED,
+    WIFI_CONNECT_ERROR,
+} wifi_connect_result_t;
+
 /* Persistent network management. */
 void wifi_manager_init(void);
 bool wifi_manager_has_saved_network(void);
@@ -31,6 +40,9 @@ void wifi_manager_clear_all(void);
 
 /* On-demand station connection. No background scans or polling. */
 bool wifi_manager_connect(void);
+wifi_connect_result_t wifi_manager_connect_network(const char *ssid,
+                                                   const char *password,
+                                                   bool save_preferred);
 void wifi_manager_disconnect(void);
 bool wifi_manager_is_connected(void);
 bool wifi_manager_is_active(void);
