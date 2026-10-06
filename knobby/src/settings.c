@@ -51,6 +51,7 @@ static lv_obj_t *wifi_password_textarea = NULL;
 static lv_obj_t *wifi_password_keyboard = NULL;
 static lv_obj_t *wifi_password_eye_btn = NULL;
 static lv_obj_t *wifi_password_eye_lbl = NULL;
+static lv_obj_t *wifi_password_status_lbl = NULL;
 static bool wifi_password_visible = false;
 static char wifi_editor_ssid[WIFI_MANAGER_SSID_MAX] = {0};
 static bool wifi_editor_from_scan = false;
@@ -1131,9 +1132,16 @@ static void wifi_open_password_editor(const char *ssid, bool from_scan)
         lv_textarea_set_placeholder_text(
             wifi_password_textarea,
             from_scan ? "Password (blank = open)" : "Enter new password");
+        lv_obj_clear_flag(wifi_password_textarea, LV_OBJ_FLAG_HIDDEN);
     }
+    if (wifi_password_eye_btn != NULL)
+        lv_obj_clear_flag(wifi_password_eye_btn, LV_OBJ_FLAG_HIDDEN);
     if (wifi_password_eye_lbl != NULL)
         lv_label_set_text(wifi_password_eye_lbl, LV_SYMBOL_EYE_OPEN);
+    if (wifi_password_status_lbl != NULL) {
+        lv_label_set_text(wifi_password_status_lbl, "");
+        lv_obj_clear_flag(wifi_password_status_lbl, LV_OBJ_FLAG_HIDDEN);
+    }
 
     if (wifi_password_keyboard != NULL)
         lv_obj_clear_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
@@ -1250,38 +1258,104 @@ static void event_wifi_scan_back(lv_event_t *e)
 static void wifi_password_finish(bool save)
 {
     const char *password = "";
+    wifi_connect_result_t result;
+    char status[96];
 
-    if (save && wifi_password_textarea != NULL)
+    if (!save) {
+        if (wifi_password_keyboard != NULL)
+            lv_obj_add_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+
+        if (wifi_scan_from_home) {
+            lv_scr_load(screen_wifi_scan);
+        } else {
+            lv_scr_load(wifi_editor_from_scan ? screen_wifi_scan : screen_wifi);
+        }
+        return;
+    }
+
+    if (wifi_password_textarea != NULL)
         password = lv_textarea_get_text(wifi_password_textarea);
 
-    if (save) {
-        /*
-         * Editing an existing network requires a replacement password.
-         * A scanned network may legitimately be open and therefore blank.
-         */
-        if (!wifi_editor_from_scan && (password == NULL || password[0] == '\0'))
-            return;
+    if (!wifi_editor_from_scan && (password == NULL || password[0] == '\0')) {
+        if (wifi_password_status_lbl != NULL)
+            lv_label_set_text(wifi_password_status_lbl, "Enter a password");
+        return;
+    }
+    if (password == NULL)
+        password = "";
 
-        if (password == NULL)
-            password = "";
+    if (wifi_password_status_lbl != NULL) {
+        snprintf(status, sizeof(status), "Connecting to\n%s...", wifi_editor_ssid);
+        lv_label_set_text(wifi_password_status_lbl, status);
+    }
+    lv_refr_now(NULL);
 
-        if (!wifi_manager_save_network(wifi_editor_ssid, password, true))
-            return;
+    result = wifi_manager_connect_network(wifi_editor_ssid, password, true);
 
-        wifi_manager_disconnect();
-        wifi_manager_connect();
+    if (result == WIFI_CONNECT_OK) {
+        char current[WIFI_MANAGER_SSID_MAX] = {0};
+
+        if (wifi_password_keyboard != NULL)
+            lv_obj_add_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+        if (wifi_password_textarea != NULL)
+            lv_obj_add_flag(wifi_password_textarea, LV_OBJ_FLAG_HIDDEN);
+        if (wifi_password_eye_btn != NULL)
+            lv_obj_add_flag(wifi_password_eye_btn, LV_OBJ_FLAG_HIDDEN);
+
+        wifi_manager_current_ssid(current, sizeof(current));
+        if (wifi_password_status_lbl != NULL) {
+            snprintf(status, sizeof(status),
+                     "Wi-Fi Connected\n%s\n%d dBm",
+                     current[0] ? current : wifi_editor_ssid,
+                     wifi_manager_rssi());
+            lv_label_set_text(wifi_password_status_lbl, status);
+        }
+        lv_refr_now(NULL);
+        vTaskDelay(pdMS_TO_TICKS(700));
+
+        refresh_wifi_settings_ui();
+        if (wifi_scan_from_home) {
+            wifi_scan_from_home = false;
+            lv_scr_load(screen_pregame_home);
+        } else {
+            lv_scr_load(screen_wifi);
+        }
+        return;
     }
 
+    if (wifi_password_status_lbl != NULL) {
+        switch (result) {
+            case WIFI_CONNECT_NO_SSID:
+                lv_label_set_text(wifi_password_status_lbl,
+                                  "Network not found\nTry RESCAN");
+                break;
+            case WIFI_CONNECT_AUTH_FAILED:
+                lv_label_set_text(wifi_password_status_lbl,
+                                  "Password incorrect\nTry again");
+                break;
+            case WIFI_CONNECT_TIMEOUT:
+                lv_label_set_text(wifi_password_status_lbl,
+                                  "Connection timed out\nCheck password/signal");
+                break;
+            case WIFI_CONNECT_BLOCKED:
+                lv_label_set_text(wifi_password_status_lbl,
+                                  "Wi-Fi unavailable\nTable Sync is active");
+                break;
+            default:
+                lv_label_set_text(wifi_password_status_lbl,
+                                  "Connection failed\nTry again");
+                break;
+        }
+    }
+
+    /* Keep the editor open on failure so the user can correct the password. */
     if (wifi_password_keyboard != NULL)
-        lv_obj_add_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
-
-    refresh_wifi_settings_ui();
-    if (wifi_scan_from_home) {
-        wifi_scan_from_home = false;
-        lv_scr_load(screen_pregame_home);
-    } else {
-        lv_scr_load(screen_wifi);
-    }
+        lv_obj_clear_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_password_textarea != NULL)
+        lv_obj_clear_flag(wifi_password_textarea, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_password_eye_btn != NULL)
+        lv_obj_clear_flag(wifi_password_eye_btn, LV_OBJ_FLAG_HIDDEN);
+    lv_refr_now(NULL);
 }
 
 static void event_wifi_password_textarea(lv_event_t *e)
@@ -1393,6 +1467,14 @@ void build_wifi_screen(void)
     lv_obj_set_style_text_color(wifi_password_eye_lbl, lv_color_hex(0xCFEFFF), 0);
     lv_obj_set_style_text_font(wifi_password_eye_lbl, &lv_font_montserrat_16, 0);
     lv_obj_center(wifi_password_eye_lbl);
+
+    wifi_password_status_lbl = lv_label_create(screen_wifi_password);
+    lv_label_set_text(wifi_password_status_lbl, "");
+    lv_obj_set_width(wifi_password_status_lbl, 300);
+    lv_obj_set_style_text_align(wifi_password_status_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(wifi_password_status_lbl, lv_color_hex(0xCFEFFF), 0);
+    lv_obj_set_style_text_font(wifi_password_status_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_align(wifi_password_status_lbl, LV_ALIGN_TOP_MID, 0, 132);
 
     wifi_password_keyboard = lv_keyboard_create(screen_wifi_password);
     lv_obj_set_size(wifi_password_keyboard, 360, 190);
