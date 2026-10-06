@@ -11,6 +11,7 @@
 
 #include "playgroup_api.h"
 #include "wifi_manager.h"
+#include "playgroup_pending.h"
 #include "../knobby_net.h"
 
 extern "C" void knob_print_reset_diagnostics(void);
@@ -1934,6 +1935,7 @@ static void print_help(void)
     Serial.println("  PG WIFI <ssid>|<password>");
     Serial.println("  PG KEY <api-key>");
     Serial.println("  PG STATUS");
+    Serial.println("  PG PENDING");
     Serial.println("  PG RESET");
     Serial.println("  PG TEST");
     Serial.println("  PG DISCOVER");
@@ -1957,6 +1959,11 @@ static void handle_command(char *line)
 
     if (strcmp(line, "PG STATUS") == 0) {
         print_status();
+        return;
+    }
+
+    if (strcmp(line, "PG PENDING") == 0) {
+        playgroup_pending_print_status();
         return;
     }
 
