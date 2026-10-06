@@ -18,6 +18,7 @@
 
 // Forward declarations for cross-module calls
 extern void reset_all_values(void);
+static void refresh_wifi_scan_ui(void);
 extern void back_to_main(void);
 
 // ---------- screens ----------
@@ -380,13 +381,10 @@ static void refresh_wifi_settings_ui(void)
 
 void open_wifi_screen(void)
 {
+    wifi_scan_from_home = false;
     refresh_wifi_settings_ui();
-    if (wifi_scan_from_home) {
-        wifi_scan_from_home = false;
-        lv_scr_load(screen_pregame_home);
-    } else {
-        lv_scr_load(screen_wifi);
-    }
+    lv_scr_load(screen_wifi);
+}
 
 void open_device_settings(void)
 {
@@ -1247,7 +1245,12 @@ static void wifi_password_finish(bool save)
         lv_obj_add_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
 
     refresh_wifi_settings_ui();
-    lv_scr_load(screen_wifi);
+    if (wifi_scan_from_home) {
+        wifi_scan_from_home = false;
+        lv_scr_load(screen_pregame_home);
+    } else {
+        lv_scr_load(screen_wifi);
+    }
 }
 
 static void event_wifi_password_keyboard(lv_event_t *e)
