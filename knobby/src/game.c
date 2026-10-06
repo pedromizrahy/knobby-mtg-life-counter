@@ -1041,12 +1041,12 @@ static void player_select_anim_cb(lv_timer_t *timer)
          * animation, while the visual motion starts fast and eases out near
          * the target instead of slowing from the very first hop.
          */
-        static const uint16_t brake_ms[4] = {45, 75, 125, 220};
+        static const uint16_t brake_ms[4] = {40, 65, 105, 180};
 
         if (player_select_anim_steps <= 4) {
             player_select_anim_period = brake_ms[4 - player_select_anim_steps];
         } else {
-            player_select_anim_period = 20;
+            player_select_anim_period = 16;
         }
         lv_timer_set_period(player_select_anim_timer, player_select_anim_period);
     }
@@ -1084,7 +1084,7 @@ void start_player_selection_animation(void)
     if (offset == 0) offset = track;
 
     player_select_anim_steps = (full_cycles * track) + offset;
-    player_select_anim_period = 20;
+    player_select_anim_period = 16;
 
     roulette_idx = start_player;
     last_roulette_winner = winner;
