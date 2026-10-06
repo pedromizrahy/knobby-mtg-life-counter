@@ -5,6 +5,7 @@
 #include "ui_1p.h"
 #include "net_sync.h"
 #include "playgroup_api.h"
+#include "playgroup_pending.h"
 #include "settings.h"
 #include <stdio.h>
 #include <string.h>
@@ -1590,7 +1591,37 @@ static void event_mulligan_decrement(lv_event_t *e)
 static void event_start_game(lv_event_t *e)
 {
     int i;
+    bool track_playgroup_game = false;
+    pg_pending_seed_t pending_seed = {0};
     (void)e;
+
+    /*
+     * Capture Playgroup identity before ending the setup Wi-Fi session.
+     * The live game then runs fully offline; only compact IDs/names remain.
+     */
+    if (playgroup_roster_active) {
+        const playgroup_summary_t *pg =
+            playgroup_cached_playgroup(selected_playgroup_index);
+
+        if (pg != NULL && pg->id > 0) {
+            pending_seed.playgroup_id = pg->id;
+            pending_seed.player_count = (uint8_t)pregame_player_count;
+
+            for (i = 0; i < pregame_player_count; i++) {
+                const playgroup_member_t *member =
+                    playgroup_cached_member(selected_member_index[i]);
+
+                pending_seed.players[i].user_id =
+                    (member != NULL) ? member->user_id : 0;
+                pending_seed.players[i].deck_id = selected_deck_id[i];
+                pending_seed.players[i].mulligans = mulligans[i];
+                snprintf(pending_seed.players[i].name,
+                         sizeof(pending_seed.players[i].name),
+                         "%s", player_names[i]);
+            }
+            track_playgroup_game = true;
+        }
+    }
 
     playgroup_end_session();
 
@@ -1605,7 +1636,14 @@ static void event_start_game(lv_event_t *e)
 
     if (pregame_player_count > 1)
         rebuild_multiplayer_layout(pregame_player_count);
+
     reset_all_values();
+
+    if (track_playgroup_game)
+        playgroup_pending_begin_game(&pending_seed);
+    else
+        playgroup_pending_disable_current();
+
     back_to_main();
 }
 
