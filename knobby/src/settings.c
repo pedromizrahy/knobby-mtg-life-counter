@@ -14,6 +14,7 @@
 #include "ui_mp.h"
 #include "ui_player_menu.h"
 #include "pregame.h"
+#include "wifi_manager.h"
 
 // Forward declarations for cross-module calls
 extern void reset_all_values(void);
@@ -25,6 +26,7 @@ lv_obj_t *screen_tools_menu = NULL;
 lv_obj_t *screen_settings = NULL;
 lv_obj_t *screen_battery = NULL;
 lv_obj_t *screen_rotate = NULL;
+lv_obj_t *screen_wifi = NULL;
 
 // ---------- widgets ----------
 static lv_obj_t *arc_brightness = NULL;
@@ -33,6 +35,11 @@ static lv_obj_t *label_settings_hint = NULL;
 static lv_obj_t *label_settings_battery = NULL;
 static lv_obj_t *label_settings_battery_detail = NULL;
 static lv_obj_t *label_rotate_value = NULL;
+static lv_obj_t *wifi_status_lbl = NULL;
+static lv_obj_t *wifi_saved_lbl = NULL;
+static lv_obj_t *wifi_preferred_lbl = NULL;
+static lv_obj_t *wifi_forget_lbl = NULL;
+static int wifi_selected_index = 0;
 static lv_obj_t *turn_timer_btns[4] = {NULL, NULL, NULL, NULL};
 static lv_obj_t *turn_timer_lbls[4] = {NULL, NULL, NULL, NULL};
 static bool turn_settings_from_tools = false;
@@ -308,6 +315,60 @@ void open_rotate_screen(void)
 {
     refresh_rotate_ui();
     lv_scr_load(screen_rotate);
+}
+
+static void refresh_wifi_settings_ui(void)
+{
+    wifi_manager_network_t net;
+    char current[WIFI_MANAGER_SSID_MAX];
+    char buf[96];
+    int count = wifi_manager_saved_count();
+
+    if (wifi_selected_index >= count)
+        wifi_selected_index = (count > 0) ? count - 1 : 0;
+    if (wifi_selected_index < 0)
+        wifi_selected_index = 0;
+
+    if (wifi_status_lbl != NULL) {
+        if (wifi_manager_current_ssid(current, sizeof(current))) {
+            snprintf(buf, sizeof(buf), "Connected\n%s\n%d dBm",
+                     current, wifi_manager_rssi());
+        } else {
+            snprintf(buf, sizeof(buf), "Wi-Fi\nOff");
+        }
+        lv_label_set_text(wifi_status_lbl, buf);
+    }
+
+    if (wifi_saved_lbl != NULL) {
+        if (count > 0 && wifi_manager_get_saved(wifi_selected_index, &net)) {
+            snprintf(buf, sizeof(buf), "Saved %d/%d\n%s%s",
+                     wifi_selected_index + 1, count, net.ssid,
+                     net.preferred ? "\nPreferred" : "");
+        } else {
+            snprintf(buf, sizeof(buf), "No saved\nnetworks");
+        }
+        lv_label_set_text(wifi_saved_lbl, buf);
+    }
+
+    if (wifi_preferred_lbl != NULL) {
+        if (count > 0 && wifi_manager_get_saved(wifi_selected_index, &net)) {
+            lv_label_set_text(wifi_preferred_lbl,
+                              net.preferred ? "Preferred" : "Make\nPreferred");
+        } else {
+            lv_label_set_text(wifi_preferred_lbl, "Preferred\n--");
+        }
+    }
+
+    if (wifi_forget_lbl != NULL) {
+        lv_label_set_text(wifi_forget_lbl,
+                          count > 0 ? "Hold to\nForget" : "Forget\n--");
+    }
+}
+
+void open_wifi_screen(void)
+{
+    refresh_wifi_settings_ui();
+    lv_scr_load(screen_wifi);
 }
 
 void change_display_rotation(int dir)
@@ -651,6 +712,7 @@ static const setting_item_t settings_items[] = {
     { .id = "brightness",     .fixed_label = "Brightness", .navigate = open_settings_screen, .nav_screen = &screen_settings },
     { .id = "autodim",        .label = autodim_label,          .color = autodim_color,     .get = autodim_get,              .set = autodim_set,              .count = AUTO_DIM_COUNT },
     { .id = "battery",        .fixed_label = "Battery",    .navigate = open_battery_screen, .nav_screen = &screen_battery },
+    { .id = "wifi",           .fixed_label = "Wi-Fi",      .navigate = open_wifi_screen, .nav_screen = &screen_wifi },
     { .id = "color-mode",     .label = color_mode_label,       .color = color_mode_color,  .get = nvs_get_color_mode,       .set = color_mode_set,           .count = COLOR_MODE_COUNT },
     { .id = "cmd-marker",     .label = cmd_marker_label,       .color = color_mode_color,  .get = nvs_get_cmd_marker_mode,  .set = cmd_marker_set,           .count = CMD_MARKER_COUNT },
     { .id = "orientation",    .label = orientation_mode_label, .color = orientation_color, .get = nvs_get_orientation,      .set = nvs_set_orientation,      .count = ORIENTATION_MODE_COUNT },
@@ -934,6 +996,60 @@ void build_battery_screen(void)
     lv_obj_set_style_text_color(label_settings_battery_detail, lv_color_hex(0x7A7A7A), 0);
     lv_obj_set_style_text_font(label_settings_battery_detail, &lv_font_montserrat_16, 0);
     lv_obj_align(label_settings_battery_detail, LV_ALIGN_CENTER, 0, 30);
+}
+
+static void event_wifi_next(lv_event_t *e)
+{
+    int count = wifi_manager_saved_count();
+    (void)e;
+
+    if (count <= 0)
+        return;
+
+    wifi_selected_index = (wifi_selected_index + 1) % count;
+    refresh_wifi_settings_ui();
+}
+
+static void event_wifi_preferred(lv_event_t *e)
+{
+    wifi_manager_network_t net;
+    (void)e;
+
+    if (wifi_manager_get_saved(wifi_selected_index, &net))
+        wifi_manager_set_preferred(net.ssid);
+    refresh_wifi_settings_ui();
+}
+
+static void event_wifi_forget(lv_event_t *e)
+{
+    wifi_manager_network_t net;
+    (void)e;
+
+    if (wifi_manager_get_saved(wifi_selected_index, &net))
+        wifi_manager_forget_network(net.ssid);
+    refresh_wifi_settings_ui();
+}
+
+void build_wifi_screen(void)
+{
+    quad_item_t items[4] = {
+        {"Wi-Fi\nOff",        NULL,                 false, LV_EVENT_CLICKED},
+        {"No saved\nnetworks",event_wifi_next,      true,  LV_EVENT_CLICKED},
+        {"Preferred\n--",     event_wifi_preferred, true,  LV_EVENT_CLICKED},
+        {"Hold to\nForget",   event_wifi_forget,    true,  LV_EVENT_LONG_PRESSED},
+    };
+
+    build_quad_screen(&screen_wifi, items);
+    wifi_status_lbl =
+        lv_obj_get_child(lv_obj_get_child(screen_wifi, 0), 0);
+    wifi_saved_lbl =
+        lv_obj_get_child(lv_obj_get_child(screen_wifi, 1), 0);
+    wifi_preferred_lbl =
+        lv_obj_get_child(lv_obj_get_child(screen_wifi, 2), 0);
+    wifi_forget_lbl =
+        lv_obj_get_child(lv_obj_get_child(screen_wifi, 3), 0);
+
+    refresh_wifi_settings_ui();
 }
 
 void build_rotate_screen(void)
