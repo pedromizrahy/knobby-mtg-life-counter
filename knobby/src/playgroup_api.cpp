@@ -1936,6 +1936,7 @@ static void print_help(void)
     Serial.println("  PG KEY <api-key>");
     Serial.println("  PG STATUS");
     Serial.println("  PG PENDING");
+    Serial.println("  PG SELFTEST");
     Serial.println("  PG RESET");
     Serial.println("  PG TEST");
     Serial.println("  PG DISCOVER");
@@ -1964,6 +1965,11 @@ static void handle_command(char *line)
 
     if (strcmp(line, "PG PENDING") == 0) {
         playgroup_pending_print_status();
+        return;
+    }
+
+    if (strcmp(line, "PG SELFTEST") == 0) {
+        playgroup_pending_selftest();
         return;
     }
 
