@@ -2,6 +2,8 @@
 #include "hw.h"
 #include "storage.h"
 #include <string.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include "dice.h"
 #include "timer.h"
 #include "game_mode.h"
