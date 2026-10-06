@@ -11,6 +11,7 @@ extern "C" {
 #define WIFI_MANAGER_MAX_NETWORKS 5
 #define WIFI_MANAGER_SSID_MAX 33
 #define WIFI_MANAGER_PASSWORD_MAX 65
+#define WIFI_MANAGER_MAX_SCAN_RESULTS 12
 
 typedef struct {
     char ssid[WIFI_MANAGER_SSID_MAX];
@@ -35,6 +36,11 @@ bool wifi_manager_is_connected(void);
 bool wifi_manager_is_active(void);
 int wifi_manager_rssi(void);
 bool wifi_manager_current_ssid(char *out, size_t out_size);
+
+/* Manual scan only; never runs in the background. */
+int wifi_manager_scan(void);
+int wifi_manager_scan_count(void);
+bool wifi_manager_scan_ssid(int index, char *out, size_t out_size, int *rssi);
 
 #ifdef __cplusplus
 }
