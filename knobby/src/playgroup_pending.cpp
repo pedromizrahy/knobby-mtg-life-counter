@@ -262,3 +262,144 @@ void playgroup_pending_print_status(void)
         Serial.println("[Playgroup] Current game is not Playgroup-tracked.");
     }
 }
+
+
+bool playgroup_pending_selftest(void)
+{
+    static const char *test_path = "/pgq_FFFFFFFE.bin";
+    pg_pending_snapshot_t written_snapshot;
+    pg_pending_snapshot_t read_snapshot;
+    File file;
+    int before_count;
+    int during_count;
+    int after_count;
+    bool ok = true;
+
+    Serial.println("[Playgroup] SELFTEST: pending-game storage");
+
+    if (!pending_fs_ready()) {
+        Serial.println("[Playgroup] SELFTEST FAIL: SPIFFS unavailable.");
+        return false;
+    }
+
+    /* The reserved FFFFFFFE id is used only by this test. Always clean up
+       a stale test artifact first, e.g. after a power loss mid-self-test. */
+    if (SPIFFS.exists(test_path) && !SPIFFS.remove(test_path)) {
+        Serial.println("[Playgroup] SELFTEST FAIL: stale test file could not be removed.");
+        return false;
+    }
+
+    before_count = playgroup_pending_count();
+
+    memset(&written_snapshot, 0, sizeof(written_snapshot));
+    written_snapshot.magic = PG_PENDING_MAGIC;
+    written_snapshot.version = PG_PENDING_VERSION;
+    written_snapshot.session_id = 0xFFFFFFFEUL;
+    written_snapshot.playgroup_id = 63005;
+    written_snapshot.player_count = 4;
+    written_snapshot.winner = 2;
+    written_snapshot.event_count = 2;
+    written_snapshot.raw_event_count = 2;
+
+    written_snapshot.players[0].user_id = 101;
+    written_snapshot.players[0].deck_id = 1001;
+    written_snapshot.players[0].mulligans = 1;
+    written_snapshot.players[0].eliminated = 1;
+    written_snapshot.players[0].final_life = -2;
+    strlcpy(written_snapshot.players[0].name, "P1",
+            sizeof(written_snapshot.players[0].name));
+
+    written_snapshot.players[2].user_id = 103;
+    written_snapshot.players[2].deck_id = 1003;
+    written_snapshot.players[2].mulligans = 0;
+    written_snapshot.players[2].eliminated = 0;
+    written_snapshot.players[2].final_life = 17;
+    strlcpy(written_snapshot.players[2].name, "Winner",
+            sizeof(written_snapshot.players[2].name));
+
+    written_snapshot.events[0].event_type = LOG_EVT_LIFE;
+    written_snapshot.events[0].player = 0;
+    written_snapshot.events[0].delta = -5;
+    written_snapshot.events[0].turn_number = 1;
+    written_snapshot.events[0].action_id = 7;
+
+    written_snapshot.events[1].event_type = LOG_EVT_TURN_END;
+    written_snapshot.events[1].player = 2;
+    written_snapshot.events[1].turn_number = 1;
+    written_snapshot.events[1].duration_ms = 12345;
+    written_snapshot.events[1].action_id = 8;
+
+    file = SPIFFS.open(test_path, FILE_WRITE);
+    if (!file) {
+        Serial.println("[Playgroup] SELFTEST FAIL: could not create test snapshot.");
+        return false;
+    }
+
+    if (file.write((const uint8_t *)&written_snapshot,
+                   sizeof(written_snapshot)) != sizeof(written_snapshot)) {
+        ok = false;
+        Serial.println("[Playgroup] SELFTEST FAIL: incomplete write.");
+    }
+    file.close();
+
+    during_count = playgroup_pending_count();
+    if (during_count != before_count + 1) {
+        ok = false;
+        Serial.print("[Playgroup] SELFTEST FAIL: queue count ");
+        Serial.print(before_count);
+        Serial.print(" -> ");
+        Serial.print(during_count);
+        Serial.println(" (expected +1).");
+    }
+
+    memset(&read_snapshot, 0, sizeof(read_snapshot));
+    file = SPIFFS.open(test_path, FILE_READ);
+    if (!file) {
+        ok = false;
+        Serial.println("[Playgroup] SELFTEST FAIL: could not reopen snapshot.");
+    } else {
+        size_t read_count =
+            file.read((uint8_t *)&read_snapshot, sizeof(read_snapshot));
+        file.close();
+
+        if (read_count != sizeof(read_snapshot)) {
+            ok = false;
+            Serial.println("[Playgroup] SELFTEST FAIL: incomplete read.");
+        } else if (memcmp(&written_snapshot, &read_snapshot,
+                          sizeof(written_snapshot)) != 0) {
+            ok = false;
+            Serial.println("[Playgroup] SELFTEST FAIL: round-trip data mismatch.");
+        }
+    }
+
+    if (read_snapshot.magic != PG_PENDING_MAGIC ||
+        read_snapshot.version != PG_PENDING_VERSION ||
+        read_snapshot.playgroup_id != 63005 ||
+        read_snapshot.player_count != 4 ||
+        read_snapshot.winner != 2 ||
+        read_snapshot.event_count != 2 ||
+        read_snapshot.players[2].deck_id != 1003 ||
+        read_snapshot.events[1].duration_ms != 12345) {
+        ok = false;
+        Serial.println("[Playgroup] SELFTEST FAIL: snapshot fields invalid.");
+    }
+
+    if (SPIFFS.exists(test_path) && !SPIFFS.remove(test_path)) {
+        ok = false;
+        Serial.println("[Playgroup] SELFTEST FAIL: cleanup failed.");
+    }
+
+    after_count = playgroup_pending_count();
+    if (after_count != before_count) {
+        ok = false;
+        Serial.print("[Playgroup] SELFTEST FAIL: queue count after cleanup is ");
+        Serial.print(after_count);
+        Serial.print(" (expected ");
+        Serial.print(before_count);
+        Serial.println(").");
+    }
+
+    Serial.print("[Playgroup] SELFTEST ");
+    Serial.println(ok ? "PASS" : "FAIL");
+    return ok;
+}
