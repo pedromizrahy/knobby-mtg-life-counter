@@ -679,6 +679,14 @@ bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
 
     damage_log_end_action();
 
+    /*
+     * A compound attack may end the game and then still mutate the winner
+     * (for example lifelink). Reconcile after the entire logical action so
+     * the persisted final state includes those trailing effects.
+     */
+    if (applied)
+        playgroup_pending_reconcile_outcome();
+
     if (applied) {
         if (nvs_get_players_to_track() <= 1) {
             refresh_player_ui();
