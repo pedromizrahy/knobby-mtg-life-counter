@@ -1697,7 +1697,7 @@ void build_pregame_screens(void)
             lv_obj_t *wifi_icon = lv_label_create(wifi_btn);
             lv_label_set_text(wifi_icon, LV_SYMBOL_WIFI);
             lv_obj_set_style_text_color(wifi_icon, lv_color_hex(0xCFEFFF), 0);
-            lv_obj_set_style_text_font(wifi_icon, &lv_font_montserrat_20, 0);
+            lv_obj_set_style_text_font(wifi_icon, &lv_font_montserrat_22, 0);
             lv_obj_center(wifi_icon);
 
             lv_obj_t *settings_btn = lv_btn_create(screen_pregame_home);
@@ -1714,7 +1714,7 @@ void build_pregame_screens(void)
             lv_obj_t *settings_icon = lv_label_create(settings_btn);
             lv_label_set_text(settings_icon, LV_SYMBOL_SETTINGS);
             lv_obj_set_style_text_color(settings_icon, lv_color_hex(0xD5D9DE), 0);
-            lv_obj_set_style_text_font(settings_icon, &lv_font_montserrat_20, 0);
+            lv_obj_set_style_text_font(settings_icon, &lv_font_montserrat_22, 0);
             lv_obj_center(settings_icon);
         }
 
