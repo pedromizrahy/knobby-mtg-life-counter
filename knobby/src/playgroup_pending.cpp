@@ -65,8 +65,18 @@ static void snapshot_path(uint32_t session_id, char *out, size_t out_size)
 
 static bool is_pending_filename(const char *name)
 {
-    return name != NULL && strncmp(name, PG_PENDING_PATH_PREFIX,
-                                   strlen(PG_PENDING_PATH_PREFIX)) == 0;
+    if (name == NULL)
+        return false;
+
+    /* Arduino-ESP32 SPIFFS may expose File.name() either with or without
+       the leading slash depending on the FS wrapper/version. Accept both. */
+    if (strncmp(name, PG_PENDING_PATH_PREFIX,
+                strlen(PG_PENDING_PATH_PREFIX)) == 0)
+        return true;
+
+    return PG_PENDING_PATH_PREFIX[0] == '/' &&
+           strncmp(name, PG_PENDING_PATH_PREFIX + 1,
+                   strlen(PG_PENDING_PATH_PREFIX + 1)) == 0;
 }
 
 int playgroup_pending_count(void)
