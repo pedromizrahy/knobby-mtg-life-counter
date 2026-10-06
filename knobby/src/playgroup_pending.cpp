@@ -152,14 +152,11 @@ static bool write_finished_snapshot(int winner)
         winner >= current_seed.player_count)
         return false;
 
-    if (current_snapshot_saved)
-        return true;
-
     if (!pending_fs_ready())
         return false;
 
     queue_count = playgroup_pending_count();
-    if (queue_count >= PG_PENDING_MAX_QUEUE) {
+    if (!current_snapshot_saved && queue_count >= PG_PENDING_MAX_QUEUE) {
         Serial.println("[Playgroup] Pending queue full; game snapshot not saved.");
         return false;
     }
@@ -212,13 +209,18 @@ static bool write_finished_snapshot(int winner)
         return false;
     }
 
-    current_snapshot_saved = true;
-    Serial.print("[Playgroup] Game finished. Winner P");
-    Serial.print(winner + 1);
-    Serial.print("; snapshot queued with ");
-    Serial.print(copied);
-    Serial.print(" reconciled event(s). Pending queue: ");
-    Serial.println(queue_count + 1);
+    {
+        bool was_saved = current_snapshot_saved;
+        current_snapshot_saved = true;
+        Serial.print(was_saved
+                         ? "[Playgroup] Finished game snapshot refreshed. Winner P"
+                         : "[Playgroup] Game finished. Winner P");
+        Serial.print(winner + 1);
+        Serial.print("; snapshot has ");
+        Serial.print(copied);
+        Serial.print(" reconciled event(s). Pending queue: ");
+        Serial.println(was_saved ? queue_count : queue_count + 1);
+    }
     return true;
 }
 
