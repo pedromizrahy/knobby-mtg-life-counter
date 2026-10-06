@@ -362,6 +362,78 @@ static bool try_entry(const wifi_saved_entry_t *entry,
     return true;
 }
 
+wifi_connect_result_t wifi_manager_connect_network(const char *ssid,
+                                                   const char *password,
+                                                   bool save_preferred)
+{
+    uint32_t started;
+    wl_status_t status;
+
+    wifi_manager_init();
+
+    if (ssid == NULL || ssid[0] == '\0' ||
+        strlen(ssid) >= WIFI_MANAGER_SSID_MAX ||
+        password == NULL ||
+        strlen(password) >= WIFI_MANAGER_PASSWORD_MAX)
+        return WIFI_CONNECT_ERROR;
+
+    if (knobby_net_active()) {
+        Serial.println("[WiFi] Table Sync is active; direct connection skipped.");
+        return WIFI_CONNECT_BLOCKED;
+    }
+
+    WiFi.persistent(false);
+    WiFi.setAutoReconnect(true);
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect(false, false);
+    delay(40);
+
+    Serial.print("[WiFi] Testing network ");
+    Serial.println(ssid);
+
+    WiFi.begin(ssid, password);
+    started = millis();
+
+    while ((status = WiFi.status()) != WL_CONNECTED &&
+           (millis() - started) < 8000UL) {
+        if (status == WL_NO_SSID_AVAIL)
+            break;
+        if (status == WL_CONNECT_FAILED)
+            break;
+        delay(100);
+    }
+
+    status = WiFi.status();
+
+    if (status == WL_CONNECTED) {
+        Serial.print("[WiFi] Connected to ");
+        Serial.print(WiFi.SSID());
+        Serial.print(" in ");
+        Serial.print((unsigned long)(millis() - started));
+        Serial.print(" ms; RSSI ");
+        Serial.print(WiFi.RSSI());
+        Serial.println(" dBm.");
+
+        if (save_preferred &&
+            !wifi_manager_save_network(ssid, password, true)) {
+            Serial.println("[WiFi] Connected, but could not save network.");
+            return WIFI_CONNECT_ERROR;
+        }
+        return WIFI_CONNECT_OK;
+    }
+
+    WiFi.disconnect(true, false);
+    WiFi.mode(WIFI_OFF);
+
+    if (status == WL_NO_SSID_AVAIL)
+        return WIFI_CONNECT_NO_SSID;
+    if (status == WL_CONNECT_FAILED)
+        return WIFI_CONNECT_AUTH_FAILED;
+    if ((millis() - started) >= 8000UL)
+        return WIFI_CONNECT_TIMEOUT;
+    return WIFI_CONNECT_ERROR;
+}
+
 bool wifi_manager_connect(void)
 {
     wifi_saved_entry_t ordered[WIFI_MANAGER_MAX_NETWORKS];
