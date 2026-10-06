@@ -1255,7 +1255,7 @@ void build_wifi_screen(void)
     wifi_scan_meta_lbl = lv_label_create(lv_obj_get_child(screen_wifi_scan, 0));
     lv_label_set_text(wifi_scan_meta_lbl, "");
     lv_obj_set_style_text_color(wifi_scan_meta_lbl, lv_color_hex(0x8CA0B3), 0);
-    lv_obj_set_style_text_font(wifi_scan_meta_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(wifi_scan_meta_lbl, &lv_font_montserrat_14, 0);
     lv_obj_align(wifi_scan_meta_lbl, LV_ALIGN_CENTER, 10, 42);
 
     screen_wifi_password = lv_obj_create(NULL);
