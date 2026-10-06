@@ -55,6 +55,8 @@ static lv_obj_t *turn_timer_lbls[4] = {NULL, NULL, NULL, NULL};
 static bool turn_settings_from_tools = false;
 static bool turn_settings_from_game = false;
 static bool table_sync_from_tools = false;
+static bool device_settings_from_home = false;
+static bool wifi_scan_from_home = false;
 
 // ---------- quadrant menu builder ----------
 void build_quad_screen(lv_obj_t **screen, quad_item_t items[4])
@@ -224,6 +226,7 @@ static uint32_t deselect_color(int index)
 static void event_quad_screen_settings(lv_event_t *e)
 {
     (void)e;
+    device_settings_from_home = false;
     lv_scr_load(settings_pages[0]);
 }
 
@@ -378,14 +381,36 @@ static void refresh_wifi_settings_ui(void)
 void open_wifi_screen(void)
 {
     refresh_wifi_settings_ui();
-    lv_scr_load(screen_wifi);
-}
+    if (wifi_scan_from_home) {
+        wifi_scan_from_home = false;
+        lv_scr_load(screen_pregame_home);
+    } else {
+        lv_scr_load(screen_wifi);
+    }
 
 void open_device_settings(void)
 {
+    device_settings_from_home = false;
     refresh_settings_pages_ui();
     if (settings_page_count > 0)
         lv_scr_load(settings_pages[0]);
+}
+
+void open_device_settings_from_home(void)
+{
+    device_settings_from_home = true;
+    refresh_settings_pages_ui();
+    if (settings_page_count > 0)
+        lv_scr_load(settings_pages[0]);
+}
+
+void open_wifi_scan_from_home(void)
+{
+    wifi_scan_from_home = true;
+    wifi_scan_index = 0;
+    wifi_manager_scan();
+    refresh_wifi_scan_ui();
+    lv_scr_load(screen_wifi_scan);
 }
 
 void change_display_rotation(int dir)
@@ -851,13 +876,21 @@ bool settings_handle_back(lv_obj_t *screen)
     if (screen == screen_wifi_password) {
         if (wifi_password_keyboard != NULL)
             lv_obj_add_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
-        lv_scr_load(wifi_editor_from_scan ? screen_wifi_scan : screen_wifi);
+        if (wifi_scan_from_home && wifi_editor_from_scan)
+            lv_scr_load(screen_wifi_scan);
+        else
+            lv_scr_load(wifi_editor_from_scan ? screen_wifi_scan : screen_wifi);
         return true;
     }
 
     if (screen == screen_wifi_scan) {
-        refresh_wifi_settings_ui();
-        lv_scr_load(screen_wifi);
+        if (wifi_scan_from_home) {
+            wifi_scan_from_home = false;
+            lv_scr_load(screen_pregame_home);
+        } else {
+            refresh_wifi_settings_ui();
+            lv_scr_load(screen_wifi);
+        }
         return true;
     }
 
@@ -873,7 +906,12 @@ bool settings_handle_back(lv_obj_t *screen)
     for (i = 0; i < settings_page_count; i++) {
         if (screen == settings_pages[i]) {
             settings_save();
-            lv_scr_load(screen_quad_menu);
+            if (device_settings_from_home) {
+                device_settings_from_home = false;
+                lv_scr_load(screen_pregame_home);
+            } else {
+                lv_scr_load(screen_quad_menu);
+            }
             return true;
         }
     }
@@ -1171,8 +1209,13 @@ static void event_wifi_use_scan(lv_event_t *e)
 static void event_wifi_scan_back(lv_event_t *e)
 {
     (void)e;
-    refresh_wifi_settings_ui();
-    lv_scr_load(screen_wifi);
+    if (wifi_scan_from_home) {
+        wifi_scan_from_home = false;
+        lv_scr_load(screen_pregame_home);
+    } else {
+        refresh_wifi_settings_ui();
+        lv_scr_load(screen_wifi);
+    }
 }
 
 static void wifi_password_finish(bool save)
