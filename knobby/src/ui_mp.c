@@ -1019,7 +1019,7 @@ static lv_opa_t art_turn_life_opa_for_player(int player)
         !turn_timer_enabled || active_turn_player < 0)
         return LV_OPA_COVER;
 
-    return (player == active_turn_player) ? LV_OPA_COVER : LV_OPA_50;
+    return (player == active_turn_player) ? LV_OPA_COVER : LV_OPA_60;
 }
 
 void refresh_multiplayer_player_state(int player)
