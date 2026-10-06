@@ -109,7 +109,9 @@ knob_swipe_direction_t knob_classify_swipe_direction(lv_obj_t *screen,
     int abs_dx = dx >= 0 ? dx : -dx;
     int abs_dy = dy >= 0 ? dy : -dy;
 
-    if (screen == NULL || screen == screen_intro) return KNOB_SWIPE_NONE;
+    if (screen == NULL || screen == screen_intro ||
+        screen == screen_pregame_home)
+        return KNOB_SWIPE_NONE;
 
     if (is_player_screen(screen)) {
         if (start_x <= KNOB_SWIPE_LEFT_EDGE_ZONE &&
