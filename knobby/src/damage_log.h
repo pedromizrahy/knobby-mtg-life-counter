@@ -3,6 +3,10 @@
 
 #include "types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define DAMAGE_LOG_MAX 256
 
 typedef enum {
@@ -48,5 +52,9 @@ void damage_log_undo_all(void);
 
 void build_damage_log_screen(void);
 void open_damage_log_screen(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // _DAMAGE_LOG_H
