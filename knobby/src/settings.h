@@ -9,6 +9,7 @@ extern lv_obj_t *screen_tools_menu;
 extern lv_obj_t *screen_settings;
 extern lv_obj_t *screen_battery;
 extern lv_obj_t *screen_rotate;
+extern lv_obj_t *screen_wifi;
 extern lv_obj_t *screen_table_sync;
 extern lv_obj_t *screen_turn_timer_settings;
 
@@ -38,6 +39,7 @@ void build_quad_menus(void);
 void build_settings_screen(void);
 void build_battery_screen(void);
 void build_rotate_screen(void);
+void build_wifi_screen(void);
 void build_table_sync_screen(void);
 void build_turn_timer_settings_screen(void);
 
@@ -56,6 +58,7 @@ void open_quad_menu(void);
 void open_settings_screen(void);
 void open_battery_screen(void);
 void open_rotate_screen(void);
+void open_wifi_screen(void);
 void change_display_rotation(int dir);
 void menu_facing_refresh(void);
 void open_table_sync_screen(void);
