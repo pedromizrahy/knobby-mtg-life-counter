@@ -49,6 +49,9 @@ static lv_obj_t *wifi_scan_meta_lbl = NULL;
 static lv_obj_t *wifi_password_title_lbl = NULL;
 static lv_obj_t *wifi_password_textarea = NULL;
 static lv_obj_t *wifi_password_keyboard = NULL;
+static lv_obj_t *wifi_password_eye_btn = NULL;
+static lv_obj_t *wifi_password_eye_lbl = NULL;
+static bool wifi_password_visible = false;
 static char wifi_editor_ssid[WIFI_MANAGER_SSID_MAX] = {0};
 static bool wifi_editor_from_scan = false;
 static lv_obj_t *turn_timer_btns[4] = {NULL, NULL, NULL, NULL};
@@ -1122,11 +1125,15 @@ static void wifi_open_password_editor(const char *ssid, bool from_scan)
     }
 
     if (wifi_password_textarea != NULL) {
+        wifi_password_visible = false;
         lv_textarea_set_text(wifi_password_textarea, "");
+        lv_textarea_set_password_mode(wifi_password_textarea, true);
         lv_textarea_set_placeholder_text(
             wifi_password_textarea,
             from_scan ? "Password (blank = open)" : "Enter new password");
     }
+    if (wifi_password_eye_lbl != NULL)
+        lv_label_set_text(wifi_password_eye_lbl, LV_SYMBOL_EYE_OPEN);
 
     if (wifi_password_keyboard != NULL)
         lv_obj_clear_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
@@ -1277,13 +1284,30 @@ static void wifi_password_finish(bool save)
     }
 }
 
+static void event_wifi_password_textarea(lv_event_t *e)
+{
+    if (lv_event_get_code(e) == LV_EVENT_READY)
+        wifi_password_finish(true);
+}
+
+static void event_wifi_password_eye(lv_event_t *e)
+{
+    (void)e;
+
+    wifi_password_visible = !wifi_password_visible;
+    if (wifi_password_textarea != NULL)
+        lv_textarea_set_password_mode(wifi_password_textarea,
+                                      !wifi_password_visible);
+    if (wifi_password_eye_lbl != NULL)
+        lv_label_set_text(wifi_password_eye_lbl,
+                          wifi_password_visible
+                              ? LV_SYMBOL_EYE_CLOSE
+                              : LV_SYMBOL_EYE_OPEN);
+}
+
 static void event_wifi_password_keyboard(lv_event_t *e)
 {
-    lv_event_code_t code = lv_event_get_code(e);
-
-    if (code == LV_EVENT_READY)
-        wifi_password_finish(true);
-    else if (code == LV_EVENT_CANCEL)
+    if (lv_event_get_code(e) == LV_EVENT_CANCEL)
         wifi_password_finish(false);
 }
 
@@ -1340,20 +1364,40 @@ void build_wifi_screen(void)
     lv_obj_align(wifi_password_title_lbl, LV_ALIGN_TOP_MID, 0, 24);
 
     wifi_password_textarea = lv_textarea_create(screen_wifi_password);
-    lv_obj_set_size(wifi_password_textarea, 250, 44);
-    lv_obj_align(wifi_password_textarea, LV_ALIGN_TOP_MID, 0, 82);
+    lv_obj_set_size(wifi_password_textarea, 214, 44);
+    lv_obj_align(wifi_password_textarea, LV_ALIGN_TOP_MID, -18, 82);
     lv_textarea_set_one_line(wifi_password_textarea, true);
     lv_textarea_set_max_length(wifi_password_textarea,
                                WIFI_MANAGER_PASSWORD_MAX - 1);
     lv_textarea_set_password_mode(wifi_password_textarea, true);
+    lv_obj_add_event_cb(wifi_password_textarea,
+                        event_wifi_password_textarea,
+                        LV_EVENT_READY, NULL);
+
+    wifi_password_eye_btn = lv_btn_create(screen_wifi_password);
+    lv_obj_remove_style_all(wifi_password_eye_btn);
+    lv_obj_set_size(wifi_password_eye_btn, 38, 44);
+    lv_obj_align_to(wifi_password_eye_btn, wifi_password_textarea,
+                    LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+    lv_obj_set_style_radius(wifi_password_eye_btn, 10, 0);
+    lv_obj_set_style_bg_color(wifi_password_eye_btn, lv_color_hex(0x121820), 0);
+    lv_obj_set_style_bg_opa(wifi_password_eye_btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(wifi_password_eye_btn, 1, 0);
+    lv_obj_set_style_border_color(wifi_password_eye_btn, lv_color_hex(0x4A5563), 0);
+    lv_obj_add_event_cb(wifi_password_eye_btn,
+                        event_wifi_password_eye,
+                        LV_EVENT_CLICKED, NULL);
+
+    wifi_password_eye_lbl = lv_label_create(wifi_password_eye_btn);
+    lv_label_set_text(wifi_password_eye_lbl, LV_SYMBOL_EYE_OPEN);
+    lv_obj_set_style_text_color(wifi_password_eye_lbl, lv_color_hex(0xCFEFFF), 0);
+    lv_obj_set_style_text_font(wifi_password_eye_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_center(wifi_password_eye_lbl);
 
     wifi_password_keyboard = lv_keyboard_create(screen_wifi_password);
     lv_obj_set_size(wifi_password_keyboard, 360, 190);
     lv_obj_align(wifi_password_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_textarea(wifi_password_keyboard, wifi_password_textarea);
-    lv_obj_add_event_cb(wifi_password_keyboard,
-                        event_wifi_password_keyboard,
-                        LV_EVENT_READY, NULL);
     lv_obj_add_event_cb(wifi_password_keyboard,
                         event_wifi_password_keyboard,
                         LV_EVENT_CANCEL, NULL);
