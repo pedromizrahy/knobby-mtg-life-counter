@@ -406,9 +406,17 @@ void open_wifi_scan_from_home(void)
 {
     wifi_scan_from_home = true;
     wifi_scan_index = 0;
+
+    if (wifi_scan_network_lbl != NULL)
+        lv_label_set_text(wifi_scan_network_lbl, "Scanning...");
+    if (wifi_scan_meta_lbl != NULL)
+        lv_label_set_text(wifi_scan_meta_lbl, "Please wait");
+
+    lv_scr_load(screen_wifi_scan);
+    lv_refr_now(NULL);
+
     wifi_manager_scan();
     refresh_wifi_scan_ui();
-    lv_scr_load(screen_wifi_scan);
 }
 
 void change_display_rotation(int dir)
@@ -1129,10 +1137,19 @@ static void wifi_open_password_editor(const char *ssid, bool from_scan)
 static void event_wifi_scan(lv_event_t *e)
 {
     (void)e;
+    wifi_scan_from_home = false;
     wifi_scan_index = 0;
+
+    if (wifi_scan_network_lbl != NULL)
+        lv_label_set_text(wifi_scan_network_lbl, "Scanning...");
+    if (wifi_scan_meta_lbl != NULL)
+        lv_label_set_text(wifi_scan_meta_lbl, "Please wait");
+
+    lv_scr_load(screen_wifi_scan);
+    lv_refr_now(NULL);
+
     wifi_manager_scan();
     refresh_wifi_scan_ui();
-    lv_scr_load(screen_wifi_scan);
 }
 
 static void event_wifi_next(lv_event_t *e)
@@ -1191,6 +1208,13 @@ static void event_wifi_rescan(lv_event_t *e)
 {
     (void)e;
     wifi_scan_index = 0;
+
+    if (wifi_scan_network_lbl != NULL)
+        lv_label_set_text(wifi_scan_network_lbl, "Scanning...");
+    if (wifi_scan_meta_lbl != NULL)
+        lv_label_set_text(wifi_scan_meta_lbl, "Please wait");
+    lv_refr_now(NULL);
+
     wifi_manager_scan();
     refresh_wifi_scan_ui();
 }
@@ -1266,7 +1290,7 @@ static void event_wifi_password_keyboard(lv_event_t *e)
 void build_wifi_screen(void)
 {
     quad_item_t items[4] = {
-        {"Wi-Fi\nOff\nTap: Scan", NULL,                 true,  LV_EVENT_CLICKED},
+        {"Wi-Fi\nOff\nTap: Scan", event_wifi_scan,     true,  LV_EVENT_CLICKED},
         {"No saved\nnetworks",    event_wifi_next,      true,  LV_EVENT_CLICKED},
         {"Preferred\n--",         event_wifi_preferred, true,  LV_EVENT_CLICKED},
         {"Hold to\nForget",       event_wifi_forget,    true,  LV_EVENT_LONG_PRESSED},
@@ -1288,9 +1312,6 @@ void build_wifi_screen(void)
     wifi_forget_lbl =
         lv_obj_get_child(lv_obj_get_child(screen_wifi, 3), 0);
 
-    /* Status tile doubles as the explicit manual-scan entry point. */
-    lv_obj_add_event_cb(lv_obj_get_child(screen_wifi, 0),
-                        event_wifi_scan, LV_EVENT_CLICKED, NULL);
     /* Long-press a saved network to replace its password. */
     lv_obj_add_event_cb(lv_obj_get_child(screen_wifi, 1),
                         event_wifi_edit_saved, LV_EVENT_LONG_PRESSED, NULL);
