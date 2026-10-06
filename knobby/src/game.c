@@ -2,6 +2,7 @@
 #include "storage.h"
 #include "damage_log.h"
 #include "game_event.h"
+#include "playgroup_pending.h"
 #include "esp_random.h"
 #include "net_sync.h"
 #include "timer.h"
@@ -248,6 +249,7 @@ void check_player_elimination(int player)
 
     if (was_eliminated != now_eliminated) {
         refresh_game_player_state(player);
+        playgroup_pending_reconcile_outcome();
     }
 }
 
@@ -266,6 +268,7 @@ void manual_eliminate_player(int player)
     }
     net_sync_commit_player(player);
     refresh_game_player_state(player);
+    playgroup_pending_reconcile_outcome();
 }
 
 void manual_uneliminate_player(int player)
@@ -295,6 +298,7 @@ void manual_uneliminate_player(int player)
     }
     net_sync_commit_player(player);
     refresh_game_player_state(player);
+    playgroup_pending_reconcile_outcome();
 }
 
 // ---------- player colors ----------
