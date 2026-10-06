@@ -27,6 +27,8 @@ lv_obj_t *screen_settings = NULL;
 lv_obj_t *screen_battery = NULL;
 lv_obj_t *screen_rotate = NULL;
 lv_obj_t *screen_wifi = NULL;
+lv_obj_t *screen_wifi_scan = NULL;
+lv_obj_t *screen_wifi_password = NULL;
 
 // ---------- widgets ----------
 static lv_obj_t *arc_brightness = NULL;
@@ -40,6 +42,14 @@ static lv_obj_t *wifi_saved_lbl = NULL;
 static lv_obj_t *wifi_preferred_lbl = NULL;
 static lv_obj_t *wifi_forget_lbl = NULL;
 static int wifi_selected_index = 0;
+static int wifi_scan_index = 0;
+static lv_obj_t *wifi_scan_network_lbl = NULL;
+static lv_obj_t *wifi_scan_meta_lbl = NULL;
+static lv_obj_t *wifi_password_title_lbl = NULL;
+static lv_obj_t *wifi_password_textarea = NULL;
+static lv_obj_t *wifi_password_keyboard = NULL;
+static char wifi_editor_ssid[WIFI_MANAGER_SSID_MAX] = {0};
+static bool wifi_editor_from_scan = false;
 static lv_obj_t *turn_timer_btns[4] = {NULL, NULL, NULL, NULL};
 static lv_obj_t *turn_timer_lbls[4] = {NULL, NULL, NULL, NULL};
 static bool turn_settings_from_tools = false;
@@ -369,6 +379,13 @@ void open_wifi_screen(void)
 {
     refresh_wifi_settings_ui();
     lv_scr_load(screen_wifi);
+}
+
+void open_device_settings(void)
+{
+    refresh_settings_pages_ui();
+    if (settings_page_count > 0)
+        lv_scr_load(settings_pages[0]);
 }
 
 void change_display_rotation(int dir)
@@ -831,6 +848,19 @@ bool settings_handle_back(lv_obj_t *screen)
         return true;
     }
 
+    if (screen == screen_wifi_password) {
+        if (wifi_password_keyboard != NULL)
+            lv_obj_add_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+        lv_scr_load(wifi_editor_from_scan ? screen_wifi_scan : screen_wifi);
+        return true;
+    }
+
+    if (screen == screen_wifi_scan) {
+        refresh_wifi_settings_ui();
+        lv_scr_load(screen_wifi);
+        return true;
+    }
+
     for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
         if (settings_items[i].nav_screen != NULL && screen == *settings_items[i].nav_screen) {
             settings_save();
@@ -998,6 +1028,77 @@ void build_battery_screen(void)
     lv_obj_align(label_settings_battery_detail, LV_ALIGN_CENTER, 0, 30);
 }
 
+static void refresh_wifi_scan_ui(void)
+{
+    char ssid[WIFI_MANAGER_SSID_MAX];
+    char meta[48];
+    int rssi = 0;
+    int count = wifi_manager_scan_count();
+
+    if (count <= 0) {
+        if (wifi_scan_network_lbl != NULL)
+            lv_label_set_text(wifi_scan_network_lbl, "No networks");
+        if (wifi_scan_meta_lbl != NULL)
+            lv_label_set_text(wifi_scan_meta_lbl, "Tap RESCAN");
+        wifi_scan_index = 0;
+        return;
+    }
+
+    if (wifi_scan_index >= count)
+        wifi_scan_index = 0;
+    if (wifi_scan_index < 0)
+        wifi_scan_index = count - 1;
+
+    if (!wifi_manager_scan_ssid(wifi_scan_index, ssid, sizeof(ssid), &rssi))
+        return;
+
+    if (wifi_scan_network_lbl != NULL)
+        lv_label_set_text(wifi_scan_network_lbl, ssid);
+
+    if (wifi_scan_meta_lbl != NULL) {
+        snprintf(meta, sizeof(meta), "%d/%d   %d dBm",
+                 wifi_scan_index + 1, count, rssi);
+        lv_label_set_text(wifi_scan_meta_lbl, meta);
+    }
+}
+
+static void wifi_open_password_editor(const char *ssid, bool from_scan)
+{
+    char title[80];
+
+    if (ssid == NULL || ssid[0] == '\0')
+        return;
+
+    strlcpy(wifi_editor_ssid, ssid, sizeof(wifi_editor_ssid));
+    wifi_editor_from_scan = from_scan;
+
+    if (wifi_password_title_lbl != NULL) {
+        snprintf(title, sizeof(title), "Wi-Fi Password\n%s", wifi_editor_ssid);
+        lv_label_set_text(wifi_password_title_lbl, title);
+    }
+
+    if (wifi_password_textarea != NULL) {
+        lv_textarea_set_text(wifi_password_textarea, "");
+        lv_textarea_set_placeholder_text(
+            wifi_password_textarea,
+            from_scan ? "Password (blank = open)" : "Enter new password");
+    }
+
+    if (wifi_password_keyboard != NULL)
+        lv_obj_clear_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+
+    lv_scr_load(screen_wifi_password);
+}
+
+static void event_wifi_scan(lv_event_t *e)
+{
+    (void)e;
+    wifi_scan_index = 0;
+    wifi_manager_scan();
+    refresh_wifi_scan_ui();
+    lv_scr_load(screen_wifi_scan);
+}
+
 static void event_wifi_next(lv_event_t *e)
 {
     int count = wifi_manager_saved_count();
@@ -1008,6 +1109,15 @@ static void event_wifi_next(lv_event_t *e)
 
     wifi_selected_index = (wifi_selected_index + 1) % count;
     refresh_wifi_settings_ui();
+}
+
+static void event_wifi_edit_saved(lv_event_t *e)
+{
+    wifi_manager_network_t net;
+    (void)e;
+
+    if (wifi_manager_get_saved(wifi_selected_index, &net))
+        wifi_open_password_editor(net.ssid, false);
 }
 
 static void event_wifi_preferred(lv_event_t *e)
@@ -1030,13 +1140,96 @@ static void event_wifi_forget(lv_event_t *e)
     refresh_wifi_settings_ui();
 }
 
+static void event_wifi_scan_next(lv_event_t *e)
+{
+    int count = wifi_manager_scan_count();
+    (void)e;
+
+    if (count <= 0)
+        return;
+    wifi_scan_index = (wifi_scan_index + 1) % count;
+    refresh_wifi_scan_ui();
+}
+
+static void event_wifi_rescan(lv_event_t *e)
+{
+    (void)e;
+    wifi_scan_index = 0;
+    wifi_manager_scan();
+    refresh_wifi_scan_ui();
+}
+
+static void event_wifi_use_scan(lv_event_t *e)
+{
+    char ssid[WIFI_MANAGER_SSID_MAX];
+    (void)e;
+
+    if (wifi_manager_scan_ssid(wifi_scan_index, ssid, sizeof(ssid), NULL))
+        wifi_open_password_editor(ssid, true);
+}
+
+static void event_wifi_scan_back(lv_event_t *e)
+{
+    (void)e;
+    refresh_wifi_settings_ui();
+    lv_scr_load(screen_wifi);
+}
+
+static void wifi_password_finish(bool save)
+{
+    const char *password = "";
+
+    if (save && wifi_password_textarea != NULL)
+        password = lv_textarea_get_text(wifi_password_textarea);
+
+    if (save) {
+        /*
+         * Editing an existing network requires a replacement password.
+         * A scanned network may legitimately be open and therefore blank.
+         */
+        if (!wifi_editor_from_scan && (password == NULL || password[0] == '\0'))
+            return;
+
+        if (password == NULL)
+            password = "";
+
+        if (!wifi_manager_save_network(wifi_editor_ssid, password, true))
+            return;
+
+        wifi_manager_disconnect();
+        wifi_manager_connect();
+    }
+
+    if (wifi_password_keyboard != NULL)
+        lv_obj_add_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+
+    refresh_wifi_settings_ui();
+    lv_scr_load(screen_wifi);
+}
+
+static void event_wifi_password_keyboard(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (code == LV_EVENT_READY)
+        wifi_password_finish(true);
+    else if (code == LV_EVENT_CANCEL)
+        wifi_password_finish(false);
+}
+
 void build_wifi_screen(void)
 {
     quad_item_t items[4] = {
-        {"Wi-Fi\nOff",        NULL,                 false, LV_EVENT_CLICKED},
-        {"No saved\nnetworks",event_wifi_next,      true,  LV_EVENT_CLICKED},
-        {"Preferred\n--",     event_wifi_preferred, true,  LV_EVENT_CLICKED},
-        {"Hold to\nForget",   event_wifi_forget,    true,  LV_EVENT_LONG_PRESSED},
+        {"Wi-Fi\nOff\nTap: Scan", NULL,                 true,  LV_EVENT_CLICKED},
+        {"No saved\nnetworks",    event_wifi_next,      true,  LV_EVENT_CLICKED},
+        {"Preferred\n--",         event_wifi_preferred, true,  LV_EVENT_CLICKED},
+        {"Hold to\nForget",       event_wifi_forget,    true,  LV_EVENT_LONG_PRESSED},
+    };
+    quad_item_t scan_items[4] = {
+        {"Network", event_wifi_scan_next, true, LV_EVENT_CLICKED},
+        {"RESCAN",  event_wifi_rescan,    true, LV_EVENT_CLICKED},
+        {"USE",     event_wifi_use_scan,  true, LV_EVENT_CLICKED},
+        {"BACK",    event_wifi_scan_back, true, LV_EVENT_CLICKED},
     };
 
     build_quad_screen(&screen_wifi, items);
@@ -1049,9 +1242,58 @@ void build_wifi_screen(void)
     wifi_forget_lbl =
         lv_obj_get_child(lv_obj_get_child(screen_wifi, 3), 0);
 
+    /* Status tile doubles as the explicit manual-scan entry point. */
+    lv_obj_add_event_cb(lv_obj_get_child(screen_wifi, 0),
+                        event_wifi_scan, LV_EVENT_CLICKED, NULL);
+    /* Long-press a saved network to replace its password. */
+    lv_obj_add_event_cb(lv_obj_get_child(screen_wifi, 1),
+                        event_wifi_edit_saved, LV_EVENT_LONG_PRESSED, NULL);
+
+    build_quad_screen(&screen_wifi_scan, scan_items);
+    wifi_scan_network_lbl =
+        lv_obj_get_child(lv_obj_get_child(screen_wifi_scan, 0), 0);
+    wifi_scan_meta_lbl = lv_label_create(lv_obj_get_child(screen_wifi_scan, 0));
+    lv_label_set_text(wifi_scan_meta_lbl, "");
+    lv_obj_set_style_text_color(wifi_scan_meta_lbl, lv_color_hex(0x8CA0B3), 0);
+    lv_obj_set_style_text_font(wifi_scan_meta_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_align(wifi_scan_meta_lbl, LV_ALIGN_CENTER, 10, 42);
+
+    screen_wifi_password = lv_obj_create(NULL);
+    lv_obj_set_size(screen_wifi_password, 360, 360);
+    lv_obj_set_style_bg_color(screen_wifi_password, lv_color_black(), 0);
+    lv_obj_set_style_border_width(screen_wifi_password, 0, 0);
+    lv_obj_set_scrollbar_mode(screen_wifi_password, LV_SCROLLBAR_MODE_OFF);
+
+    wifi_password_title_lbl = lv_label_create(screen_wifi_password);
+    lv_label_set_text(wifi_password_title_lbl, "Wi-Fi Password");
+    lv_obj_set_width(wifi_password_title_lbl, 280);
+    lv_obj_set_style_text_align(wifi_password_title_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(wifi_password_title_lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(wifi_password_title_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_align(wifi_password_title_lbl, LV_ALIGN_TOP_MID, 0, 24);
+
+    wifi_password_textarea = lv_textarea_create(screen_wifi_password);
+    lv_obj_set_size(wifi_password_textarea, 250, 44);
+    lv_obj_align(wifi_password_textarea, LV_ALIGN_TOP_MID, 0, 82);
+    lv_textarea_set_one_line(wifi_password_textarea, true);
+    lv_textarea_set_max_length(wifi_password_textarea,
+                               WIFI_MANAGER_PASSWORD_MAX - 1);
+    lv_textarea_set_password_mode(wifi_password_textarea, true);
+
+    wifi_password_keyboard = lv_keyboard_create(screen_wifi_password);
+    lv_obj_set_size(wifi_password_keyboard, 360, 190);
+    lv_obj_align(wifi_password_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_textarea(wifi_password_keyboard, wifi_password_textarea);
+    lv_obj_add_event_cb(wifi_password_keyboard,
+                        event_wifi_password_keyboard,
+                        LV_EVENT_READY, NULL);
+    lv_obj_add_event_cb(wifi_password_keyboard,
+                        event_wifi_password_keyboard,
+                        LV_EVENT_CANCEL, NULL);
+    lv_obj_add_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+
     refresh_wifi_settings_ui();
 }
-
 void build_rotate_screen(void)
 {
     screen_rotate = lv_obj_create(NULL);
