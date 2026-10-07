@@ -2044,267 +2044,101 @@ static bool playgroup_event_batch_probe(long game_id)
     url += String(game_id);
     url += "/events/batch";
 
-    char body[384];
-    unsigned long long event_id =
-        ((unsigned long long)now * 1000ULL) + (unsigned long long)(millis() % 1000UL);
+    Serial.println("[Playgroup] ===== EVENT ID MAPPING TEST START =====");
+    Serial.println("[Playgroup] Game mapping known from API:");
+    Serial.println("  seat 0 -> user 184200 -> participation 3406586");
+    Serial.println("  seat 1 -> user 184199 -> participation 3406587");
 
-    /*
-     * Use a real tracker-shaped event with a valid current Unix timestamp.
-     * This test targets the already-finished disposable game 1221149.
-     * Amount 1 is intentional: amount=0 may be rejected by the importer.
-     */
-    snprintf(body, sizeof(body),
-             "{\"events\":[{\"id\":%llu,\"name\":\"Damage\","
-             "\"source_player_id\":\"0\",\"target_player_id\":\"1\","
-             "\"active_player_id\":\"0\",\"time\":%lld,"
-             "\"turn\":2,\"amount\":1,\"metadata\":{}}]}",
-             event_id, (long long)now);
+    const char *labels[] = {
+        "seat indexes",
+        "user ids",
+        "participation ids"
+    };
 
-    if (!http.begin(tls, url)) {
-        Serial.println("[Playgroup] EVENT TEST: HTTPS init failed.");
-        memset(api_key, 0, sizeof(api_key));
-        wifi_power_down();
-        return false;
-    }
+    const char *srcs[] = {
+        "0",
+        "184200",
+        "3406586"
+    };
 
-    auth = "Bearer ";
-    auth += api_key;
-    http.addHeader("Authorization", auth);
-    http.addHeader("Accept", "application/json");
-    http.addHeader("Content-Type", "application/json");
+    const char *dsts[] = {
+        "1",
+        "184199",
+        "3406587"
+    };
 
-    Serial.print("[Playgroup] EVENT TEST: POST /games/");
-    Serial.print(game_id);
-    Serial.println("/events/batch");
-    Serial.println("[Playgroup] Sending one valid-format Damage event to the disposable test game.");
+    for (int i = 0; i < 3; i++) {
+        char body[420];
+        unsigned long long event_id =
+            ((unsigned long long)now * 1000ULL) +
+            (unsigned long long)((millis() + i) % 1000UL);
 
-    status = http.POST((uint8_t *)body, strlen(body));
-    auth = "";
-    memset(api_key, 0, sizeof(api_key));
+        snprintf(body, sizeof(body),
+                 "{\"events\":[{\"id\":%llu,\"name\":\"Damage\","
+                 "\"source_player_id\":\"%s\",\"target_player_id\":\"%s\","
+                 "\"active_player_id\":\"%s\",\"time\":%lld,"
+                 "\"turn\":2,\"amount\":1,\"metadata\":{}}]}",
+                 event_id, srcs[i], dsts[i], srcs[i], (long long)now);
 
-    if (status > 0)
-        response = http.getString();
-
-    Serial.print("[Playgroup] EVENT TEST HTTP ");
-    Serial.println(status);
-
-    if (response.length() > 0) {
-        Serial.print("[Playgroup] EVENT TEST body: ");
-        if (response.length() <= 1600)
-            Serial.println(response);
-        else {
-            Serial.println(response.substring(0, 1600));
-            Serial.println("[Playgroup] EVENT TEST body truncated.");
+        if (!http.begin(tls, url)) {
+            Serial.println("[Playgroup] EVENT TEST: HTTPS init failed.");
+            break;
         }
-    }
 
-    if (status == HTTP_CODE_CREATED)
-        Serial.println("[Playgroup] EVENT TEST PASS: public batch import accepted the event.");
-    else if (status == 422)
-        Serial.println("[Playgroup] EVENT TEST: validator/importer rejected the event; inspect body above.");
-    else if (status == HTTP_CODE_UNAUTHORIZED || status == HTTP_CODE_FORBIDDEN)
-        Serial.println("[Playgroup] EVENT TEST: authentication/participation rejected.");
-    else if (status > 0)
-        Serial.println("[Playgroup] EVENT TEST: endpoint responded with unexpected status.");
-    else {
-        Serial.print("[Playgroup] EVENT TEST transport error: ");
-        Serial.println(http.errorToString(status).c_str());
-    }
-
-    response = "";
-    http.end();
-    wifi_power_down();
-    Serial.println("[Playgroup] Wi-Fi off.");
-    return status == HTTP_CODE_CREATED;
-}
-
-static bool playgroup_live_diag(long playgroup_id, long inspect_game_id)
-{
-    char api_key[PG_API_KEY_MAX];
-    NetworkClientSecure tls;
-    HTTPClient http;
-    String auth;
-    String response;
-    String before_games;
-    String after_games;
-    String url;
-    int status = -1;
-    long before_ids[16] = {0};
-    long after_ids[16] = {0};
-    int before_count = 0;
-    int after_count = 0;
-
-    if (playgroup_id <= 0) {
-        Serial.println("[Playgroup] Usage: PG LIVE DIAG <playgroup_id> [game_id]");
-        return false;
-    }
-
-    if (!nvs_read_string("api_key", api_key, sizeof(api_key))) {
-        Serial.println("[Playgroup] API key is not configured.");
-        return false;
-    }
-
-    if (!wifi_connect_saved())
-        return false;
-
-    tls.useBuiltinCACertBundle();
-    tls.setHandshakeTimeout(12);
-    http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
-    http.setTimeout(PG_HTTP_TIMEOUT_MS);
-    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
-
-    Serial.println("[Playgroup] ===== LIVE SESSION DIAG START =====");
-
-    /* Snapshot recent games before creating the session. */
-    url = PG_API_BASE;
-    url += "/playgroups/";
-    url += String(playgroup_id);
-    url += "/games";
-
-    if (http.begin(tls, url)) {
-        auth = "Bearer ";
-        auth += api_key;
-        http.addHeader("Authorization", auth);
-        http.addHeader("Accept", "application/json");
-        status = http.GET();
-        auth = "";
-        if (status > 0)
-            before_games = http.getString();
-        http.end();
-
-        Serial.print("[Playgroup] Games BEFORE -> HTTP ");
-        Serial.println(status);
-        if (status >= 200 && status < 300) {
-            before_count = json_collect_top_level_ids(
-                before_games, before_ids,
-                (int)(sizeof(before_ids) / sizeof(before_ids[0])));
-            Serial.print("[Playgroup] Top-level game ids before: ");
-            Serial.println(before_count);
-            for (int i = 0; i < before_count; i++) {
-                Serial.print("  - ");
-                Serial.println(before_ids[i]);
-            }
-        }
-    }
-
-    /* Create a public live session with the same Bearer key. */
-    url = PG_API_BASE;
-    url += "/live_sessions";
-    if (http.begin(tls, url)) {
         auth = "Bearer ";
         auth += api_key;
         http.addHeader("Authorization", auth);
         http.addHeader("Accept", "application/json");
         http.addHeader("Content-Type", "application/json");
 
-        status = http.POST((uint8_t *)"{}", 2);
+        Serial.print("[Playgroup] Test ");
+        Serial.print(i + 1);
+        Serial.print("/3: ");
+        Serial.println(labels[i]);
+
+        status = http.POST((uint8_t *)body, strlen(body));
         auth = "";
-        response = status > 0 ? http.getString() : "";
-        http.end();
 
-        Serial.print("[Playgroup] Create live session -> HTTP ");
-        Serial.println(status);
-        if (response.length() > 0) {
-            Serial.print("[Playgroup] Live session response: ");
-            Serial.println(response);
-        }
-    }
-
-    delay(500);
-
-    /* Snapshot recent games again to see whether session creation made a game. */
-    url = PG_API_BASE;
-    url += "/playgroups/";
-    url += String(playgroup_id);
-    url += "/games";
-
-    if (http.begin(tls, url)) {
-        auth = "Bearer ";
-        auth += api_key;
-        http.addHeader("Authorization", auth);
-        http.addHeader("Accept", "application/json");
-        status = http.GET();
-        auth = "";
         if (status > 0)
-            after_games = http.getString();
+            response = http.getString();
+        else
+            response = "";
+
+        Serial.print("[Playgroup] HTTP ");
+        Serial.println(status);
+
+        if (response.length() > 0) {
+            Serial.print("[Playgroup] Body: ");
+            if (response.length() <= 1600)
+                Serial.println(response);
+            else {
+                Serial.println(response.substring(0, 1600));
+                Serial.println("[Playgroup] Body truncated.");
+            }
+        }
+
         http.end();
 
-        Serial.print("[Playgroup] Games AFTER -> HTTP ");
-        Serial.println(status);
-        if (status >= 200 && status < 300) {
-            after_count = json_collect_top_level_ids(
-                after_games, after_ids,
-                (int)(sizeof(after_ids) / sizeof(after_ids[0])));
-            Serial.print("[Playgroup] Top-level game ids after: ");
-            Serial.println(after_count);
-            for (int i = 0; i < after_count; i++) {
-                Serial.print("  - ");
-                Serial.println(after_ids[i]);
-            }
-
-            bool new_id_found = false;
-            for (int i = 0; i < after_count; i++) {
-                bool existed = false;
-                for (int j = 0; j < before_count; j++) {
-                    if (after_ids[i] == before_ids[j]) {
-                        existed = true;
-                        break;
-                    }
-                }
-                if (!existed) {
-                    Serial.print("[Playgroup] NEW GAME ID after live-session create: ");
-                    Serial.println(after_ids[i]);
-                    new_id_found = true;
-                }
-            }
-            if (!new_id_found)
-                Serial.println("[Playgroup] No new game id appeared after live-session creation.");
+        if (status == HTTP_CODE_CREATED) {
+            Serial.print("[Playgroup] EVENT TEST PASS with ");
+            Serial.println(labels[i]);
+            break;
         }
-    }
 
-    /* Inspect one known game through the public API in the same run. */
-    if (inspect_game_id > 0) {
-        url = PG_API_BASE;
-        url += "/playgroups/";
-        url += String(playgroup_id);
-        url += "/games/";
-        url += String(inspect_game_id);
-
-        if (http.begin(tls, url)) {
-            auth = "Bearer ";
-            auth += api_key;
-            http.addHeader("Authorization", auth);
-            http.addHeader("Accept", "application/json");
-            status = http.GET();
-            auth = "";
-            response = status > 0 ? http.getString() : "";
-            http.end();
-
-            Serial.print("[Playgroup] Inspect game ");
-            Serial.print(inspect_game_id);
-            Serial.print(" -> HTTP ");
-            Serial.println(status);
-            if (response.length() > 0) {
-                Serial.print("[Playgroup] Game body: ");
-                if (response.length() <= 3500)
-                    Serial.println(response);
-                else {
-                    Serial.println(response.substring(0, 3500));
-                    Serial.println("[Playgroup] Game body truncated.");
-                }
-            }
+        if (status == HTTP_CODE_UNAUTHORIZED || status == HTTP_CODE_FORBIDDEN) {
+            Serial.println("[Playgroup] EVENT TEST: auth/participation rejected; stopping.");
+            break;
         }
+
+        delay(200);
     }
 
     memset(api_key, 0, sizeof(api_key));
-    before_games = "";
-    after_games = "";
     response = "";
-
-    Serial.println("[Playgroup] ===== LIVE SESSION DIAG END =====");
+    Serial.println("[Playgroup] ===== EVENT ID MAPPING TEST END =====");
     wifi_power_down();
     Serial.println("[Playgroup] Wi-Fi off.");
-    return true;
+    return status == HTTP_CODE_CREATED;
 }
 
 static void print_status(void)
