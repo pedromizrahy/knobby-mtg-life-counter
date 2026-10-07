@@ -3,6 +3,10 @@
 
 #include "types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void knob_nvs_init(void);
 void settings_save(void);
 
@@ -61,5 +65,9 @@ void nvs_set_multi_select(int value);
 #define NAME_LIST_LEN   16
 void nvs_get_name_list(char (*out)[NAME_LIST_LEN]);
 void nvs_set_name_list(const char (*list)[NAME_LIST_LEN]);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // _STORAGE_H
