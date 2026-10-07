@@ -53,6 +53,10 @@ bool playgroup_pending_selftest(void);
    the queue after a confirmed remote success/reconciliation. */
 int playgroup_pending_sync_queue(void);
 
+/* Lightweight UI state; no storage/network side effects. */
+bool playgroup_pending_current_active(void);
+bool playgroup_pending_result_confirmed(void);
+
 #ifdef __cplusplus
 }
 #endif
