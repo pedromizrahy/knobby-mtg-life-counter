@@ -2035,78 +2035,71 @@ static bool playgroup_event_batch_probe(long game_id)
     url += String(game_id);
     url += "/events/batch";
 
-    Serial.println("[Playgroup] ===== EVENT IMPORT CONTRACT TEST START =====");
-    Serial.println("[Playgroup] Confirmed mapping: source/target are seat indexes.");
-
     /*
-     * Test game 1221149 ran around Unix 1791329471..1791330857.
-     * Keep timestamps inside that window and use small positive event ids.
+     * Captured from official tracker:
+     * StartGame is the first game event emitted after subscription.
+     * Use a minimal two-event history so the importer can initialize state
+     * before applying gameplay damage.
      */
-    const char *labels[] = {
-        "small id + in-game time + Damage",
-        "small id + in-game time + LifeLoss",
-        "small id + in-game time + Healing"
-    };
+    const char *body =
+        "{\"events\":["
+        "{\"id\":820001,\"name\":\"StartGame\","
+        "\"source_player_id\":\"0\",\"active_player_id\":\"0\","
+        "\"time\":1791337656,\"turn\":0,"
+        "\"metadata\":{\"started_at\":1791337656}},"
+        "{\"id\":820002,\"name\":\"Damage\","
+        "\"source_player_id\":\"0\",\"target_player_id\":\"1\","
+        "\"active_player_id\":\"0\",\"time\":1791337660,"
+        "\"turn\":1,\"amount\":1,\"metadata\":{}}"
+        "]}";
 
-    const char *bodies[] = {
-        "{\"events\":[{\"id\":810001,\"name\":\"Damage\",\"source_player_id\":\"0\",\"target_player_id\":\"1\",\"time\":1791330000,\"turn\":1,\"amount\":1,\"metadata\":{}}]}",
-        "{\"events\":[{\"id\":810002,\"name\":\"LifeLoss\",\"source_player_id\":\"1\",\"target_player_id\":\"1\",\"time\":1791330001,\"turn\":1,\"amount\":1,\"metadata\":{}}]}",
-        "{\"events\":[{\"id\":810003,\"name\":\"Healing\",\"source_player_id\":\"0\",\"target_player_id\":\"0\",\"time\":1791330002,\"turn\":1,\"amount\":1,\"metadata\":{}}]}"
-    };
-
-    for (int i = 0; i < 3; i++) {
-        if (!http.begin(tls, url)) {
-            Serial.println("[Playgroup] EVENT TEST: HTTPS init failed.");
-            break;
-        }
-
-        auth = "Bearer ";
-        auth += api_key;
-        http.addHeader("Authorization", auth);
-        http.addHeader("Accept", "application/json");
-        http.addHeader("Content-Type", "application/json");
-
-        Serial.print("[Playgroup] Test ");
-        Serial.print(i + 1);
-        Serial.print("/3: ");
-        Serial.println(labels[i]);
-
-        status = http.POST((uint8_t *)bodies[i], strlen(bodies[i]));
-        auth = "";
-        response = status > 0 ? http.getString() : "";
-
-        Serial.print("[Playgroup] HTTP ");
-        Serial.println(status);
-
-        if (response.length() > 0) {
-            Serial.print("[Playgroup] Body: ");
-            if (response.length() <= 1800)
-                Serial.println(response);
-            else {
-                Serial.println(response.substring(0, 1800));
-                Serial.println("[Playgroup] Body truncated.");
-            }
-        }
-
-        http.end();
-
-        if (status == HTTP_CODE_CREATED) {
-            Serial.print("[Playgroup] EVENT TEST PASS: ");
-            Serial.println(labels[i]);
-            break;
-        }
-
-        if (status == HTTP_CODE_UNAUTHORIZED || status == HTTP_CODE_FORBIDDEN) {
-            Serial.println("[Playgroup] EVENT TEST: auth/participation rejected; stopping.");
-            break;
-        }
-
-        delay(200);
+    if (!http.begin(tls, url)) {
+        Serial.println("[Playgroup] EVENT TEST: HTTPS init failed.");
+        memset(api_key, 0, sizeof(api_key));
+        wifi_power_down();
+        return false;
     }
 
+    auth = "Bearer ";
+    auth += api_key;
+    http.addHeader("Authorization", auth);
+    http.addHeader("Accept", "application/json");
+    http.addHeader("Content-Type", "application/json");
+
+    Serial.println("[Playgroup] ===== STARTGAME + DAMAGE BATCH TEST =====");
+    Serial.print("[Playgroup] POST /games/");
+    Serial.print(game_id);
+    Serial.println("/events/batch");
+
+    status = http.POST((uint8_t *)body, strlen(body));
+    auth = "";
     memset(api_key, 0, sizeof(api_key));
+
+    if (status > 0)
+        response = http.getString();
+
+    Serial.print("[Playgroup] HTTP ");
+    Serial.println(status);
+
+    if (response.length() > 0) {
+        Serial.print("[Playgroup] Body: ");
+        if (response.length() <= 2400)
+            Serial.println(response);
+        else {
+            Serial.println(response.substring(0, 2400));
+            Serial.println("[Playgroup] Body truncated.");
+        }
+    }
+
+    if (status == HTTP_CODE_CREATED)
+        Serial.println("[Playgroup] PASS: StartGame + Damage imported successfully.");
+    else if (status == 422)
+        Serial.println("[Playgroup] Import rejected; inspect body above.");
+    else if (status == HTTP_CODE_UNAUTHORIZED || status == HTTP_CODE_FORBIDDEN)
+        Serial.println("[Playgroup] Authentication/participation rejected.");
+
     response = "";
-    Serial.println("[Playgroup] ===== EVENT IMPORT CONTRACT TEST END =====");
+    http.end();
     wifi_power_down();
     Serial.println("[Playgroup] Wi-Fi off.");
     return status == HTTP_CODE_CREATED;
