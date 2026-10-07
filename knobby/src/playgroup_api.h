@@ -97,6 +97,13 @@ bool playgroup_cached_image_copy(const char *scryfall_id,
 bool playgroup_persist_cached_image(const char *scryfall_id);
 
 bool playgroup_network_active(void);
+
+/* Production game-sync transport. These use the same stored Bearer API key
+   proven by the diagnostics, but contain no hardcoded player/game data. */
+long playgroup_create_game_for_sync(long playgroup_id, int player_count);
+int playgroup_import_events_for_sync(long game_id, const char *json_body);
+bool playgroup_remote_game_finalized(long playgroup_id, long game_id,
+                                     long winner_user_id);
 void playgroup_end_session(void);
 
 #ifdef __cplusplus
