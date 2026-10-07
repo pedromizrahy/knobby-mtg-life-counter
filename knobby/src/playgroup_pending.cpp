@@ -102,6 +102,16 @@ static bool is_pending_filename(const char *name)
                    strlen(PG_PENDING_PATH_PREFIX + 1)) == 0;
 }
 
+bool playgroup_pending_current_active(void)
+{
+    return current_active;
+}
+
+bool playgroup_pending_result_confirmed(void)
+{
+    return current_result_confirmed;
+}
+
 int playgroup_pending_count(void)
 {
     int count = 0;
