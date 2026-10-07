@@ -2117,8 +2117,6 @@ static bool playgroup_event_batch_probe(long game_id)
     Serial.println("[Playgroup] Sending 10 captured-shape events: setup + StartGame + Damage.");
 
     status = http.POST((uint8_t *)body, strlen(body));
-    heap_caps_free(body);
-    body = NULL;
     auth = "";
     memset(api_key, 0, sizeof(api_key));
 
@@ -2364,6 +2362,8 @@ static bool playgroup_full_flow_test(long game_id)
     Serial.println("[Playgroup] Sending setup + gameplay + result in one batch.");
 
     status = http.POST((uint8_t *)body, strlen(body));
+    heap_caps_free(body);
+    body = NULL;
     auth = "";
     memset(api_key, 0, sizeof(api_key));
 
