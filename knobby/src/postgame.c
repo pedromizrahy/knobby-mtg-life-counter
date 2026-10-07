@@ -4,6 +4,7 @@
 #include "game.h"
 #include "storage.h"
 #include "pregame.h"
+#include "ui_mp.h"
 #include "playgroup_pending.h"
 
 extern void back_to_main(void);
