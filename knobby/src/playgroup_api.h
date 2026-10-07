@@ -33,6 +33,7 @@ typedef struct {
 typedef struct {
     long id;
     long user_id;
+    long commander_id;
     bool archived;
     float power_level;
     int games_won;
