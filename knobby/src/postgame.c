@@ -235,8 +235,19 @@ static void event_infinite_confirm(lv_event_t *event)
            win_conditions[wincon_index].api_token,
            infinite_index ? "yes" : "no");
 
-    /* The persisted snapshot remains queued, but the live table is over.
-       Return to New Game instead of reopening the finished pizza. */
+    /*
+     * Durability first: set_result() has already persisted the finished
+     * snapshot. Try to upload it immediately while the user is still in the
+     * postgame flow. If Wi-Fi/API fails, playgroup_pending_sync_queue() leaves
+     * the snapshot untouched for the next Playgroup connection.
+     */
+    if (playgroup_pending_count() > 0) {
+        printf("[Playgroup] Result saved; attempting immediate sync...\n");
+        playgroup_pending_sync_queue();
+    }
+
+    /* The live table is over regardless of network success. A confirmed
+       remote upload removes the snapshot; otherwise it remains queued. */
     playgroup_pending_disable_current();
     open_pregame_home();
 }
