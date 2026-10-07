@@ -2,6 +2,7 @@
 #include <SPIFFS.h>
 #include <esp_random.h>
 #include <esp_heap_caps.h>
+#include <time.h>
 
 #include "playgroup_pending.h"
 #include "damage_log.h"
@@ -9,17 +10,20 @@
 #include "storage.h"
 
 #define PG_PENDING_MAGIC 0x50475131UL
-#define PG_PENDING_VERSION 1U
+#define PG_PENDING_VERSION 2U
 #define PG_PENDING_PATH_PREFIX "/pgq_"
 
 typedef struct {
     long user_id;
     long deck_id;
+    long commander_id;
     uint8_t mulligans;
     uint8_t eliminated;
     int16_t final_life;
     int16_t poison;
     char name[16];
+    char deck_name[64];
+    char commander_name[64];
 } pg_pending_player_snapshot_t;
 
 typedef struct {
@@ -28,8 +32,16 @@ typedef struct {
     uint16_t reserved;
     uint32_t session_id;
     long playgroup_id;
+    long remote_game_id;
+    uint32_t game_started_epoch;
+    uint32_t game_started_tick_ms;
     uint8_t player_count;
     int8_t winner;
+    int8_t starting_player;
+    uint8_t result_confirmed;
+    uint8_t went_infinite;
+    uint8_t sync_phase;
+    char win_condition[32];
     uint16_t event_count;
     uint16_t raw_event_count;
     pg_pending_player_snapshot_t players[MAX_DISPLAY_PLAYERS];
@@ -40,6 +52,13 @@ static pg_pending_seed_t current_seed;
 static bool current_active = false;
 static bool current_snapshot_saved = false;
 static uint32_t current_session_id = 0;
+static uint32_t current_game_started_epoch = 0;
+static uint32_t current_game_started_tick_ms = 0;
+static int8_t current_starting_player = -1;
+static bool current_result_confirmed = false;
+static bool current_went_infinite = false;
+static int8_t current_result_winner = -1;
+static char current_win_condition[32] = {0};
 
 static bool pending_fs_ready(void)
 {
@@ -130,6 +149,16 @@ void playgroup_pending_begin_game(const pg_pending_seed_t *seed)
     current_seed = *seed;
     current_active = true;
     current_snapshot_saved = false;
+    current_game_started_tick_ms = millis();
+    {
+        time_t now = time(NULL);
+        current_game_started_epoch = (now > 1700000000L) ? (uint32_t)now : 0U;
+    }
+    current_starting_player = -1;
+    current_result_confirmed = false;
+    current_went_infinite = false;
+    current_result_winner = -1;
+    current_win_condition[0] = '\0';
 
     do {
         current_session_id = esp_random();
@@ -146,6 +175,13 @@ void playgroup_pending_disable_current(void)
     current_active = false;
     current_snapshot_saved = false;
     current_session_id = 0;
+    current_game_started_epoch = 0;
+    current_game_started_tick_ms = 0;
+    current_starting_player = -1;
+    current_result_confirmed = false;
+    current_went_infinite = false;
+    current_result_winner = -1;
+    current_win_condition[0] = '\0';
     memset(&current_seed, 0, sizeof(current_seed));
 }
 
@@ -186,12 +222,22 @@ static bool write_finished_snapshot(int winner)
     snapshot->version = PG_PENDING_VERSION;
     snapshot->session_id = current_session_id;
     snapshot->playgroup_id = current_seed.playgroup_id;
+    snapshot->remote_game_id = 0;
+    snapshot->game_started_epoch = current_game_started_epoch;
+    snapshot->game_started_tick_ms = current_game_started_tick_ms;
     snapshot->player_count = current_seed.player_count;
-    snapshot->winner = (int8_t)winner;
+    snapshot->winner = current_result_confirmed ? current_result_winner : (int8_t)winner;
+    snapshot->starting_player = current_starting_player;
+    snapshot->result_confirmed = current_result_confirmed ? 1U : 0U;
+    snapshot->went_infinite = current_went_infinite ? 1U : 0U;
+    snapshot->sync_phase = 0;
+    strlcpy(snapshot->win_condition, current_win_condition,
+            sizeof(snapshot->win_condition));
 
     for (int i = 0; i < current_seed.player_count; i++) {
         snapshot->players[i].user_id = current_seed.players[i].user_id;
         snapshot->players[i].deck_id = current_seed.players[i].deck_id;
+        snapshot->players[i].commander_id = current_seed.players[i].commander_id;
         snapshot->players[i].mulligans = current_seed.players[i].mulligans;
         snapshot->players[i].eliminated = player_eliminated[i] ? 1U : 0U;
         snapshot->players[i].final_life = (int16_t)player_life[i];
@@ -199,6 +245,12 @@ static bool write_finished_snapshot(int winner)
             (int16_t)player_counters[i][COUNTER_TYPE_POISON];
         strlcpy(snapshot->players[i].name, current_seed.players[i].name,
                 sizeof(snapshot->players[i].name));
+        strlcpy(snapshot->players[i].deck_name,
+                current_seed.players[i].deck_name,
+                sizeof(snapshot->players[i].deck_name));
+        strlcpy(snapshot->players[i].commander_name,
+                current_seed.players[i].commander_name,
+                sizeof(snapshot->players[i].commander_name));
     }
 
     log_count = damage_log_record_count();
@@ -212,6 +264,16 @@ static bool write_finished_snapshot(int winner)
             copied++;
     }
     snapshot->event_count = (uint16_t)copied;
+
+    if (snapshot->starting_player < 0) {
+        for (int i = 0; i < copied; i++) {
+            if (snapshot->events[i].turn_player >= 0 &&
+                snapshot->events[i].turn_player < current_seed.player_count) {
+                snapshot->starting_player = snapshot->events[i].turn_player;
+                break;
+            }
+        }
+    }
 
     snapshot_path(current_session_id, path, sizeof(path));
     file = SPIFFS.open(path, FILE_WRITE);
@@ -246,6 +308,33 @@ static bool write_finished_snapshot(int winner)
 cleanup:
     heap_caps_free(snapshot);
     return ok;
+}
+
+void playgroup_pending_note_starting_player(int player)
+{
+    if (!current_active || player < 0 || player >= current_seed.player_count)
+        return;
+    if (current_starting_player < 0)
+        current_starting_player = (int8_t)player;
+}
+
+void playgroup_pending_set_result(int winner, const char *win_condition,
+                                  bool went_infinite)
+{
+    if (!current_active || winner < 0 || winner >= current_seed.player_count)
+        return;
+
+    current_result_winner = (int8_t)winner;
+    current_result_confirmed = true;
+    current_went_infinite = went_infinite;
+    strlcpy(current_win_condition,
+            win_condition != NULL ? win_condition : "",
+            sizeof(current_win_condition));
+
+    /* Refresh an already queued inferred result with the user's confirmed
+       questionnaire answer. Older queued games are untouched. */
+    if (current_snapshot_saved)
+        write_finished_snapshot(winner);
 }
 
 void playgroup_pending_reconcile_outcome(void)
@@ -335,18 +424,31 @@ bool playgroup_pending_selftest(void)
     written_snapshot->version = PG_PENDING_VERSION;
     written_snapshot->session_id = 0xFFFFFFFEUL;
     written_snapshot->playgroup_id = 63005;
+    written_snapshot->remote_game_id = 0;
+    written_snapshot->game_started_epoch = 1791370000U;
+    written_snapshot->game_started_tick_ms = 1234U;
     written_snapshot->player_count = 4;
     written_snapshot->winner = 2;
+    written_snapshot->starting_player = 1;
+    written_snapshot->result_confirmed = 1;
+    written_snapshot->went_infinite = 0;
+    strlcpy(written_snapshot->win_condition, "combat",
+            sizeof(written_snapshot->win_condition));
     written_snapshot->event_count = 2;
     written_snapshot->raw_event_count = 2;
 
     written_snapshot->players[0].user_id = 101;
     written_snapshot->players[0].deck_id = 1001;
+    written_snapshot->players[0].commander_id = 2001;
     written_snapshot->players[0].mulligans = 1;
     written_snapshot->players[0].eliminated = 1;
     written_snapshot->players[0].final_life = -2;
     strlcpy(written_snapshot->players[0].name, "P1",
             sizeof(written_snapshot->players[0].name));
+    strlcpy(written_snapshot->players[0].deck_name, "Deck 1",
+            sizeof(written_snapshot->players[0].deck_name));
+    strlcpy(written_snapshot->players[0].commander_name, "Commander 1",
+            sizeof(written_snapshot->players[0].commander_name));
 
     written_snapshot->players[2].user_id = 103;
     written_snapshot->players[2].deck_id = 1003;
