@@ -2036,21 +2036,65 @@ static bool playgroup_event_batch_probe(long game_id)
     url += "/events/batch";
 
     /*
-     * Captured from official tracker:
-     * StartGame is the first game event emitted after subscription.
-     * Use a minimal two-event history so the importer can initialize state
-     * before applying gameplay damage.
+     * Full minimal setup captured from the official tracker for game 1221723:
+     * Login x2 -> DeckSelect/SeatReady x2 -> KeepHand x2 -> StartGame.
+     * Then one Damage event to prove gameplay import.
+     *
+     * Deliberately omit presentation-only DeckSelect fields such as image URLs
+     * and the huge all_counters list; keep the identity/state fields.
      */
     const char *body =
         "{\"events\":["
-        "{\"id\":820001,\"name\":\"StartGame\","
-        "\"source_player_id\":\"0\",\"active_player_id\":\"0\","
-        "\"time\":1791337656,\"turn\":0,"
-        "\"metadata\":{\"started_at\":1791337656}},"
-        "{\"id\":820002,\"name\":\"Damage\","
-        "\"source_player_id\":\"0\",\"target_player_id\":\"1\","
-        "\"active_player_id\":\"0\",\"time\":1791337660,"
-        "\"turn\":1,\"amount\":1,\"metadata\":{}}"
+        "{\"id\":2850064000001,\"name\":\"Login\","
+          "\"source_player_id\":\"1\",\"target_player_id\":\"1\","
+          "\"active_player_id\":\"1\",\"time\":1791337948,\"turn\":0,"
+          "\"metadata\":{\"user_id\":184199,\"roster_player_id\":null,"
+          "\"username\":\"Pedrogas\",\"commander_id\":null,"
+          "\"commander_name\":null,\"commander_image\":null}},"
+        "{\"id\":2850064000002,\"name\":\"Login\","
+          "\"source_player_id\":\"0\",\"target_player_id\":\"0\","
+          "\"active_player_id\":\"0\",\"time\":1791337950,\"turn\":0,"
+          "\"metadata\":{\"user_id\":184200,\"roster_player_id\":null,"
+          "\"username\":\"Paloma Isaia\",\"commander_id\":null,"
+          "\"commander_name\":null,\"commander_image\":null}},"
+        "{\"id\":2850064000003,\"name\":\"DeckSelect\","
+          "\"source_player_id\":\"1\",\"target_player_id\":\"1\","
+          "\"active_player_id\":\"1\",\"time\":1791337986,\"turn\":0,"
+          "\"metadata\":{\"deck_id\":860409,\"deck_name\":\"Fire Lord Azula\","
+          "\"commander_id\":3605,\"commander_name\":\"Fire Lord Azula\","
+          "\"partner_id\":null,\"partner_name\":null,\"playgroup_id\":62795,"
+          "\"counters\":[]}},"
+        "{\"id\":2850064000004,\"name\":\"SeatReady\","
+          "\"source_player_id\":\"1\",\"target_player_id\":\"1\","
+          "\"active_player_id\":\"1\",\"time\":1791337988,\"turn\":0,"
+          "\"metadata\":{\"ready\":true}},"
+        "{\"id\":2850064000005,\"name\":\"DeckSelect\","
+          "\"source_player_id\":\"0\",\"target_player_id\":\"0\","
+          "\"active_player_id\":\"0\",\"time\":1791337989,\"turn\":0,"
+          "\"metadata\":{\"deck_id\":714018,\"deck_name\":\"Peace Offering\","
+          "\"commander_id\":3044,\"commander_name\":\"Ms. Bumbleflower\","
+          "\"partner_id\":null,\"partner_name\":null,\"playgroup_id\":62795,"
+          "\"counters\":[]}},"
+        "{\"id\":2850064000006,\"name\":\"SeatReady\","
+          "\"source_player_id\":\"0\",\"target_player_id\":\"0\","
+          "\"active_player_id\":\"0\",\"time\":1791337990,\"turn\":0,"
+          "\"metadata\":{\"ready\":true}},"
+        "{\"id\":2850064000007,\"name\":\"KeepHand\","
+          "\"source_player_id\":\"1\",\"target_player_id\":\"1\","
+          "\"active_player_id\":\"1\",\"time\":1791338083,\"turn\":0,"
+          "\"metadata\":{\"mulligans_taken\":0}},"
+        "{\"id\":2850064000008,\"name\":\"KeepHand\","
+          "\"source_player_id\":\"0\",\"target_player_id\":\"0\","
+          "\"active_player_id\":\"0\",\"time\":1791338094,\"turn\":0,"
+          "\"metadata\":{\"mulligans_taken\":0}},"
+        "{\"id\":2850064000009,\"name\":\"StartGame\","
+          "\"source_player_id\":\"0\",\"active_player_id\":\"0\","
+          "\"time\":1791338108,\"turn\":0,"
+          "\"metadata\":{\"started_at\":1791338108}},"
+        "{\"id\":2850064000010,\"name\":\"Damage\","
+          "\"source_player_id\":\"0\",\"target_player_id\":\"1\","
+          "\"active_player_id\":\"0\",\"time\":1791338112,\"turn\":1,"
+          "\"amount\":1,\"metadata\":{}}"
         "]}";
 
     if (!http.begin(tls, url)) {
@@ -2066,10 +2110,11 @@ static bool playgroup_event_batch_probe(long game_id)
     http.addHeader("Accept", "application/json");
     http.addHeader("Content-Type", "application/json");
 
-    Serial.println("[Playgroup] ===== STARTGAME + DAMAGE BATCH TEST =====");
+    Serial.println("[Playgroup] ===== FULL EVENT HISTORY IMPORT TEST =====");
     Serial.print("[Playgroup] POST /games/");
     Serial.print(game_id);
     Serial.println("/events/batch");
+    Serial.println("[Playgroup] Sending 10 captured-shape events: setup + StartGame + Damage.");
 
     status = http.POST((uint8_t *)body, strlen(body));
     auth = "";
@@ -2083,18 +2128,18 @@ static bool playgroup_event_batch_probe(long game_id)
 
     if (response.length() > 0) {
         Serial.print("[Playgroup] Body: ");
-        if (response.length() <= 2400)
+        if (response.length() <= 5000)
             Serial.println(response);
         else {
-            Serial.println(response.substring(0, 2400));
+            Serial.println(response.substring(0, 5000));
             Serial.println("[Playgroup] Body truncated.");
         }
     }
 
     if (status == HTTP_CODE_CREATED)
-        Serial.println("[Playgroup] PASS: StartGame + Damage imported successfully.");
+        Serial.println("[Playgroup] PASS: complete tracker-shaped history imported.");
     else if (status == 422)
-        Serial.println("[Playgroup] Import rejected; inspect body above.");
+        Serial.println("[Playgroup] Import rejected; failed_event_index should identify the missing contract.");
     else if (status == HTTP_CODE_UNAUTHORIZED || status == HTTP_CODE_FORBIDDEN)
         Serial.println("[Playgroup] Authentication/participation rejected.");
 
