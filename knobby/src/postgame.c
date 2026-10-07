@@ -69,7 +69,7 @@ static void make_title(lv_obj_t *screen, const char *title, const char *hint)
     lv_obj_t *label = lv_label_create(screen);
     lv_label_set_text(label, title);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_bold_22, 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_22, 0);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 36);
 
     label = lv_label_create(screen);
@@ -313,7 +313,7 @@ void build_postgame_screens(void)
     lv_label_set_long_mode(winner_name, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(winner_name, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(winner_name, lv_color_white(), 0);
-    lv_obj_set_style_text_font(winner_name, &lv_font_montserrat_bold_28, 0);
+    lv_obj_set_style_text_font(winner_name, &lv_font_montserrat_32, 0);
     lv_obj_align(winner_name, LV_ALIGN_CENTER, 0, -18);
 
     winner_meta = lv_label_create(screen_postgame_winner);
@@ -347,7 +347,7 @@ void build_postgame_screens(void)
     lv_obj_set_width(wincon_name, 300);
     lv_obj_set_style_text_align(wincon_name, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(wincon_name, lv_color_hex(0x8EE6D6), 0);
-    lv_obj_set_style_text_font(wincon_name, &lv_font_montserrat_bold_28, 0);
+    lv_obj_set_style_text_font(wincon_name, &lv_font_montserrat_32, 0);
     lv_obj_align(wincon_name, LV_ALIGN_CENTER, 0, -16);
 
     wincon_meta = lv_label_create(screen_postgame_wincon);
@@ -368,7 +368,7 @@ void build_postgame_screens(void)
     make_title(screen_postgame_infinite, "WENT INFINITE?", "Turn dial: No / Yes");
 
     infinite_name = lv_label_create(screen_postgame_infinite);
-    lv_obj_set_style_text_font(infinite_name, &lv_font_montserrat_bold_40, 0);
+    lv_obj_set_style_text_font(infinite_name, &lv_font_montserrat_bold_44, 0);
     lv_obj_align(infinite_name, LV_ALIGN_CENTER, 0, -8);
 
     button = postgame_button(screen_postgame_infinite, "SAVE RESULT", 170, 44,
