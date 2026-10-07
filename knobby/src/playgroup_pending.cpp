@@ -3,6 +3,9 @@
 #include <esp_random.h>
 #include <esp_heap_caps.h>
 #include <time.h>
+#include <stdarg.h>
+
+#include "playgroup_api.h"
 
 #include "playgroup_pending.h"
 #include "damage_log.h"
@@ -119,6 +122,657 @@ int playgroup_pending_count(void)
         file = root.openNextFile();
     }
     return count;
+}
+
+
+#define PG_SYNC_PHASE_QUEUED 0U
+#define PG_SYNC_PHASE_REMOTE_CREATED 1U
+#define PG_SYNC_PHASE_POST_STARTED 2U
+#define PG_SYNC_BODY_CAPACITY (96U * 1024U)
+
+static bool snapshot_write_file(const char *path,
+                                const pg_pending_snapshot_t *snapshot)
+{
+    char temp_path[40];
+    File file;
+    size_t written;
+
+    if (path == NULL || snapshot == NULL || !pending_fs_ready())
+        return false;
+
+    snprintf(temp_path, sizeof(temp_path), "%s.tmp", path);
+    SPIFFS.remove(temp_path);
+
+    file = SPIFFS.open(temp_path, FILE_WRITE);
+    if (!file)
+        return false;
+
+    written = file.write((const uint8_t *)snapshot, sizeof(*snapshot));
+    file.close();
+
+    if (written != sizeof(*snapshot)) {
+        SPIFFS.remove(temp_path);
+        return false;
+    }
+
+    SPIFFS.remove(path);
+    if (!SPIFFS.rename(temp_path, path)) {
+        SPIFFS.remove(temp_path);
+        return false;
+    }
+    return true;
+}
+
+static bool snapshot_read_file(const char *path,
+                               pg_pending_snapshot_t *snapshot)
+{
+    File file;
+    size_t read_count;
+
+    if (path == NULL || snapshot == NULL || !pending_fs_ready())
+        return false;
+
+    file = SPIFFS.open(path, FILE_READ);
+    if (!file)
+        return false;
+
+    read_count = file.read((uint8_t *)snapshot, sizeof(*snapshot));
+    file.close();
+
+    return read_count == sizeof(*snapshot) &&
+           snapshot->magic == PG_PENDING_MAGIC &&
+           snapshot->version == PG_PENDING_VERSION &&
+           snapshot->player_count >= 2 &&
+           snapshot->player_count <= MAX_DISPLAY_PLAYERS;
+}
+
+static bool json_appendf(char *buffer, size_t capacity, size_t *length,
+                         const char *format, ...)
+{
+    va_list args;
+    int written;
+
+    if (buffer == NULL || length == NULL || format == NULL ||
+        *length >= capacity)
+        return false;
+
+    va_start(args, format);
+    written = vsnprintf(buffer + *length, capacity - *length, format, args);
+    va_end(args);
+
+    if (written < 0 || (size_t)written >= capacity - *length)
+        return false;
+
+    *length += (size_t)written;
+    return true;
+}
+
+static bool json_append_escaped(char *buffer, size_t capacity, size_t *length,
+                                const char *text)
+{
+    const unsigned char *p = (const unsigned char *)(text != NULL ? text : "");
+
+    while (*p != '\0') {
+        char escaped[7];
+        const char *piece = NULL;
+
+        switch (*p) {
+            case '"': piece = "\\\""; break;
+            case '\\': piece = "\\\\"; break;
+            case '\b': piece = "\\b"; break;
+            case '\f': piece = "\\f"; break;
+            case '\n': piece = "\\n"; break;
+            case '\r': piece = "\\r"; break;
+            case '\t': piece = "\\t"; break;
+            default:
+                if (*p < 0x20) {
+                    snprintf(escaped, sizeof(escaped), "\\u%04x", *p);
+                    piece = escaped;
+                }
+                break;
+        }
+
+        if (piece != NULL) {
+            if (!json_appendf(buffer, capacity, length, "%s", piece))
+                return false;
+        } else {
+            if (*length + 1 >= capacity)
+                return false;
+            buffer[(*length)++] = (char)*p;
+            buffer[*length] = '\0';
+        }
+        p++;
+    }
+    return true;
+}
+
+static uint32_t snapshot_max_elapsed_ms(const pg_pending_snapshot_t *snapshot)
+{
+    uint32_t max_elapsed = 0;
+
+    for (int i = 0; i < snapshot->event_count; i++) {
+        const damage_log_record_t *event = &snapshot->events[i];
+        uint32_t elapsed = event->timestamp_ms - snapshot->game_started_tick_ms;
+
+        if (elapsed > max_elapsed)
+            max_elapsed = elapsed;
+        if (event->event_type == LOG_EVT_TURN_END &&
+            elapsed + event->duration_ms > max_elapsed)
+            max_elapsed = elapsed + event->duration_ms;
+    }
+    return max_elapsed;
+}
+
+static uint32_t snapshot_base_epoch(const pg_pending_snapshot_t *snapshot)
+{
+    if (snapshot->game_started_epoch > 1700000000UL)
+        return snapshot->game_started_epoch;
+
+    {
+        time_t now = time(NULL);
+        uint32_t elapsed_s = snapshot_max_elapsed_ms(snapshot) / 1000U;
+        if (now > 1700000000L && (uint32_t)now > elapsed_s)
+            return (uint32_t)now - elapsed_s;
+    }
+
+    return 1700000000UL;
+}
+
+static uint32_t event_epoch(const pg_pending_snapshot_t *snapshot,
+                            const damage_log_record_t *event,
+                            uint32_t base_epoch)
+{
+    uint32_t elapsed_ms = event->timestamp_ms - snapshot->game_started_tick_ms;
+    return base_epoch + (elapsed_ms / 1000U);
+}
+
+static int next_turn_player(const pg_pending_snapshot_t *snapshot, int index)
+{
+    uint16_t turn = snapshot->events[index].turn_number;
+
+    for (int i = index + 1; i < snapshot->event_count; i++) {
+        const damage_log_record_t *candidate = &snapshot->events[i];
+        if (candidate->turn_number > turn &&
+            candidate->turn_player >= 0 &&
+            candidate->turn_player < snapshot->player_count)
+            return candidate->turn_player;
+    }
+    return -1;
+}
+
+static bool append_event_prefix(char *body, size_t capacity, size_t *length,
+                                bool *first,
+                                unsigned long long external_id,
+                                const char *name,
+                                int source, int target, int active,
+                                uint32_t event_time, int turn)
+{
+    if (!*first && !json_appendf(body, capacity, length, ","))
+        return false;
+    *first = false;
+
+    if (!json_appendf(body, capacity, length,
+                      "{\"id\":%llu,\"name\":\"%s\","
+                      "\"source_player_id\":\"%d\"",
+                      external_id, name, source))
+        return false;
+
+    if (target >= 0 &&
+        !json_appendf(body, capacity, length,
+                      ",\"target_player_id\":\"%d\"", target))
+        return false;
+
+    if (active >= 0 &&
+        !json_appendf(body, capacity, length,
+                      ",\"active_player_id\":\"%d\"", active))
+        return false;
+
+    return json_appendf(body, capacity, length,
+                        ",\"time\":%lu,\"turn\":%d",
+                        (unsigned long)event_time, turn);
+}
+
+static bool build_sync_body(const pg_pending_snapshot_t *snapshot,
+                            char *body, size_t capacity)
+{
+    size_t length = 0;
+    bool first = true;
+    uint32_t base_epoch;
+    unsigned long long id_base;
+    unsigned ordinal = 1;
+    int starting_player;
+
+    if (snapshot == NULL || body == NULL || capacity < 1024)
+        return false;
+
+    body[0] = '\0';
+    base_epoch = snapshot_base_epoch(snapshot);
+    id_base = 4000000000000ULL +
+              ((unsigned long long)snapshot->session_id * 1000ULL);
+    starting_player = snapshot->starting_player;
+    if (starting_player < 0 || starting_player >= snapshot->player_count)
+        starting_player = 0;
+
+    if (!json_appendf(body, capacity, &length, "{\"events\":["))
+        return false;
+
+    /* Setup events are synthesized from the immutable snapshot identity. */
+    for (int i = 0; i < snapshot->player_count; i++) {
+        const pg_pending_player_snapshot_t *player = &snapshot->players[i];
+
+        if (!append_event_prefix(body, capacity, &length, &first,
+                                 id_base + ordinal++, "Login",
+                                 i, i, i, base_epoch, 0) ||
+            !json_appendf(body, capacity, &length,
+                          ",\"metadata\":{\"user_id\":%ld,"
+                          "\"roster_player_id\":null,\"username\":\"",
+                          player->user_id) ||
+            !json_append_escaped(body, capacity, &length, player->name) ||
+            !json_appendf(body, capacity, &length,
+                          "\",\"commander_id\":null,"
+                          "\"commander_name\":null,"
+                          "\"commander_image\":null}}"))
+            return false;
+    }
+
+    for (int i = 0; i < snapshot->player_count; i++) {
+        const pg_pending_player_snapshot_t *player = &snapshot->players[i];
+
+        if (!append_event_prefix(body, capacity, &length, &first,
+                                 id_base + ordinal++, "DeckSelect",
+                                 i, i, i, base_epoch + 1U, 0) ||
+            !json_appendf(body, capacity, &length,
+                          ",\"metadata\":{\"deck_id\":%ld,\"deck_name\":\"",
+                          player->deck_id) ||
+            !json_append_escaped(body, capacity, &length, player->deck_name) ||
+            !json_appendf(body, capacity, &length,
+                          "\",\"commander_id\":%ld,\"commander_name\":\"",
+                          player->commander_id) ||
+            !json_append_escaped(body, capacity, &length,
+                                 player->commander_name) ||
+            !json_appendf(body, capacity, &length,
+                          "\",\"partner_id\":null,\"partner_name\":null,"
+                          "\"playgroup_id\":%ld,\"counters\":[]}}",
+                          snapshot->playgroup_id))
+            return false;
+
+        if (!append_event_prefix(body, capacity, &length, &first,
+                                 id_base + ordinal++, "SeatReady",
+                                 i, i, i, base_epoch + 2U, 0) ||
+            !json_appendf(body, capacity, &length,
+                          ",\"metadata\":{\"ready\":true}}"))
+            return false;
+    }
+
+    if (!append_event_prefix(body, capacity, &length, &first,
+                             id_base + ordinal++, "StartingPlayer",
+                             starting_player, starting_player, starting_player,
+                             base_epoch + 3U, 0) ||
+        !json_appendf(body, capacity, &length, ",\"metadata\":{}}"))
+        return false;
+
+    for (int i = 0; i < snapshot->player_count; i++) {
+        const pg_pending_player_snapshot_t *player = &snapshot->players[i];
+        if (!append_event_prefix(body, capacity, &length, &first,
+                                 id_base + ordinal++, "KeepHand",
+                                 i, i, i, base_epoch + 4U, 0) ||
+            !json_appendf(body, capacity, &length,
+                          ",\"metadata\":{\"mulligans_taken\":%u}}",
+                          (unsigned)player->mulligans))
+            return false;
+    }
+
+    if (!append_event_prefix(body, capacity, &length, &first,
+                             id_base + ordinal++, "StartGame",
+                             starting_player, -1, starting_player,
+                             base_epoch + 5U, 0) ||
+        !json_appendf(body, capacity, &length,
+                      ",\"metadata\":{\"started_at\":%lu}}",
+                      (unsigned long)(base_epoch + 5U)))
+        return false;
+
+    for (int i = 0; i < snapshot->event_count; i++) {
+        const damage_log_record_t *event = &snapshot->events[i];
+        int source = event->source;
+        int target = event->player;
+        int active = event->turn_player;
+        int turn = event->turn_number > 0 ? event->turn_number : 1;
+        int amount = event->delta >= 0 ? event->delta : -event->delta;
+        uint32_t when = event_epoch(snapshot, event, base_epoch + 5U);
+
+        if (target < 0 || target >= snapshot->player_count)
+            continue;
+        if (active < 0 || active >= snapshot->player_count)
+            active = starting_player;
+
+        switch (event->event_type) {
+            case LOG_EVT_DAMAGE:
+                if (source < 0 || source >= snapshot->player_count)
+                    source = target;
+                if (!append_event_prefix(body, capacity, &length, &first,
+                                         id_base + ordinal++, "Damage",
+                                         source, target, active, when, turn) ||
+                    !json_appendf(body, capacity, &length,
+                                  ",\"amount\":%d,\"metadata\":{}}",
+                                  amount))
+                    return false;
+                break;
+
+            case LOG_EVT_CMD_DAMAGE:
+                if (source < 0 || source >= snapshot->player_count)
+                    continue;
+                if (!append_event_prefix(body, capacity, &length, &first,
+                                         id_base + ordinal++,
+                                         "CommanderDamage",
+                                         source, target, active, when, turn) ||
+                    !json_appendf(body, capacity, &length,
+                                  ",\"amount\":%d,\"commander_id\":%ld,"
+                                  "\"metadata\":{}}",
+                                  amount,
+                                  snapshot->players[source].commander_id))
+                    return false;
+                break;
+
+            case LOG_EVT_CMD_INFECT:
+                /* Playgroup has no atomic commander+infect event. Import the
+                   poison effect only rather than incorrectly reducing life. */
+                if (source < 0 || source >= snapshot->player_count)
+                    source = target;
+                if (!append_event_prefix(body, capacity, &length, &first,
+                                         id_base + ordinal++, "PoisonCounter",
+                                         source, target, active, when, turn) ||
+                    !json_appendf(body, capacity, &length,
+                                  ",\"amount\":%d,\"metadata\":{}}",
+                                  amount))
+                    return false;
+                break;
+
+            case LOG_EVT_POISON:
+                if (source < 0 || source >= snapshot->player_count)
+                    source = target;
+                if (!append_event_prefix(body, capacity, &length, &first,
+                                         id_base + ordinal++, "PoisonCounter",
+                                         source, target, active, when, turn) ||
+                    !json_appendf(body, capacity, &length,
+                                  ",\"amount\":%d,\"metadata\":{}}",
+                                  event->delta))
+                    return false;
+                break;
+
+            case LOG_EVT_LIFE:
+                if (event->delta > 0) {
+                    if (!append_event_prefix(body, capacity, &length, &first,
+                                             id_base + ordinal++, "Healing",
+                                             target, target, active, when, turn) ||
+                        !json_appendf(body, capacity, &length,
+                                      ",\"amount\":%d,\"metadata\":{}}",
+                                      amount))
+                        return false;
+                } else {
+                    /* Unsourced manual life loss has no dedicated accepted
+                       batch name. Self-source preserves the life timeline
+                       without attributing damage to another player. */
+                    if (!append_event_prefix(body, capacity, &length, &first,
+                                             id_base + ordinal++, "Damage",
+                                             target, target, active, when, turn) ||
+                        !json_appendf(body, capacity, &length,
+                                      ",\"amount\":%d,\"metadata\":{}}",
+                                      amount))
+                        return false;
+                }
+                break;
+
+            case LOG_EVT_TURN_END: {
+                int next = next_turn_player(snapshot, i);
+                if (next < 0)
+                    break;
+                if (!append_event_prefix(body, capacity, &length, &first,
+                                         id_base + ordinal++, "PassTurn",
+                                         target, -1, target, when, turn) ||
+                    !json_appendf(body, capacity, &length,
+                                  ",\"metadata\":{\"next_player_id\":\"%d\"}}",
+                                  next))
+                    return false;
+                break;
+            }
+
+            default:
+                /* Non-Playgroup counters stay local until their public event
+                   contract is explicitly verified. */
+                break;
+        }
+    }
+
+    {
+        uint32_t end_time = base_epoch + 5U +
+                            (snapshot_max_elapsed_ms(snapshot) / 1000U) + 1U;
+        int winner = snapshot->winner;
+        int final_turn = 1;
+
+        if (snapshot->event_count > 0) {
+            int candidate =
+                snapshot->events[snapshot->event_count - 1].turn_number;
+            if (candidate > 0)
+                final_turn = candidate;
+        }
+
+        if (!append_event_prefix(body, capacity, &length, &first,
+                                 id_base + ordinal++, "EndGame",
+                                 winner, -1, winner, end_time, final_turn) ||
+            !json_appendf(body, capacity, &length, ",\"metadata\":{}}") ||
+            !append_event_prefix(body, capacity, &length, &first,
+                                 id_base + ordinal++, "WinnerDeclared",
+                                 winner, -1, winner, end_time + 1U, final_turn) ||
+            !json_appendf(body, capacity, &length, ",\"metadata\":{}}") ||
+            !append_event_prefix(body, capacity, &length, &first,
+                                 id_base + ordinal++, "WinConSet",
+                                 winner, -1, winner, end_time + 2U, final_turn) ||
+            !json_appendf(body, capacity, &length,
+                          ",\"metadata\":{\"win_con\":\"") ||
+            !json_append_escaped(body, capacity, &length,
+                                 snapshot->win_condition) ||
+            !json_appendf(body, capacity, &length,
+                          "\",\"infinite\":%s}}",
+                          snapshot->went_infinite ? "true" : "false"))
+            return false;
+    }
+
+    return json_appendf(body, capacity, &length, "]}");
+}
+
+static bool snapshot_ready_for_sync(const pg_pending_snapshot_t *snapshot)
+{
+    if (snapshot == NULL || !snapshot->result_confirmed ||
+        snapshot->playgroup_id <= 0 ||
+        snapshot->winner < 0 || snapshot->winner >= snapshot->player_count ||
+        snapshot->win_condition[0] == '\0')
+        return false;
+
+    for (int i = 0; i < snapshot->player_count; i++) {
+        if (snapshot->players[i].user_id <= 0 ||
+            snapshot->players[i].deck_id <= 0)
+            return false;
+    }
+    return true;
+}
+
+static bool sync_one_snapshot(const char *path,
+                              pg_pending_snapshot_t *snapshot)
+{
+    char *body = NULL;
+    int status;
+    long winner_user_id;
+
+    if (!snapshot_ready_for_sync(snapshot))
+        return false;
+
+    winner_user_id = snapshot->players[snapshot->winner].user_id;
+
+    /* A previous POST may have committed even if the Dial lost the response.
+       Reconcile before any retry because duplicate external_ids return 422. */
+    if (snapshot->sync_phase == PG_SYNC_PHASE_POST_STARTED &&
+        snapshot->remote_game_id > 0) {
+        if (playgroup_remote_game_finalized(snapshot->playgroup_id,
+                                            snapshot->remote_game_id,
+                                            winner_user_id)) {
+            Serial.println("[Playgroup] Pending game reconciled after ambiguous POST.");
+            return true;
+        }
+    }
+
+    if (snapshot->remote_game_id <= 0) {
+        snapshot->remote_game_id =
+            playgroup_create_game_for_sync(snapshot->playgroup_id,
+                                           snapshot->player_count,
+                                           snapshot->starting_life);
+        if (snapshot->remote_game_id <= 0)
+            return false;
+
+        snapshot->sync_phase = PG_SYNC_PHASE_REMOTE_CREATED;
+        if (!snapshot_write_file(path, snapshot)) {
+            Serial.println("[Playgroup] Could not persist remote game id; refusing import.");
+            return false;
+        }
+    }
+
+    body = (char *)heap_caps_malloc(PG_SYNC_BODY_CAPACITY,
+                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (body == NULL) {
+        Serial.println("[Playgroup] Sync body allocation failed.");
+        return false;
+    }
+
+    if (!build_sync_body(snapshot, body, PG_SYNC_BODY_CAPACITY)) {
+        Serial.println("[Playgroup] Could not build pending game event batch.");
+        heap_caps_free(body);
+        return false;
+    }
+
+    /* Persist this phase before the network write. A reboot from this point
+       onward is treated as ambiguous and reconciled before retry. */
+    snapshot->sync_phase = PG_SYNC_PHASE_POST_STARTED;
+    if (!snapshot_write_file(path, snapshot)) {
+        heap_caps_free(body);
+        return false;
+    }
+
+    status = playgroup_import_events_for_sync(snapshot->remote_game_id, body);
+    heap_caps_free(body);
+
+    if (status == HTTP_CODE_CREATED)
+        return true;
+
+    if (playgroup_remote_game_finalized(snapshot->playgroup_id,
+                                        snapshot->remote_game_id,
+                                        winner_user_id))
+        return true;
+
+    Serial.println("[Playgroup] Pending game remains queued for a later connection.");
+    return false;
+}
+
+int playgroup_pending_sync_queue(void)
+{
+    File root;
+    File file;
+    pg_pending_snapshot_t *snapshot = NULL;
+    int synced = 0;
+
+    if (!pending_fs_ready())
+        return 0;
+
+    snapshot = (pg_pending_snapshot_t *)heap_caps_calloc(
+        1, sizeof(pg_pending_snapshot_t),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (snapshot == NULL)
+        return 0;
+
+    root = SPIFFS.open("/");
+    if (!root || !root.isDirectory()) {
+        heap_caps_free(snapshot);
+        return 0;
+    }
+
+    file = root.openNextFile();
+    while (file) {
+        char path[40];
+        bool candidate = !file.isDirectory() && is_pending_filename(file.name());
+
+        if (!candidate) {
+            file = root.openNextFile();
+            continue;
+        }
+
+        if (file.name()[0] == '/')
+            strlcpy(path, file.name(), sizeof(path));
+        else
+            snprintf(path, sizeof(path), "/%s", file.name());
+
+        file.close();
+        memset(snapshot, 0, sizeof(*snapshot));
+
+        if (snapshot_read_file(path, snapshot) &&
+            snapshot_ready_for_sync(snapshot)) {
+            Serial.print("[Playgroup] Syncing pending session ");
+            Serial.print((unsigned long)snapshot->session_id, HEX);
+            Serial.print(" -> ");
+            Serial.println(path);
+
+            if (sync_one_snapshot(path, snapshot)) {
+                if (SPIFFS.remove(path)) {
+                    synced++;
+                    Serial.println("[Playgroup] Pending game synced and removed.");
+                    if (current_snapshot_saved &&
+                        snapshot->session_id == current_session_id)
+                        current_snapshot_saved = false;
+                }
+            }
+        }
+
+        /* Re-open the directory because deleting a file invalidates some
+           Arduino-ESP32 SPIFFS directory iterators. */
+        root.close();
+        root = SPIFFS.open("/");
+        if (!root || !root.isDirectory())
+            break;
+
+        file = root.openNextFile();
+        bool passed_current = false;
+        while (file) {
+            char current_path[40];
+            if (file.name()[0] == '/')
+                strlcpy(current_path, file.name(), sizeof(current_path));
+            else
+                snprintf(current_path, sizeof(current_path), "/%s", file.name());
+
+            if (passed_current)
+                break;
+            if (strcmp(current_path, path) == 0)
+                passed_current = true;
+            file = root.openNextFile();
+        }
+
+        /* If the file was removed, the old path cannot be found. Restarting
+           would otherwise reprocess earlier unsynced entries forever. For the
+           tiny max-16 queue, process at most one successful sync per call;
+           future connections continue draining the queue. */
+        if (synced > 0)
+            break;
+        if (!passed_current)
+            break;
+    }
+
+    if (file)
+        file.close();
+    root.close();
+    heap_caps_free(snapshot);
+
+    if (synced > 0) {
+        Serial.print("[Playgroup] Pending sync complete: ");
+        Serial.print(synced);
+        Serial.println(" game(s) confirmed.");
+    }
+    return synced;
 }
 
 static bool remove_current_snapshot(void)
