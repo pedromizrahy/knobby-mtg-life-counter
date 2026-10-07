@@ -1965,6 +1965,177 @@ static bool playgroup_test_me(void)
     return ok;
 }
 
+
+long playgroup_create_game_for_sync(long playgroup_id, int player_count)
+{
+    char api_key[PG_API_KEY_MAX];
+    NetworkClientSecure tls;
+    HTTPClient http;
+    String auth;
+    String response;
+    char body[320];
+    char id_token[24];
+    int status;
+
+    if (playgroup_id <= 0 || player_count < 2 ||
+        player_count > MAX_DISPLAY_PLAYERS)
+        return 0;
+
+    if (!nvs_read_string("api_key", api_key, sizeof(api_key)))
+        return 0;
+    if (!wifi_connect_saved()) {
+        memset(api_key, 0, sizeof(api_key));
+        return 0;
+    }
+
+    tls.useBuiltinCACertBundle();
+    tls.setHandshakeTimeout(12);
+    http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
+
+    snprintf(body, sizeof(body),
+             "{\"game\":{\"playgroup_id\":%ld,\"player_amount\":%d,"
+             "\"life_amount\":40,\"api_version\":\"1.0\","
+             "\"multi_device_enabled\":true,"
+             "\"client_identifier\":\"dial-dos-primos\","
+             "\"app_version\":\"0.1.0\"}}",
+             playgroup_id, player_count);
+
+    if (!http.begin(tls, "https://playgroup.gg/api/v2/games")) {
+        memset(api_key, 0, sizeof(api_key));
+        return 0;
+    }
+
+    auth = "Bearer ";
+    auth += api_key;
+    http.addHeader("Authorization", auth);
+    http.addHeader("Accept", "application/json");
+    http.addHeader("Content-Type", "application/json");
+
+    status = http.POST((uint8_t *)body, strlen(body));
+    auth = "";
+    memset(api_key, 0, sizeof(api_key));
+    if (status > 0)
+        response = http.getString();
+    http.end();
+
+    if (status < 200 || status >= 300 ||
+        !json_extract_number_token(response, "id", id_token, sizeof(id_token))) {
+        Serial.print("[Playgroup] Create game for sync failed: HTTP ");
+        Serial.println(status);
+        return 0;
+    }
+
+    long game_id = strtol(id_token, NULL, 10);
+    Serial.print("[Playgroup] Created remote game #");
+    Serial.println(game_id);
+    return game_id;
+}
+
+int playgroup_import_events_for_sync(long game_id, const char *json_body)
+{
+    char api_key[PG_API_KEY_MAX];
+    NetworkClientSecure tls;
+    HTTPClient http;
+    String auth;
+    String url;
+    String response;
+    int status;
+
+    if (game_id <= 0 || json_body == NULL || json_body[0] == '\0')
+        return -1;
+    if (!nvs_read_string("api_key", api_key, sizeof(api_key)))
+        return -1;
+    if (!wifi_connect_saved()) {
+        memset(api_key, 0, sizeof(api_key));
+        return -1;
+    }
+
+    tls.useBuiltinCACertBundle();
+    tls.setHandshakeTimeout(12);
+    http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
+
+    url = PG_API_BASE;
+    url += "/games/";
+    url += String(game_id);
+    url += "/events/batch";
+
+    if (!http.begin(tls, url)) {
+        memset(api_key, 0, sizeof(api_key));
+        return -1;
+    }
+
+    auth = "Bearer ";
+    auth += api_key;
+    http.addHeader("Authorization", auth);
+    http.addHeader("Accept", "application/json");
+    http.addHeader("Content-Type", "application/json");
+
+    status = http.POST((uint8_t *)json_body, strlen(json_body));
+    auth = "";
+    memset(api_key, 0, sizeof(api_key));
+
+    if (status > 0)
+        response = http.getString();
+    http.end();
+
+    Serial.print("[Playgroup] Import game #");
+    Serial.print(game_id);
+    Serial.print(" -> HTTP ");
+    Serial.println(status);
+
+    if (status == 422 && response.length() > 0) {
+        Serial.print("[Playgroup] Import rejected: ");
+        Serial.println(response.substring(0, 320));
+    }
+
+    return status;
+}
+
+bool playgroup_remote_game_finalized(long playgroup_id, long game_id,
+                                     long winner_user_id)
+{
+    String response;
+    String path;
+    String user_token;
+    int status = -1;
+    int winner_pos;
+
+    if (playgroup_id <= 0 || game_id <= 0 || winner_user_id <= 0)
+        return false;
+
+    path = String("/playgroups/") + String(playgroup_id) +
+           "/games/" + String(game_id);
+
+    if (!playgroup_https_get(path, response, status) ||
+        status != HTTP_CODE_OK)
+        return false;
+
+    if (response.indexOf("\"ended_at\":null") >= 0 ||
+        response.indexOf("\"ended_at\"") < 0)
+        return false;
+
+    user_token = String("\"user_id\":") + String(winner_user_id);
+    winner_pos = response.indexOf(user_token);
+    if (winner_pos < 0)
+        return false;
+
+    {
+        int object_end = response.indexOf('}', winner_pos);
+        int winner_true = response.indexOf("\"winner\":true", winner_pos);
+        if (winner_true < 0 || (object_end >= 0 && winner_true > object_end))
+            return false;
+    }
+
+    Serial.print("[Playgroup] Remote game #");
+    Serial.print(game_id);
+    Serial.println(" is already finalized with expected winner.");
+    return true;
+}
+
 static bool playgroup_sync_probe(void)
 {
     char api_key[PG_API_KEY_MAX];
