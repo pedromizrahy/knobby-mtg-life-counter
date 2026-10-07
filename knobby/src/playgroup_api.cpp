@@ -1914,6 +1914,93 @@ static bool playgroup_test_me(void)
     return ok;
 }
 
+static bool playgroup_sync_probe(void)
+{
+    char api_key[PG_API_KEY_MAX];
+    NetworkClientSecure tls;
+    HTTPClient http;
+    String auth;
+    String response;
+    const char *url = PG_API_BASE "/live_sessions";
+    const char *body = "{}";
+    int status;
+
+    if (!nvs_read_string("api_key", api_key, sizeof(api_key))) {
+        Serial.println("[Playgroup] API key is not configured.");
+        return false;
+    }
+
+    if (!wifi_connect_saved())
+        return false;
+
+    tls.useBuiltinCACertBundle();
+    tls.setHandshakeTimeout(12);
+
+    http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
+
+    if (!http.begin(tls, url)) {
+        Serial.println("[Playgroup] Could not initialize sync probe HTTPS.");
+        wifi_power_down();
+        return false;
+    }
+
+    auth.reserve(strlen(api_key) + 8);
+    auth = "Bearer ";
+    auth += api_key;
+
+    http.addHeader("Authorization", auth);
+    http.addHeader("Accept", "application/json");
+    http.addHeader("Content-Type", "application/json");
+
+    Serial.println("[Playgroup] SYNC PROBE: POST /live_sessions with empty JSON.");
+    Serial.println("[Playgroup] This intentionally sends an invalid payload to test auth/route only.");
+    status = http.POST((uint8_t *)body, strlen(body));
+
+    /* Never retain or print the bearer value. */
+    auth = "";
+    memset(api_key, 0, sizeof(api_key));
+
+    if (status > 0)
+        response = http.getString();
+
+    Serial.print("[Playgroup] SYNC PROBE HTTP ");
+    Serial.println(status);
+
+    if (status == HTTP_CODE_UNAUTHORIZED || status == HTTP_CODE_FORBIDDEN) {
+        Serial.println("[Playgroup] SYNC PROBE: Bearer key was rejected by this endpoint.");
+    } else if (status == HTTP_CODE_BAD_REQUEST || status == 422) {
+        Serial.println("[Playgroup] SYNC PROBE: auth/route reached; payload validation rejected as expected.");
+    } else if (status >= 200 && status < 300) {
+        Serial.println("[Playgroup] SYNC PROBE WARNING: endpoint accepted empty payload; inspect account for a test session.");
+    } else if (status > 0) {
+        Serial.println("[Playgroup] SYNC PROBE: endpoint responded; inspect status/body below.");
+    } else {
+        Serial.print("[Playgroup] SYNC PROBE transport error: ");
+        Serial.println(http.errorToString(status).c_str());
+    }
+
+    if (response.length() > 0) {
+        const size_t max_print = 700;
+        Serial.print("[Playgroup] SYNC PROBE body: ");
+        if (response.length() <= max_print) {
+            Serial.println(response);
+        } else {
+            Serial.println(response.substring(0, max_print));
+            Serial.println("[Playgroup] SYNC PROBE body truncated.");
+        }
+    }
+
+    response = "";
+    http.end();
+    wifi_power_down();
+    Serial.println("[Playgroup] Wi-Fi off.");
+    return status > 0 &&
+           status != HTTP_CODE_UNAUTHORIZED &&
+           status != HTTP_CODE_FORBIDDEN;
+}
+
 static void print_status(void)
 {
     char tmp[PG_API_KEY_MAX];
@@ -1939,6 +2026,7 @@ static void print_help(void)
     Serial.println("  PG SELFTEST");
     Serial.println("  PG RESET");
     Serial.println("  PG TEST");
+    Serial.println("  PG SYNC TEST");
     Serial.println("  PG DISCOVER");
     Serial.println("  PG MYDECKS");
     Serial.println("  PG CLEAR");
@@ -1980,6 +2068,11 @@ static void handle_command(char *line)
 
     if (strcmp(line, "PG TEST") == 0) {
         playgroup_test_me();
+        return;
+    }
+
+    if (strcmp(line, "PG SYNC TEST") == 0) {
+        playgroup_sync_probe();
         return;
     }
 
