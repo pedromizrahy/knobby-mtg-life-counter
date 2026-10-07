@@ -4,12 +4,14 @@
 #include "pregame.h"
 #include "ui_mp.h"
 #include "playgroup_pending.h"
+#include "playgroup_api.h"
 
 extern void back_to_main(void);
 
 lv_obj_t *screen_postgame_winner = NULL;
 lv_obj_t *screen_postgame_wincon = NULL;
 lv_obj_t *screen_postgame_infinite = NULL;
+lv_obj_t *screen_postgame_sync = NULL;
 
 typedef struct {
     const char *label;
@@ -35,7 +37,10 @@ static lv_obj_t *winner_meta = NULL;
 static lv_obj_t *wincon_name = NULL;
 static lv_obj_t *wincon_meta = NULL;
 static lv_obj_t *infinite_name = NULL;
+static lv_obj_t *sync_status_label = NULL;
+static lv_obj_t *sync_detail_label = NULL;
 static lv_timer_t *postgame_watch_timer = NULL;
+static lv_timer_t *postgame_exit_timer = NULL;
 
 static int winner_index = 0;
 static int wincon_index = 0;
@@ -217,10 +222,37 @@ static void event_wincon_confirm(lv_event_t *event)
     lv_scr_load(screen_postgame_infinite);
 }
 
+static void postgame_exit_home_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    if (postgame_exit_timer != NULL) {
+        lv_timer_del(postgame_exit_timer);
+        postgame_exit_timer = NULL;
+    }
+
+    playgroup_pending_disable_current();
+    open_pregame_home();
+}
+
+static void show_sync_status(const char *status, const char *detail)
+{
+    if (sync_status_label != NULL)
+        lv_label_set_text(sync_status_label, status != NULL ? status : "");
+    if (sync_detail_label != NULL)
+        lv_label_set_text(sync_detail_label, detail != NULL ? detail : "");
+
+    /* Force this stage onto the display before the next synchronous
+       Wi-Fi/HTTPS operation blocks the LVGL loop. */
+    lv_refr_now(NULL);
+}
+
 static void event_infinite_confirm(lv_event_t *event)
 {
+    int synced = 0;
+    bool connected = false;
     (void)event;
 
+    /* Durability first. The result is on SPIFFS before any network work. */
     playgroup_pending_set_result(
         winner_index,
         win_conditions[wincon_index].api_token,
@@ -235,21 +267,32 @@ static void event_infinite_confirm(lv_event_t *event)
            win_conditions[wincon_index].api_token,
            infinite_index ? "yes" : "no");
 
-    /*
-     * Durability first: set_result() has already persisted the finished
-     * snapshot. Try to upload it immediately while the user is still in the
-     * postgame flow. If Wi-Fi/API fails, playgroup_pending_sync_queue() leaves
-     * the snapshot untouched for the next Playgroup connection.
-     */
+    lv_scr_load(screen_postgame_sync);
+    show_sync_status("CONNECTING TO WI-FI...", "Your game is already saved");
+
     if (playgroup_pending_count() > 0) {
         printf("[Playgroup] Result saved; attempting immediate sync...\n");
-        playgroup_pending_sync_queue();
+        connected = playgroup_prepare_connection();
+
+        if (connected) {
+            show_sync_status("SENDING TO PLAYGROUP...", "Uploading game data");
+            synced = playgroup_pending_sync_queue();
+        }
     }
 
-    /* The live table is over regardless of network success. A confirmed
-       remote upload removes the snapshot; otherwise it remains queued. */
-    playgroup_pending_disable_current();
-    open_pregame_home();
+    if (synced > 0) {
+        show_sync_status("GAME SAVED", "Synced to Playgroup");
+    } else {
+        show_sync_status("SAVED OFFLINE", "Will sync automatically later");
+    }
+
+    /* Leave the final state visible briefly, then return to New Game.
+       Do not block here; LVGL remains responsive during the confirmation. */
+    if (postgame_exit_timer != NULL)
+        lv_timer_del(postgame_exit_timer);
+    postgame_exit_timer = lv_timer_create(postgame_exit_home_cb, 1100, NULL);
+    if (postgame_exit_timer != NULL)
+        lv_timer_set_repeat_count(postgame_exit_timer, 1);
 }
 
 static void postgame_watch_cb(lv_timer_t *timer)
@@ -413,6 +456,34 @@ void build_postgame_screens(void)
 
     refresh_wincon();
     refresh_infinite();
+
+    screen_postgame_sync = lv_obj_create(NULL);
+    lv_obj_set_size(screen_postgame_sync, 360, 360);
+    lv_obj_set_style_bg_color(screen_postgame_sync, lv_color_black(), 0);
+    lv_obj_set_style_border_width(screen_postgame_sync, 0, 0);
+    lv_obj_clear_flag(screen_postgame_sync, LV_OBJ_FLAG_SCROLLABLE);
+
+    {
+        lv_obj_t *eyebrow = lv_label_create(screen_postgame_sync);
+        lv_label_set_text(eyebrow, "PLAYGROUP");
+        lv_obj_set_style_text_color(eyebrow, lv_color_hex(0x778391), 0);
+        lv_obj_set_style_text_font(eyebrow, &lv_font_montserrat_14, 0);
+        lv_obj_align(eyebrow, LV_ALIGN_TOP_MID, 0, 72);
+
+        sync_status_label = lv_label_create(screen_postgame_sync);
+        lv_obj_set_width(sync_status_label, 300);
+        lv_obj_set_style_text_align(sync_status_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(sync_status_label, lv_color_white(), 0);
+        lv_obj_set_style_text_font(sync_status_label, &lv_font_montserrat_22, 0);
+        lv_obj_align(sync_status_label, LV_ALIGN_CENTER, 0, -16);
+
+        sync_detail_label = lv_label_create(screen_postgame_sync);
+        lv_obj_set_width(sync_detail_label, 280);
+        lv_obj_set_style_text_align(sync_detail_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(sync_detail_label, lv_color_hex(0x8B98A5), 0);
+        lv_obj_set_style_text_font(sync_detail_label, &lv_font_montserrat_14, 0);
+        lv_obj_align(sync_detail_label, LV_ALIGN_CENTER, 0, 24);
+    }
 
     postgame_watch_timer = lv_timer_create(postgame_watch_cb, 300, NULL);
 }
