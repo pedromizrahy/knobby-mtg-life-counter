@@ -2009,8 +2009,8 @@ static bool playgroup_event_batch_probe(long game_id)
     String auth;
     String response;
     String url;
-    const char *body = "{\"events\":[]}";
-    int status;
+    int status = -1;
+    bool route_ok = false;
 
     if (game_id <= 0) {
         Serial.println("[Playgroup] Usage: PG EVENT TEST <game_id>");
@@ -2036,66 +2036,83 @@ static bool playgroup_event_batch_probe(long game_id)
     url += String(game_id);
     url += "/events/batch";
 
-    if (!http.begin(tls, url)) {
-        Serial.println("[Playgroup] Could not initialize event-batch probe HTTPS.");
-        memset(api_key, 0, sizeof(api_key));
-        wifi_power_down();
-        return false;
-    }
+    Serial.println("[Playgroup] ===== EVENT BATCH DIAG START =====");
+    Serial.print("[Playgroup] Game ID: ");
+    Serial.println(game_id);
 
-    auth.reserve(strlen(api_key) + 8);
-    auth = "Bearer ";
-    auth += api_key;
+    const char *labels[] = {
+        "empty events",
+        "blank event",
+        "name only",
+        "tracker shape amount=0"
+    };
 
-    http.addHeader("Authorization", auth);
-    http.addHeader("Accept", "application/json");
-    http.addHeader("Content-Type", "application/json");
+    const char *bodies[] = {
+        "{\"events\":[]}",
+        "{\"events\":[{}]}",
+        "{\"events\":[{\"name\":\"Damage\"}]}",
+        "{\"events\":[{\"id\":2999999999,\"name\":\"Damage\",\"source_player_id\":\"0\",\"target_player_id\":\"1\",\"active_player_id\":\"0\",\"time\":0,\"turn\":1,\"amount\":0}]}"
+    };
 
-    Serial.print("[Playgroup] EVENT PROBE: POST /games/");
-    Serial.print(game_id);
-    Serial.println("/events/batch");
-    Serial.println("[Playgroup] Sending an empty events array; no gameplay event should be created.");
+    for (int i = 0; i < 4; i++) {
+        response = "";
 
-    status = http.POST((uint8_t *)body, strlen(body));
-
-    auth = "";
-    memset(api_key, 0, sizeof(api_key));
-
-    if (status > 0)
-        response = http.getString();
-
-    Serial.print("[Playgroup] EVENT PROBE HTTP ");
-    Serial.println(status);
-
-    if (status == HTTP_CODE_UNAUTHORIZED || status == HTTP_CODE_FORBIDDEN) {
-        Serial.println("[Playgroup] EVENT PROBE: Bearer key was rejected for this game.");
-    } else if (status == HTTP_CODE_NOT_FOUND) {
-        Serial.println("[Playgroup] EVENT PROBE: game/route not found.");
-    } else if (status >= 200 && status < 300) {
-        Serial.println("[Playgroup] EVENT PROBE PASS: public API key can reach this game's batch endpoint.");
-    } else if (status > 0) {
-        Serial.println("[Playgroup] EVENT PROBE: endpoint responded; inspect validation body below.");
-    } else {
-        Serial.print("[Playgroup] EVENT PROBE transport error: ");
-        Serial.println(http.errorToString(status).c_str());
-    }
-
-    if (response.length() > 0) {
-        const size_t max_print = 900;
-        Serial.print("[Playgroup] EVENT PROBE body: ");
-        if (response.length() <= max_print) {
-            Serial.println(response);
-        } else {
-            Serial.println(response.substring(0, max_print));
-            Serial.println("[Playgroup] EVENT PROBE body truncated.");
+        if (!http.begin(tls, url)) {
+            Serial.println("[Playgroup] HTTPS init failed.");
+            break;
         }
+
+        auth = "Bearer ";
+        auth += api_key;
+        http.addHeader("Authorization", auth);
+        http.addHeader("Accept", "application/json");
+        http.addHeader("Content-Type", "application/json");
+
+        Serial.print("[Playgroup] Test ");
+        Serial.print(i + 1);
+        Serial.print("/4: ");
+        Serial.println(labels[i]);
+
+        status = http.POST((uint8_t *)bodies[i], strlen(bodies[i]));
+        auth = "";
+
+        if (status > 0)
+            response = http.getString();
+
+        Serial.print("[Playgroup] HTTP ");
+        Serial.println(status);
+        if (response.length() > 0) {
+            Serial.print("[Playgroup] Body: ");
+            if (response.length() <= 1200)
+                Serial.println(response);
+            else {
+                Serial.println(response.substring(0, 1200));
+                Serial.println("[Playgroup] Body truncated.");
+            }
+        }
+
+        http.end();
+
+        if (status > 0 &&
+            status != HTTP_CODE_UNAUTHORIZED &&
+            status != HTTP_CODE_FORBIDDEN &&
+            status != HTTP_CODE_NOT_FOUND)
+            route_ok = true;
+
+        if (status >= 200 && status < 300) {
+            Serial.println("[Playgroup] VALID EVENT FORMAT ACCEPTED. Stopping further writes.");
+            break;
+        }
+
+        delay(150);
     }
 
+    memset(api_key, 0, sizeof(api_key));
     response = "";
-    http.end();
+    Serial.println("[Playgroup] ===== EVENT BATCH DIAG END =====");
     wifi_power_down();
     Serial.println("[Playgroup] Wi-Fi off.");
-    return status >= 200 && status < 300;
+    return route_ok;
 }
 
 static void print_status(void)
