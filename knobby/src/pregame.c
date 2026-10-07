@@ -50,7 +50,9 @@ static lv_obj_t *member_position_label = NULL;
 static lv_obj_t *member_status_label = NULL;
 static bool playgroup_roster_active = false;
 static long selected_deck_id[MAX_DISPLAY_PLAYERS] = {0};
+static long selected_commander_id[MAX_DISPLAY_PLAYERS] = {0};
 static char selected_deck_name[MAX_DISPLAY_PLAYERS][PG_DECK_NAME_LEN] = {{0}};
+static char selected_commander_name[MAX_DISPLAY_PLAYERS][PG_COMMANDER_NAME_LEN] = {{0}};
 static int deck_picker_seat = -1;
 static int deck_picker_index = 0;
 static bool deck_picker_show_all = false;
@@ -398,7 +400,9 @@ static void event_local_play(lv_event_t *e)
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
         snprintf(player_names[i], sizeof(player_names[i]), "P%d", i + 1);
         selected_deck_id[i] = 0;
+        selected_commander_id[i] = 0;
         selected_deck_name[i][0] = '\0';
+        selected_commander_name[i][0] = '\0';
     }
 
     /* New games always open on the Commander-table default: four seats.
@@ -628,7 +632,9 @@ static void event_playgroup_select(lv_event_t *e)
         selected_member_index[i] = 0;
         selected_member_set[i] = false;
         selected_deck_id[i] = 0;
+        selected_commander_id[i] = 0;
         selected_deck_name[i][0] = '\0';
+        selected_commander_name[i][0] = '\0';
     }
 
     member_picker_seat = 0;
@@ -654,7 +660,9 @@ static void event_roster_member_cycle(lv_event_t *e)
             selected_member_index[seat] = candidate;
             selected_member_set[seat] = true;
             selected_deck_id[seat] = 0;
+            selected_commander_id[seat] = 0;
             selected_deck_name[seat][0] = '\0';
+            selected_commander_name[seat][0] = '\0';
             refresh_roster();
             return;
         }
@@ -1017,7 +1025,9 @@ static void event_member_select(lv_event_t *e)
     selected_member_index[member_picker_seat] = member_picker_index;
     selected_member_set[member_picker_seat] = true;
     selected_deck_id[member_picker_seat] = 0;
+    selected_commander_id[member_picker_seat] = 0;
     selected_deck_name[member_picker_seat][0] = '\0';
+    selected_commander_name[member_picker_seat][0] = '\0';
     refresh_playgroup_display_names();
 
     if (member_status_label != NULL) {
@@ -1322,9 +1332,13 @@ static void event_deck_select(lv_event_t *e)
         return;
 
     selected_deck_id[deck_picker_seat] = deck->id;
+    selected_commander_id[deck_picker_seat] = deck->commander_id;
     snprintf(selected_deck_name[deck_picker_seat],
              sizeof(selected_deck_name[deck_picker_seat]),
              "%s", deck->name);
+    snprintf(selected_commander_name[deck_picker_seat],
+             sizeof(selected_commander_name[deck_picker_seat]),
+             "%s", deck->commander);
 
     {
         deck_decoded_cache_entry_t *selected_art =
@@ -1614,10 +1628,17 @@ static void event_start_game(lv_event_t *e)
                 pending_seed.players[i].user_id =
                     (member != NULL) ? member->user_id : 0;
                 pending_seed.players[i].deck_id = selected_deck_id[i];
+                pending_seed.players[i].commander_id = selected_commander_id[i];
                 pending_seed.players[i].mulligans = mulligans[i];
                 snprintf(pending_seed.players[i].name,
                          sizeof(pending_seed.players[i].name),
                          "%s", player_names[i]);
+                snprintf(pending_seed.players[i].deck_name,
+                         sizeof(pending_seed.players[i].deck_name),
+                         "%s", selected_deck_name[i]);
+                snprintf(pending_seed.players[i].commander_name,
+                         sizeof(pending_seed.players[i].commander_name),
+                         "%s", selected_commander_name[i]);
             }
             track_playgroup_game = true;
         }
