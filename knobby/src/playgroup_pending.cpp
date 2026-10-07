@@ -981,10 +981,9 @@ void playgroup_pending_set_result(int winner, const char *win_condition,
             win_condition != NULL ? win_condition : "",
             sizeof(current_win_condition));
 
-    /* Refresh an already queued inferred result with the user's confirmed
-       questionnaire answer. Older queued games are untouched. */
-    if (current_snapshot_saved)
-        write_finished_snapshot(winner);
+    /* Persist the confirmed questionnaire answer even if the initial
+       inferred snapshot write failed. Older queued games are untouched. */
+    write_finished_snapshot(winner);
 }
 
 void playgroup_pending_reconcile_outcome(void)
