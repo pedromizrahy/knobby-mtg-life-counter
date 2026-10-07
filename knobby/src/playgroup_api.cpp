@@ -2150,6 +2150,104 @@ static bool playgroup_event_batch_probe(long game_id)
     return status == HTTP_CODE_CREATED;
 }
 
+static bool playgroup_create_game_probe(long playgroup_id)
+{
+    char api_key[PG_API_KEY_MAX];
+    NetworkClientSecure tls;
+    HTTPClient http;
+    String auth;
+    String response;
+    int status = -1;
+    long game_id = 0;
+
+    if (playgroup_id <= 0) {
+        Serial.println("[Playgroup] Usage: PG CREATE TEST <playgroup_id>");
+        return false;
+    }
+
+    if (!nvs_read_string("api_key", api_key, sizeof(api_key))) {
+        Serial.println("[Playgroup] API key is not configured.");
+        return false;
+    }
+
+    if (!wifi_connect_saved())
+        return false;
+
+    tls.useBuiltinCACertBundle();
+    tls.setHandshakeTimeout(12);
+    http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
+
+    String url = "https://playgroup.gg/api/v2/games";
+    char body[320];
+    snprintf(body, sizeof(body),
+             "{\"game\":{\"playgroup_id\":%ld,\"player_amount\":2,"
+             "\"life_amount\":40,\"api_version\":\"1.0\","
+             "\"multi_device_enabled\":true,"
+             "\"client_identifier\":\"dial-dos-primos\","
+             "\"app_version\":\"0.1.0\"}}",
+             playgroup_id);
+
+    if (!http.begin(tls, url)) {
+        Serial.println("[Playgroup] CREATE TEST: HTTPS init failed.");
+        memset(api_key, 0, sizeof(api_key));
+        wifi_power_down();
+        return false;
+    }
+
+    auth = "Bearer ";
+    auth += api_key;
+    http.addHeader("Authorization", auth);
+    http.addHeader("Accept", "application/json");
+    http.addHeader("Content-Type", "application/json");
+
+    Serial.println("[Playgroup] ===== V2 CREATE GAME BEARER TEST =====");
+    Serial.print("[Playgroup] Creating clean 2-player game in playgroup ");
+    Serial.println(playgroup_id);
+
+    status = http.POST((uint8_t *)body, strlen(body));
+    auth = "";
+    memset(api_key, 0, sizeof(api_key));
+
+    if (status > 0)
+        response = http.getString();
+
+    Serial.print("[Playgroup] HTTP ");
+    Serial.println(status);
+
+    if (response.length() > 0) {
+        Serial.print("[Playgroup] Body: ");
+        if (response.length() <= 3500)
+            Serial.println(response);
+        else {
+            Serial.println(response.substring(0, 3500));
+            Serial.println("[Playgroup] Body truncated.");
+        }
+    }
+
+    if (status >= 200 && status < 300) {
+        char id_token[24];
+        if (json_extract_number_token(response, "id", id_token, sizeof(id_token))) {
+            game_id = strtol(id_token, NULL, 10);
+            Serial.print("[Playgroup] CREATE TEST PASS. New game id: ");
+            Serial.println(game_id);
+        } else {
+            Serial.println("[Playgroup] CREATE TEST PASS, but game id was not parsed.");
+        }
+    } else if (status == HTTP_CODE_UNAUTHORIZED || status == HTTP_CODE_FORBIDDEN) {
+        Serial.println("[Playgroup] CREATE TEST: v2 rejected Bearer auth.");
+    } else {
+        Serial.println("[Playgroup] CREATE TEST: inspect response above.");
+    }
+
+    response = "";
+    http.end();
+    wifi_power_down();
+    Serial.println("[Playgroup] Wi-Fi off.");
+    return status >= 200 && status < 300;
+}
+
 static void print_status(void)
 {
     char tmp[PG_API_KEY_MAX];
@@ -2177,6 +2275,7 @@ static void print_help(void)
     Serial.println("  PG TEST");
     Serial.println("  PG SYNC TEST");
     Serial.println("  PG EVENT TEST <game_id>");
+    Serial.println("  PG CREATE TEST <playgroup_id>");
     Serial.println("  PG DISCOVER");
     Serial.println("  PG MYDECKS");
     Serial.println("  PG CLEAR");
@@ -2223,6 +2322,22 @@ static void handle_command(char *line)
 
     if (strcmp(line, "PG SYNC TEST") == 0) {
         playgroup_sync_probe();
+        return;
+    }
+
+    if (strncmp(line, "PG CREATE TEST ", 15) == 0) {
+        const char *id_text = line + 15;
+        char *end = NULL;
+        long playgroup_id = strtol(id_text, &end, 10);
+
+        while (end != NULL && (*end == ' ' || *end == '\t')) end++;
+        if (id_text[0] == '\0' || end == id_text ||
+            (end != NULL && *end != '\0') || playgroup_id <= 0) {
+            Serial.println("[Playgroup] Usage: PG CREATE TEST <playgroup_id>");
+            return;
+        }
+
+        playgroup_create_game_probe(playgroup_id);
         return;
     }
 
