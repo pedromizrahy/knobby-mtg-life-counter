@@ -4,6 +4,7 @@ extern void refresh_multiplayer_turn_state(void);
 #include "storage.h"
 #include "game.h"
 #include "damage_log.h"
+#include "playgroup_pending.h"
 
 // Forward declaration
 extern void refresh_turn_ui(void);
@@ -99,6 +100,7 @@ void turn_timer_start_for_player(int player)
         lv_timer_pause(turn_reminder_flash_timer);
     }
 
+    playgroup_pending_note_starting_player(active_turn_player);
     game_event_add_turn(GAME_EVENT_TURN_START, active_turn_player,
                         (uint16_t)turn_number, (uint16_t)round_number, 0);
 
