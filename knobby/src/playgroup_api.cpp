@@ -2010,7 +2010,6 @@ static bool playgroup_event_batch_probe(long game_id)
     String response;
     String url;
     int status = -1;
-    time_t now;
 
     if (game_id <= 0) {
         Serial.println("[Playgroup] Usage: PG EVENT TEST <game_id>");
@@ -2025,14 +2024,6 @@ static bool playgroup_event_batch_probe(long game_id)
     if (!wifi_connect_saved())
         return false;
 
-    time(&now);
-    if (now < PG_VALID_EPOCH) {
-        Serial.println("[Playgroup] EVENT TEST: clock is not valid.");
-        memset(api_key, 0, sizeof(api_key));
-        wifi_power_down();
-        return false;
-    }
-
     tls.useBuiltinCACertBundle();
     tls.setHandshakeTimeout(12);
     http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
@@ -2044,42 +2035,26 @@ static bool playgroup_event_batch_probe(long game_id)
     url += String(game_id);
     url += "/events/batch";
 
-    Serial.println("[Playgroup] ===== EVENT ID MAPPING TEST START =====");
-    Serial.println("[Playgroup] Game mapping known from API:");
-    Serial.println("  seat 0 -> user 184200 -> participation 3406586");
-    Serial.println("  seat 1 -> user 184199 -> participation 3406587");
+    Serial.println("[Playgroup] ===== EVENT IMPORT CONTRACT TEST START =====");
+    Serial.println("[Playgroup] Confirmed mapping: source/target are seat indexes.");
 
+    /*
+     * Test game 1221149 ran around Unix 1791329471..1791330857.
+     * Keep timestamps inside that window and use small positive event ids.
+     */
     const char *labels[] = {
-        "seat indexes",
-        "user ids",
-        "participation ids"
+        "small id + in-game time + Damage",
+        "small id + in-game time + LifeLoss",
+        "small id + in-game time + Healing"
     };
 
-    const char *srcs[] = {
-        "0",
-        "184200",
-        "3406586"
-    };
-
-    const char *dsts[] = {
-        "1",
-        "184199",
-        "3406587"
+    const char *bodies[] = {
+        "{\"events\":[{\"id\":810001,\"name\":\"Damage\",\"source_player_id\":\"0\",\"target_player_id\":\"1\",\"time\":1791330000,\"turn\":1,\"amount\":1,\"metadata\":{}}]}",
+        "{\"events\":[{\"id\":810002,\"name\":\"LifeLoss\",\"source_player_id\":\"1\",\"target_player_id\":\"1\",\"time\":1791330001,\"turn\":1,\"amount\":1,\"metadata\":{}}]}",
+        "{\"events\":[{\"id\":810003,\"name\":\"Healing\",\"source_player_id\":\"0\",\"target_player_id\":\"0\",\"time\":1791330002,\"turn\":1,\"amount\":1,\"metadata\":{}}]}"
     };
 
     for (int i = 0; i < 3; i++) {
-        char body[420];
-        unsigned long long event_id =
-            ((unsigned long long)now * 1000ULL) +
-            (unsigned long long)((millis() + i) % 1000UL);
-
-        snprintf(body, sizeof(body),
-                 "{\"events\":[{\"id\":%llu,\"name\":\"Damage\","
-                 "\"source_player_id\":\"%s\",\"target_player_id\":\"%s\","
-                 "\"active_player_id\":\"%s\",\"time\":%lld,"
-                 "\"turn\":2,\"amount\":1,\"metadata\":{}}]}",
-                 event_id, srcs[i], dsts[i], srcs[i], (long long)now);
-
         if (!http.begin(tls, url)) {
             Serial.println("[Playgroup] EVENT TEST: HTTPS init failed.");
             break;
@@ -2096,23 +2071,19 @@ static bool playgroup_event_batch_probe(long game_id)
         Serial.print("/3: ");
         Serial.println(labels[i]);
 
-        status = http.POST((uint8_t *)body, strlen(body));
+        status = http.POST((uint8_t *)bodies[i], strlen(bodies[i]));
         auth = "";
-
-        if (status > 0)
-            response = http.getString();
-        else
-            response = "";
+        response = status > 0 ? http.getString() : "";
 
         Serial.print("[Playgroup] HTTP ");
         Serial.println(status);
 
         if (response.length() > 0) {
             Serial.print("[Playgroup] Body: ");
-            if (response.length() <= 1600)
+            if (response.length() <= 1800)
                 Serial.println(response);
             else {
-                Serial.println(response.substring(0, 1600));
+                Serial.println(response.substring(0, 1800));
                 Serial.println("[Playgroup] Body truncated.");
             }
         }
@@ -2120,7 +2091,7 @@ static bool playgroup_event_batch_probe(long game_id)
         http.end();
 
         if (status == HTTP_CODE_CREATED) {
-            Serial.print("[Playgroup] EVENT TEST PASS with ");
+            Serial.print("[Playgroup] EVENT TEST PASS: ");
             Serial.println(labels[i]);
             break;
         }
@@ -2135,7 +2106,7 @@ static bool playgroup_event_batch_probe(long game_id)
 
     memset(api_key, 0, sizeof(api_key));
     response = "";
-    Serial.println("[Playgroup] ===== EVENT ID MAPPING TEST END =====");
+    Serial.println("[Playgroup] ===== EVENT IMPORT CONTRACT TEST END =====");
     wifi_power_down();
     Serial.println("[Playgroup] Wi-Fi off.");
     return status == HTTP_CODE_CREATED;
