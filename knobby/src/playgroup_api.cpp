@@ -2248,6 +2248,142 @@ static bool playgroup_create_game_probe(long playgroup_id)
     return status >= 200 && status < 300;
 }
 
+static bool playgroup_full_flow_test(long game_id)
+{
+    char api_key[PG_API_KEY_MAX];
+    NetworkClientSecure tls;
+    HTTPClient http;
+    String auth;
+    String response;
+    String url;
+    int status = -1;
+    time_t now;
+
+    if (game_id <= 0) {
+        Serial.println("[Playgroup] Usage: PG FLOW TEST <game_id>");
+        return false;
+    }
+
+    if (!nvs_read_string("api_key", api_key, sizeof(api_key))) {
+        Serial.println("[Playgroup] API key is not configured.");
+        return false;
+    }
+
+    if (!wifi_connect_saved())
+        return false;
+
+    time(&now);
+    if (now < PG_VALID_EPOCH) {
+        Serial.println("[Playgroup] FLOW TEST: clock is not valid.");
+        memset(api_key, 0, sizeof(api_key));
+        wifi_power_down();
+        return false;
+    }
+
+    tls.useBuiltinCACertBundle();
+    tls.setHandshakeTimeout(12);
+    http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
+
+    url = PG_API_BASE;
+    url += "/games/";
+    url += String(game_id);
+    url += "/events/batch";
+
+    const long t0 = (long)now;
+    const unsigned long long base_id =
+        ((unsigned long long)now * 1000ULL);
+
+    char body[5000];
+    snprintf(body, sizeof(body),
+        "{\"events\":["
+        "{\"id\":%llu,\"name\":\"Login\",\"source_player_id\":\"1\",\"target_player_id\":\"1\",\"active_player_id\":\"1\",\"time\":%ld,\"turn\":0,\"metadata\":{\"user_id\":184199,\"roster_player_id\":null,\"username\":\"Pedrogas\",\"commander_id\":null,\"commander_name\":null,\"commander_image\":null}},"
+        "{\"id\":%llu,\"name\":\"Login\",\"source_player_id\":\"0\",\"target_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":0,\"metadata\":{\"user_id\":184200,\"roster_player_id\":null,\"username\":\"Paloma Isaia\",\"commander_id\":null,\"commander_name\":null,\"commander_image\":null}},"
+        "{\"id\":%llu,\"name\":\"DeckSelect\",\"source_player_id\":\"1\",\"target_player_id\":\"1\",\"active_player_id\":\"1\",\"time\":%ld,\"turn\":0,\"metadata\":{\"deck_id\":860409,\"deck_name\":\"Fire Lord Azula\",\"commander_id\":3605,\"commander_name\":\"Fire Lord Azula\",\"partner_id\":null,\"partner_name\":null,\"playgroup_id\":62795,\"counters\":[]}},"
+        "{\"id\":%llu,\"name\":\"SeatReady\",\"source_player_id\":\"1\",\"target_player_id\":\"1\",\"active_player_id\":\"1\",\"time\":%ld,\"turn\":0,\"metadata\":{\"ready\":true}},"
+        "{\"id\":%llu,\"name\":\"DeckSelect\",\"source_player_id\":\"0\",\"target_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":0,\"metadata\":{\"deck_id\":714018,\"deck_name\":\"Peace Offering\",\"commander_id\":3044,\"commander_name\":\"Ms. Bumbleflower\",\"partner_id\":null,\"partner_name\":null,\"playgroup_id\":62795,\"counters\":[]}},"
+        "{\"id\":%llu,\"name\":\"SeatReady\",\"source_player_id\":\"0\",\"target_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":0,\"metadata\":{\"ready\":true}},"
+        "{\"id\":%llu,\"name\":\"KeepHand\",\"source_player_id\":\"1\",\"target_player_id\":\"1\",\"active_player_id\":\"1\",\"time\":%ld,\"turn\":0,\"metadata\":{\"mulligans_taken\":0}},"
+        "{\"id\":%llu,\"name\":\"KeepHand\",\"source_player_id\":\"0\",\"target_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":0,\"metadata\":{\"mulligans_taken\":0}},"
+        "{\"id\":%llu,\"name\":\"StartGame\",\"source_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":0,\"metadata\":{\"started_at\":%ld}},"
+        "{\"id\":%llu,\"name\":\"Damage\",\"source_player_id\":\"0\",\"target_player_id\":\"1\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":1,\"amount\":3,\"metadata\":{}},"
+        "{\"id\":%llu,\"name\":\"PassTurn\",\"source_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":1,\"metadata\":{\"next_player_id\":\"1\"}},"
+        "{\"id\":%llu,\"name\":\"CommanderDamage\",\"source_player_id\":\"1\",\"target_player_id\":\"0\",\"active_player_id\":\"1\",\"time\":%ld,\"turn\":2,\"amount\":5,\"commander_id\":3605,\"metadata\":{}},"
+        "{\"id\":%llu,\"name\":\"Healing\",\"source_player_id\":\"0\",\"target_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":2,\"amount\":2,\"metadata\":{}},"
+        "{\"id\":%llu,\"name\":\"EndGame\",\"source_player_id\":\"1\",\"active_player_id\":\"1\",\"time\":%ld,\"turn\":2,\"metadata\":{}},"
+        "{\"id\":%llu,\"name\":\"WinnerDeclared\",\"source_player_id\":\"1\",\"active_player_id\":\"1\",\"time\":%ld,\"turn\":2,\"metadata\":{}},"
+        "{\"id\":%llu,\"name\":\"WinConSet\",\"source_player_id\":\"1\",\"active_player_id\":\"1\",\"time\":%ld,\"turn\":2,\"metadata\":{\"win_con\":\"commander_damage\",\"infinite\":false}}"
+        "]}",
+        base_id+1,t0,
+        base_id+2,t0+1,
+        base_id+3,t0+2,
+        base_id+4,t0+3,
+        base_id+5,t0+4,
+        base_id+6,t0+5,
+        base_id+7,t0+6,
+        base_id+8,t0+7,
+        base_id+9,t0+8,t0+8,
+        base_id+10,t0+12,
+        base_id+11,t0+20,
+        base_id+12,t0+25,
+        base_id+13,t0+30,
+        base_id+14,t0+35,
+        base_id+15,t0+36,
+        base_id+16,t0+37);
+
+    if (!http.begin(tls, url)) {
+        Serial.println("[Playgroup] FLOW TEST: HTTPS init failed.");
+        memset(api_key, 0, sizeof(api_key));
+        wifi_power_down();
+        return false;
+    }
+
+    auth = "Bearer ";
+    auth += api_key;
+    http.addHeader("Authorization", auth);
+    http.addHeader("Accept", "application/json");
+    http.addHeader("Content-Type", "application/json");
+
+    Serial.println("[Playgroup] ===== FULL CLEAN GAME FLOW TEST =====");
+    Serial.print("[Playgroup] Game ID: ");
+    Serial.println(game_id);
+    Serial.println("[Playgroup] Sending setup + gameplay + result in one batch.");
+
+    status = http.POST((uint8_t *)body, strlen(body));
+    auth = "";
+    memset(api_key, 0, sizeof(api_key));
+
+    if (status > 0)
+        response = http.getString();
+
+    Serial.print("[Playgroup] HTTP ");
+    Serial.println(status);
+
+    if (response.length() > 0) {
+        Serial.print("[Playgroup] Body: ");
+        if (response.length() <= 5000)
+            Serial.println(response);
+        else {
+            Serial.println(response.substring(0, 5000));
+            Serial.println("[Playgroup] Body truncated.");
+        }
+    }
+
+    if (status == HTTP_CODE_CREATED)
+        Serial.println("[Playgroup] FLOW TEST PASS: clean game imported and finalized.");
+    else if (status == 422)
+        Serial.println("[Playgroup] FLOW TEST rejected; inspect failed_event_index/validation above.");
+    else if (status == HTTP_CODE_UNAUTHORIZED || status == HTTP_CODE_FORBIDDEN)
+        Serial.println("[Playgroup] FLOW TEST: auth/participation rejected.");
+
+    response = "";
+    http.end();
+    wifi_power_down();
+    Serial.println("[Playgroup] Wi-Fi off.");
+    return status == HTTP_CODE_CREATED;
+}
+
 static void print_status(void)
 {
     char tmp[PG_API_KEY_MAX];
@@ -2276,6 +2412,7 @@ static void print_help(void)
     Serial.println("  PG SYNC TEST");
     Serial.println("  PG EVENT TEST <game_id>");
     Serial.println("  PG CREATE TEST <playgroup_id>");
+    Serial.println("  PG FLOW TEST <game_id>");
     Serial.println("  PG DISCOVER");
     Serial.println("  PG MYDECKS");
     Serial.println("  PG CLEAR");
@@ -2322,6 +2459,22 @@ static void handle_command(char *line)
 
     if (strcmp(line, "PG SYNC TEST") == 0) {
         playgroup_sync_probe();
+        return;
+    }
+
+    if (strncmp(line, "PG FLOW TEST ", 13) == 0) {
+        const char *id_text = line + 13;
+        char *end = NULL;
+        long game_id = strtol(id_text, &end, 10);
+
+        while (end != NULL && (*end == ' ' || *end == '\t')) end++;
+        if (id_text[0] == '\0' || end == id_text ||
+            (end != NULL && *end != '\0') || game_id <= 0) {
+            Serial.println("[Playgroup] Usage: PG FLOW TEST <game_id>");
+            return;
+        }
+
+        playgroup_full_flow_test(game_id);
         return;
     }
 
