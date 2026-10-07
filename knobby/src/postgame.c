@@ -42,6 +42,7 @@ static int wincon_index = 0;
 static int infinite_index = 0;
 static bool questionnaire_open = false;
 static bool questionnaire_dismissed = false;
+static uint32_t questionnaire_dismissed_at = 0;
 
 static lv_obj_t *postgame_button(lv_obj_t *parent, const char *text,
                                  lv_coord_t width, lv_coord_t height,
@@ -191,6 +192,7 @@ static void event_winner_back(lv_event_t *event)
     (void)event;
     questionnaire_open = false;
     questionnaire_dismissed = true;
+    questionnaire_dismissed_at = lv_tick_get();
     back_to_main();
 }
 
@@ -231,6 +233,7 @@ static void postgame_watch_cb(lv_timer_t *timer)
         playgroup_pending_result_confirmed()) {
         questionnaire_open = false;
         questionnaire_dismissed = false;
+        questionnaire_dismissed_at = 0;
         return;
     }
 
@@ -238,10 +241,18 @@ static void postgame_watch_cb(lv_timer_t *timer)
     if (winner < 0) {
         questionnaire_open = false;
         questionnaire_dismissed = false;
+        questionnaire_dismissed_at = 0;
         return;
     }
 
-    if (questionnaire_open || questionnaire_dismissed)
+    if (questionnaire_dismissed) {
+        if (lv_tick_elaps(questionnaire_dismissed_at) < 5000U)
+            return;
+        questionnaire_dismissed = false;
+        questionnaire_dismissed_at = 0;
+    }
+
+    if (questionnaire_open)
         return;
 
     /* Don't replace menus/overlays mid-interaction. Wait until the table
