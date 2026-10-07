@@ -1,5 +1,3 @@
-#include <Arduino.h>
-
 #include "postgame.h"
 #include "game.h"
 #include "storage.h"
@@ -216,12 +214,10 @@ static void event_infinite_confirm(lv_event_t *event)
     questionnaire_open = false;
     questionnaire_dismissed = false;
 
-    Serial.print("[Playgroup] Result confirmed: winner P");
-    Serial.print(winner_index + 1);
-    Serial.print(", win condition ");
-    Serial.print(win_conditions[wincon_index].api_token);
-    Serial.print(", infinite=");
-    Serial.println(infinite_index ? "yes" : "no");
+    printf("[Playgroup] Result confirmed: winner P%d, win condition %s, infinite=%s\n",
+           winner_index + 1,
+           win_conditions[wincon_index].api_token,
+           infinite_index ? "yes" : "no");
 
     back_to_main();
 }
