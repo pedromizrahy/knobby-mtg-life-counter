@@ -2118,6 +2118,195 @@ static bool playgroup_event_batch_probe(long game_id)
     return status == HTTP_CODE_CREATED;
 }
 
+static bool playgroup_live_diag(long playgroup_id, long inspect_game_id)
+{
+    char api_key[PG_API_KEY_MAX];
+    NetworkClientSecure tls;
+    HTTPClient http;
+    String auth;
+    String response;
+    String before_games;
+    String after_games;
+    String url;
+    int status = -1;
+    long before_ids[16] = {0};
+    long after_ids[16] = {0};
+    int before_count = 0;
+    int after_count = 0;
+
+    if (playgroup_id <= 0) {
+        Serial.println("[Playgroup] Usage: PG LIVE DIAG <playgroup_id> [game_id]");
+        return false;
+    }
+
+    if (!nvs_read_string("api_key", api_key, sizeof(api_key))) {
+        Serial.println("[Playgroup] API key is not configured.");
+        return false;
+    }
+
+    if (!wifi_connect_saved())
+        return false;
+
+    tls.useBuiltinCACertBundle();
+    tls.setHandshakeTimeout(12);
+    http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
+
+    Serial.println("[Playgroup] ===== LIVE SESSION DIAG START =====");
+
+    /* Snapshot recent games before creating the session. */
+    url = PG_API_BASE;
+    url += "/playgroups/";
+    url += String(playgroup_id);
+    url += "/games";
+
+    if (http.begin(tls, url)) {
+        auth = "Bearer ";
+        auth += api_key;
+        http.addHeader("Authorization", auth);
+        http.addHeader("Accept", "application/json");
+        status = http.GET();
+        auth = "";
+        if (status > 0)
+            before_games = http.getString();
+        http.end();
+
+        Serial.print("[Playgroup] Games BEFORE -> HTTP ");
+        Serial.println(status);
+        if (status >= 200 && status < 300) {
+            before_count = json_collect_top_level_ids(
+                before_games, before_ids,
+                (int)(sizeof(before_ids) / sizeof(before_ids[0])));
+            Serial.print("[Playgroup] Top-level game ids before: ");
+            Serial.println(before_count);
+            for (int i = 0; i < before_count; i++) {
+                Serial.print("  - ");
+                Serial.println(before_ids[i]);
+            }
+        }
+    }
+
+    /* Create a public live session with the same Bearer key. */
+    url = PG_API_BASE;
+    url += "/live_sessions";
+    if (http.begin(tls, url)) {
+        auth = "Bearer ";
+        auth += api_key;
+        http.addHeader("Authorization", auth);
+        http.addHeader("Accept", "application/json");
+        http.addHeader("Content-Type", "application/json");
+
+        status = http.POST((uint8_t *)"{}", 2);
+        auth = "";
+        response = status > 0 ? http.getString() : "";
+        http.end();
+
+        Serial.print("[Playgroup] Create live session -> HTTP ");
+        Serial.println(status);
+        if (response.length() > 0) {
+            Serial.print("[Playgroup] Live session response: ");
+            Serial.println(response);
+        }
+    }
+
+    delay(500);
+
+    /* Snapshot recent games again to see whether session creation made a game. */
+    url = PG_API_BASE;
+    url += "/playgroups/";
+    url += String(playgroup_id);
+    url += "/games";
+
+    if (http.begin(tls, url)) {
+        auth = "Bearer ";
+        auth += api_key;
+        http.addHeader("Authorization", auth);
+        http.addHeader("Accept", "application/json");
+        status = http.GET();
+        auth = "";
+        if (status > 0)
+            after_games = http.getString();
+        http.end();
+
+        Serial.print("[Playgroup] Games AFTER -> HTTP ");
+        Serial.println(status);
+        if (status >= 200 && status < 300) {
+            after_count = json_collect_top_level_ids(
+                after_games, after_ids,
+                (int)(sizeof(after_ids) / sizeof(after_ids[0])));
+            Serial.print("[Playgroup] Top-level game ids after: ");
+            Serial.println(after_count);
+            for (int i = 0; i < after_count; i++) {
+                Serial.print("  - ");
+                Serial.println(after_ids[i]);
+            }
+
+            bool new_id_found = false;
+            for (int i = 0; i < after_count; i++) {
+                bool existed = false;
+                for (int j = 0; j < before_count; j++) {
+                    if (after_ids[i] == before_ids[j]) {
+                        existed = true;
+                        break;
+                    }
+                }
+                if (!existed) {
+                    Serial.print("[Playgroup] NEW GAME ID after live-session create: ");
+                    Serial.println(after_ids[i]);
+                    new_id_found = true;
+                }
+            }
+            if (!new_id_found)
+                Serial.println("[Playgroup] No new game id appeared after live-session creation.");
+        }
+    }
+
+    /* Inspect one known game through the public API in the same run. */
+    if (inspect_game_id > 0) {
+        url = PG_API_BASE;
+        url += "/playgroups/";
+        url += String(playgroup_id);
+        url += "/games/";
+        url += String(inspect_game_id);
+
+        if (http.begin(tls, url)) {
+            auth = "Bearer ";
+            auth += api_key;
+            http.addHeader("Authorization", auth);
+            http.addHeader("Accept", "application/json");
+            status = http.GET();
+            auth = "";
+            response = status > 0 ? http.getString() : "";
+            http.end();
+
+            Serial.print("[Playgroup] Inspect game ");
+            Serial.print(inspect_game_id);
+            Serial.print(" -> HTTP ");
+            Serial.println(status);
+            if (response.length() > 0) {
+                Serial.print("[Playgroup] Game body: ");
+                if (response.length() <= 3500)
+                    Serial.println(response);
+                else {
+                    Serial.println(response.substring(0, 3500));
+                    Serial.println("[Playgroup] Game body truncated.");
+                }
+            }
+        }
+    }
+
+    memset(api_key, 0, sizeof(api_key));
+    before_games = "";
+    after_games = "";
+    response = "";
+
+    Serial.println("[Playgroup] ===== LIVE SESSION DIAG END =====");
+    wifi_power_down();
+    Serial.println("[Playgroup] Wi-Fi off.");
+    return true;
+}
+
 static void print_status(void)
 {
     char tmp[PG_API_KEY_MAX];
@@ -2145,6 +2334,7 @@ static void print_help(void)
     Serial.println("  PG TEST");
     Serial.println("  PG SYNC TEST");
     Serial.println("  PG EVENT TEST <game_id>");
+    Serial.println("  PG LIVE DIAG <playgroup_id> [game_id]");
     Serial.println("  PG DISCOVER");
     Serial.println("  PG MYDECKS");
     Serial.println("  PG CLEAR");
@@ -2191,6 +2381,32 @@ static void handle_command(char *line)
 
     if (strcmp(line, "PG SYNC TEST") == 0) {
         playgroup_sync_probe();
+        return;
+    }
+
+    if (strncmp(line, "PG LIVE DIAG ", 13) == 0) {
+        char *args = line + 13;
+        char *end = NULL;
+        long playgroup_id = strtol(args, &end, 10);
+        long game_id = 0;
+
+        while (end != NULL && (*end == ' ' || *end == '\t')) end++;
+        if (end != NULL && *end != '\0') {
+            char *game_end = NULL;
+            game_id = strtol(end, &game_end, 10);
+            while (game_end != NULL && (*game_end == ' ' || *game_end == '\t')) game_end++;
+            if (game_end == end || (game_end != NULL && *game_end != '\0')) {
+                Serial.println("[Playgroup] Usage: PG LIVE DIAG <playgroup_id> [game_id]");
+                return;
+            }
+        }
+
+        if (playgroup_id <= 0) {
+            Serial.println("[Playgroup] Usage: PG LIVE DIAG <playgroup_id> [game_id]");
+            return;
+        }
+
+        playgroup_live_diag(playgroup_id, game_id);
         return;
     }
 
