@@ -49,6 +49,10 @@ int playgroup_pending_count(void);
 void playgroup_pending_print_status(void);
 bool playgroup_pending_selftest(void);
 
+/* Try to synchronize confirmed finished games. Returns number removed from
+   the queue after a confirmed remote success/reconciliation. */
+int playgroup_pending_sync_queue(void);
+
 #ifdef __cplusplus
 }
 #endif
