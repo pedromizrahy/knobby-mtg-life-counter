@@ -2291,11 +2291,11 @@ static bool playgroup_full_flow_test(long game_id)
     url += String(game_id);
     url += "/events/batch";
 
-    const long t0 = (long)now;
+    const long t0 = 1791375000L + (game_id % 10000L);
     const unsigned long long base_id =
-        ((unsigned long long)now * 1000ULL);
+        3000000000000ULL + ((unsigned long long)game_id * 100ULL);
 
-    const size_t body_capacity = 5000;
+    const size_t body_capacity = 5600;
     char *body = (char *)heap_caps_malloc(body_capacity,
                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (body == NULL) {
@@ -2313,6 +2313,7 @@ static bool playgroup_full_flow_test(long game_id)
         "{\"id\":%llu,\"name\":\"SeatReady\",\"source_player_id\":\"1\",\"target_player_id\":\"1\",\"active_player_id\":\"1\",\"time\":%ld,\"turn\":0,\"metadata\":{\"ready\":true}},"
         "{\"id\":%llu,\"name\":\"DeckSelect\",\"source_player_id\":\"0\",\"target_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":0,\"metadata\":{\"deck_id\":714018,\"deck_name\":\"Peace Offering\",\"commander_id\":3044,\"commander_name\":\"Ms. Bumbleflower\",\"partner_id\":null,\"partner_name\":null,\"playgroup_id\":62795,\"counters\":[]}},"
         "{\"id\":%llu,\"name\":\"SeatReady\",\"source_player_id\":\"0\",\"target_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":0,\"metadata\":{\"ready\":true}},"
+        "{\"id\":%llu,\"name\":\"StartingPlayer\",\"source_player_id\":\"0\",\"target_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":0,\"metadata\":{}},"
         "{\"id\":%llu,\"name\":\"KeepHand\",\"source_player_id\":\"1\",\"target_player_id\":\"1\",\"active_player_id\":\"1\",\"time\":%ld,\"turn\":0,\"metadata\":{\"mulligans_taken\":0}},"
         "{\"id\":%llu,\"name\":\"KeepHand\",\"source_player_id\":\"0\",\"target_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":0,\"metadata\":{\"mulligans_taken\":0}},"
         "{\"id\":%llu,\"name\":\"StartGame\",\"source_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":0,\"metadata\":{\"started_at\":%ld}},"
@@ -2332,14 +2333,15 @@ static bool playgroup_full_flow_test(long game_id)
         base_id+6,t0+5,
         base_id+7,t0+6,
         base_id+8,t0+7,
-        base_id+9,t0+8,t0+8,
-        base_id+10,t0+12,
-        base_id+11,t0+20,
-        base_id+12,t0+25,
-        base_id+13,t0+30,
-        base_id+14,t0+35,
-        base_id+15,t0+36,
-        base_id+16,t0+37);
+        base_id+9,t0+8,
+        base_id+10,t0+9,
+        base_id+11,t0+10,t0+10,
+        base_id+12,t0+14,
+        base_id+13,t0+22,
+        base_id+14,t0+27,
+        base_id+15,t0+32,
+        base_id+16,t0+37,
+        base_id+17,t0+38);
 
     if (!http.begin(tls, url)) {
         Serial.println("[Playgroup] FLOW TEST: HTTPS init failed.");
@@ -2359,7 +2361,8 @@ static bool playgroup_full_flow_test(long game_id)
     Serial.println("[Playgroup] ===== FULL CLEAN GAME FLOW TEST =====");
     Serial.print("[Playgroup] Game ID: ");
     Serial.println(game_id);
-    Serial.println("[Playgroup] Sending setup + gameplay + result in one batch.");
+    Serial.println("[Playgroup] Sending deterministic setup + StartingPlayer + gameplay + result.");
+    Serial.println("[Playgroup] Re-run this exact command on the same game to test retry/idempotency.");
 
     status = http.POST((uint8_t *)body, strlen(body));
     heap_caps_free(body);
