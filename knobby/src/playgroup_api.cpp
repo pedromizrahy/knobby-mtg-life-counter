@@ -2168,7 +2168,6 @@ static void print_help(void)
     Serial.println("  PG TEST");
     Serial.println("  PG SYNC TEST");
     Serial.println("  PG EVENT TEST <game_id>");
-    Serial.println("  PG LIVE DIAG <playgroup_id> [game_id]");
     Serial.println("  PG DISCOVER");
     Serial.println("  PG MYDECKS");
     Serial.println("  PG CLEAR");
@@ -2215,32 +2214,6 @@ static void handle_command(char *line)
 
     if (strcmp(line, "PG SYNC TEST") == 0) {
         playgroup_sync_probe();
-        return;
-    }
-
-    if (strncmp(line, "PG LIVE DIAG ", 13) == 0) {
-        char *args = line + 13;
-        char *end = NULL;
-        long playgroup_id = strtol(args, &end, 10);
-        long game_id = 0;
-
-        while (end != NULL && (*end == ' ' || *end == '\t')) end++;
-        if (end != NULL && *end != '\0') {
-            char *game_end = NULL;
-            game_id = strtol(end, &game_end, 10);
-            while (game_end != NULL && (*game_end == ' ' || *game_end == '\t')) game_end++;
-            if (game_end == end || (game_end != NULL && *game_end != '\0')) {
-                Serial.println("[Playgroup] Usage: PG LIVE DIAG <playgroup_id> [game_id]");
-                return;
-            }
-        }
-
-        if (playgroup_id <= 0) {
-            Serial.println("[Playgroup] Usage: PG LIVE DIAG <playgroup_id> [game_id]");
-            return;
-        }
-
-        playgroup_live_diag(playgroup_id, game_id);
         return;
     }
 
