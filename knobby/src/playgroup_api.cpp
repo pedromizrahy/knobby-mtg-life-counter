@@ -2001,6 +2001,103 @@ static bool playgroup_sync_probe(void)
            status != HTTP_CODE_FORBIDDEN;
 }
 
+static bool playgroup_event_batch_probe(long game_id)
+{
+    char api_key[PG_API_KEY_MAX];
+    NetworkClientSecure tls;
+    HTTPClient http;
+    String auth;
+    String response;
+    String url;
+    const char *body = "{\"events\":[]}";
+    int status;
+
+    if (game_id <= 0) {
+        Serial.println("[Playgroup] Usage: PG EVENT TEST <game_id>");
+        return false;
+    }
+
+    if (!nvs_read_string("api_key", api_key, sizeof(api_key))) {
+        Serial.println("[Playgroup] API key is not configured.");
+        return false;
+    }
+
+    if (!wifi_connect_saved())
+        return false;
+
+    tls.useBuiltinCACertBundle();
+    tls.setHandshakeTimeout(12);
+    http.setConnectTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setTimeout(PG_HTTP_TIMEOUT_MS);
+    http.setUserAgent("DialDosPrimos/0.1 (ESP32-S3)");
+
+    url = PG_API_BASE;
+    url += "/games/";
+    url += String(game_id);
+    url += "/events/batch";
+
+    if (!http.begin(tls, url)) {
+        Serial.println("[Playgroup] Could not initialize event-batch probe HTTPS.");
+        memset(api_key, 0, sizeof(api_key));
+        wifi_power_down();
+        return false;
+    }
+
+    auth.reserve(strlen(api_key) + 8);
+    auth = "Bearer ";
+    auth += api_key;
+
+    http.addHeader("Authorization", auth);
+    http.addHeader("Accept", "application/json");
+    http.addHeader("Content-Type", "application/json");
+
+    Serial.print("[Playgroup] EVENT PROBE: POST /games/");
+    Serial.print(game_id);
+    Serial.println("/events/batch");
+    Serial.println("[Playgroup] Sending an empty events array; no gameplay event should be created.");
+
+    status = http.POST((uint8_t *)body, strlen(body));
+
+    auth = "";
+    memset(api_key, 0, sizeof(api_key));
+
+    if (status > 0)
+        response = http.getString();
+
+    Serial.print("[Playgroup] EVENT PROBE HTTP ");
+    Serial.println(status);
+
+    if (status == HTTP_CODE_UNAUTHORIZED || status == HTTP_CODE_FORBIDDEN) {
+        Serial.println("[Playgroup] EVENT PROBE: Bearer key was rejected for this game.");
+    } else if (status == HTTP_CODE_NOT_FOUND) {
+        Serial.println("[Playgroup] EVENT PROBE: game/route not found.");
+    } else if (status >= 200 && status < 300) {
+        Serial.println("[Playgroup] EVENT PROBE PASS: public API key can reach this game's batch endpoint.");
+    } else if (status > 0) {
+        Serial.println("[Playgroup] EVENT PROBE: endpoint responded; inspect validation body below.");
+    } else {
+        Serial.print("[Playgroup] EVENT PROBE transport error: ");
+        Serial.println(http.errorToString(status).c_str());
+    }
+
+    if (response.length() > 0) {
+        const size_t max_print = 900;
+        Serial.print("[Playgroup] EVENT PROBE body: ");
+        if (response.length() <= max_print) {
+            Serial.println(response);
+        } else {
+            Serial.println(response.substring(0, max_print));
+            Serial.println("[Playgroup] EVENT PROBE body truncated.");
+        }
+    }
+
+    response = "";
+    http.end();
+    wifi_power_down();
+    Serial.println("[Playgroup] Wi-Fi off.");
+    return status >= 200 && status < 300;
+}
+
 static void print_status(void)
 {
     char tmp[PG_API_KEY_MAX];
@@ -2027,6 +2124,7 @@ static void print_help(void)
     Serial.println("  PG RESET");
     Serial.println("  PG TEST");
     Serial.println("  PG SYNC TEST");
+    Serial.println("  PG EVENT TEST <game_id>");
     Serial.println("  PG DISCOVER");
     Serial.println("  PG MYDECKS");
     Serial.println("  PG CLEAR");
@@ -2073,6 +2171,21 @@ static void handle_command(char *line)
 
     if (strcmp(line, "PG SYNC TEST") == 0) {
         playgroup_sync_probe();
+        return;
+    }
+
+    if (strncmp(line, "PG EVENT TEST ", 14) == 0) {
+        const char *id_text = line + 14;
+        char *end = NULL;
+        long game_id = strtol(id_text, &end, 10);
+
+        while (end != NULL && (*end == ' ' || *end == '\t')) end++;
+        if (id_text[0] == '\0' || end == id_text || (end != NULL && *end != '\0') || game_id <= 0) {
+            Serial.println("[Playgroup] Usage: PG EVENT TEST <game_id>");
+            return;
+        }
+
+        playgroup_event_batch_probe(game_id);
         return;
     }
 
