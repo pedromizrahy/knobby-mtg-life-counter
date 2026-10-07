@@ -15,6 +15,7 @@
 #include "src/mana.h"
 #include "src/ui_damage_resolver.h"
 #include "src/pregame.h"
+#include "src/postgame.h"
 
 // ---------- swipe state ----------
 static lv_obj_t *previous_screen = NULL;
@@ -484,6 +485,7 @@ void knob_gui(void)
 
     build_intro_screen();
     build_pregame_screens();
+    build_postgame_screens();
     lv_scr_load(screen_intro);
     lv_refr_now(NULL);
     scr_display_on();
@@ -537,6 +539,13 @@ static void handle_knob_event(knob_event_t k)
     if (lv_scr_act() == screen_intro)
     {
         return;
+    }
+    else if (lv_scr_act() == screen_postgame_winner ||
+             lv_scr_act() == screen_postgame_wincon ||
+             lv_scr_act() == screen_postgame_infinite)
+    {
+        if (k == KNOB_LEFT)       postgame_change_selection(-1);
+        else if (k == KNOB_RIGHT) postgame_change_selection(+1);
     }
     else if (lv_scr_act() == screen_pregame_players)
     {
