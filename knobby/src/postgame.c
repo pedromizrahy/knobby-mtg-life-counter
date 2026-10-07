@@ -133,8 +133,21 @@ static void refresh_winner(void)
 
     art = pregame_get_player_commander_art(winner_index);
     if (winner_art != NULL) {
-        if (art != NULL) {
+        if (art != NULL && art->header.w > 0 && art->header.h > 0) {
+            uint32_t zoom_w =
+                (360U * 256U + (uint32_t)art->header.w - 1U) /
+                (uint32_t)art->header.w;
+            uint32_t zoom_h =
+                (360U * 256U + (uint32_t)art->header.h - 1U) /
+                (uint32_t)art->header.h;
+            uint16_t zoom = (uint16_t)((zoom_w > zoom_h) ? zoom_w : zoom_h);
+
+            if (zoom < 256U) zoom = 256U;
+            if (zoom > 1024U) zoom = 1024U;
+
             lv_img_set_src(winner_art, art);
+            lv_img_set_zoom(winner_art, zoom);
+            lv_obj_align(winner_art, LV_ALIGN_CENTER, 0, 0);
             lv_obj_clear_flag(winner_art, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(winner_art, LV_OBJ_FLAG_HIDDEN);
@@ -176,7 +189,7 @@ static void refresh_infinite(void)
     lv_label_set_text(infinite_name, infinite_index ? "YES" : "NO");
     lv_obj_set_style_text_color(
         infinite_name,
-        infinite_index ? lv_color_hex(0x8EE6D6) : lv_color_white(), 0);
+        infinite_index ? lv_color_hex(0x9ED7B5) : lv_color_white(), 0);
 }
 
 static void event_winner_confirm(lv_event_t *event)
@@ -215,13 +228,17 @@ static void event_infinite_confirm(lv_event_t *event)
 
     questionnaire_open = false;
     questionnaire_dismissed = false;
+    questionnaire_dismissed_at = 0;
 
     printf("[Playgroup] Result confirmed: winner P%d, win condition %s, infinite=%s\n",
            winner_index + 1,
            win_conditions[wincon_index].api_token,
            infinite_index ? "yes" : "no");
 
-    back_to_main();
+    /* The persisted snapshot remains queued, but the live table is over.
+       Return to New Game instead of reopening the finished pizza. */
+    playgroup_pending_disable_current();
+    open_pregame_home();
 }
 
 static void postgame_watch_cb(lv_timer_t *timer)
@@ -354,7 +371,7 @@ void build_postgame_screens(void)
     wincon_name = lv_label_create(screen_postgame_wincon);
     lv_obj_set_width(wincon_name, 300);
     lv_obj_set_style_text_align(wincon_name, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(wincon_name, lv_color_hex(0x8EE6D6), 0);
+    lv_obj_set_style_text_color(wincon_name, lv_color_white(), 0);
     lv_obj_set_style_text_font(wincon_name, &lv_font_montserrat_32, 0);
     lv_obj_align(wincon_name, LV_ALIGN_CENTER, 0, -16);
 
@@ -376,7 +393,7 @@ void build_postgame_screens(void)
     make_title(screen_postgame_infinite, "WENT INFINITE?", "Turn dial: No / Yes");
 
     infinite_name = lv_label_create(screen_postgame_infinite);
-    lv_obj_set_style_text_font(infinite_name, &lv_font_montserrat_bold_44, 0);
+    lv_obj_set_style_text_font(infinite_name, &lv_font_montserrat_32, 0);
     lv_obj_align(infinite_name, LV_ALIGN_CENTER, 0, -8);
 
     button = postgame_button(screen_postgame_infinite, "SAVE RESULT", 170, 44,
