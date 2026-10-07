@@ -35,6 +35,7 @@ extern "C" void knob_print_reset_diagnostics(void);
 
 static char serial_line[PG_SERIAL_LINE_MAX];
 static size_t serial_line_len = 0;
+static bool pending_sync_attempted_this_session = false;
 
 static playgroup_summary_t cached_playgroups[PG_MAX_PLAYGROUPS];
 static int cached_playgroup_count = 0;
@@ -597,6 +598,7 @@ bool playgroup_network_active(void)
 
 void playgroup_end_session(void)
 {
+    pending_sync_attempted_this_session = false;
     ++art_prefetch_generation;
     art_cache_clear();
     art_http_reset();
@@ -1191,6 +1193,15 @@ bool playgroup_refresh_playgroups(void)
     }
 
     json_for_each_top_level_object(response, parse_playgroup_object, NULL, PG_MAX_PLAYGROUPS);
+
+    if (cached_playgroup_count > 0 &&
+        !pending_sync_attempted_this_session &&
+        playgroup_pending_count() > 0) {
+        pending_sync_attempted_this_session = true;
+        Serial.println("[Playgroup] Online again; checking one pending finished game...");
+        playgroup_pending_sync_queue();
+    }
+
     return cached_playgroup_count > 0;
 }
 
@@ -2645,6 +2656,7 @@ static void print_help(void)
     Serial.println("  PG KEY <api-key>");
     Serial.println("  PG STATUS");
     Serial.println("  PG PENDING");
+    Serial.println("  PG SYNC PENDING");
     Serial.println("  PG SELFTEST");
     Serial.println("  PG RESET");
     Serial.println("  PG TEST");
@@ -2678,6 +2690,11 @@ static void handle_command(char *line)
 
     if (strcmp(line, "PG PENDING") == 0) {
         playgroup_pending_print_status();
+        return;
+    }
+
+    if (strcmp(line, "PG SYNC PENDING") == 0) {
+        playgroup_pending_sync_queue();
         return;
     }
 
