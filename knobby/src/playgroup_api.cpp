@@ -2117,6 +2117,8 @@ static bool playgroup_event_batch_probe(long game_id)
     Serial.println("[Playgroup] Sending 10 captured-shape events: setup + StartGame + Damage.");
 
     status = http.POST((uint8_t *)body, strlen(body));
+    heap_caps_free(body);
+    body = NULL;
     auth = "";
     memset(api_key, 0, sizeof(api_key));
 
@@ -2295,8 +2297,17 @@ static bool playgroup_full_flow_test(long game_id)
     const unsigned long long base_id =
         ((unsigned long long)now * 1000ULL);
 
-    char body[5000];
-    snprintf(body, sizeof(body),
+    const size_t body_capacity = 5000;
+    char *body = (char *)heap_caps_malloc(body_capacity,
+                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (body == NULL) {
+        Serial.println("[Playgroup] FLOW TEST: could not allocate request body in PSRAM.");
+        memset(api_key, 0, sizeof(api_key));
+        wifi_power_down();
+        return false;
+    }
+
+    snprintf(body, body_capacity,
         "{\"events\":["
         "{\"id\":%llu,\"name\":\"Login\",\"source_player_id\":\"1\",\"target_player_id\":\"1\",\"active_player_id\":\"1\",\"time\":%ld,\"turn\":0,\"metadata\":{\"user_id\":184199,\"roster_player_id\":null,\"username\":\"Pedrogas\",\"commander_id\":null,\"commander_name\":null,\"commander_image\":null}},"
         "{\"id\":%llu,\"name\":\"Login\",\"source_player_id\":\"0\",\"target_player_id\":\"0\",\"active_player_id\":\"0\",\"time\":%ld,\"turn\":0,\"metadata\":{\"user_id\":184200,\"roster_player_id\":null,\"username\":\"Paloma Isaia\",\"commander_id\":null,\"commander_name\":null,\"commander_image\":null}},"
@@ -2334,6 +2345,8 @@ static bool playgroup_full_flow_test(long game_id)
 
     if (!http.begin(tls, url)) {
         Serial.println("[Playgroup] FLOW TEST: HTTPS init failed.");
+        heap_caps_free(body);
+        body = NULL;
         memset(api_key, 0, sizeof(api_key));
         wifi_power_down();
         return false;
