@@ -958,6 +958,56 @@ static bool json_extract_nested_name(const String &obj, const char *key,
     return json_extract_nested_string_field(obj, key, "name", out, out_size);
 }
 
+static bool json_extract_nested_long_field(const String &obj, const char *key,
+                                           const char *nested_key, long *out)
+{
+    String needle = String("\"") + key + "\"";
+    int key_pos = obj.indexOf(needle);
+    int colon;
+    int pos;
+    int object_start;
+    int depth = 0;
+    bool in_string = false;
+    bool escape = false;
+
+    if (out == NULL || key_pos < 0) return false;
+    colon = obj.indexOf(':', key_pos + needle.length());
+    if (colon < 0) return false;
+    pos = colon + 1;
+    while (pos < (int)obj.length() &&
+           (obj[pos] == ' ' || obj[pos] == '\t' || obj[pos] == '\r' || obj[pos] == '\n'))
+        pos++;
+
+    if (obj.startsWith("null", pos)) {
+        *out = 0;
+        return true;
+    }
+
+    object_start = obj.indexOf('{', pos);
+    if (object_start < 0) return false;
+
+    for (int i = object_start; i < (int)obj.length(); i++) {
+        char ch = obj[i];
+        if (in_string) {
+            if (escape) escape = false;
+            else if (ch == '\\') escape = true;
+            else if (ch == '"') in_string = false;
+            continue;
+        }
+        if (ch == '"') in_string = true;
+        else if (ch == '{') depth++;
+        else if (ch == '}') {
+            depth--;
+            if (depth == 0) {
+                String nested = obj.substring(object_start, i + 1);
+                return json_extract_long_from_object(nested, nested_key, out);
+            }
+        }
+    }
+    return false;
+}
+
+
 static bool scryfall_id_from_image_url(const char *url,
                                        char *out,
                                        size_t out_size)
@@ -1088,6 +1138,7 @@ static bool parse_deck_object(const String &obj, void *ctx)
                                     deck->last_game_played_at,
                                     sizeof(deck->last_game_played_at));
     json_extract_string_from_object(obj, "name", deck->name, sizeof(deck->name));
+    json_extract_nested_long_field(obj, "commander", "id", &deck->commander_id);
     json_extract_nested_name(obj, "commander", deck->commander, sizeof(deck->commander));
     json_extract_nested_name(obj, "partner", deck->partner, sizeof(deck->partner));
     json_extract_nested_string_field(obj, "commander", "art_crop_url",
