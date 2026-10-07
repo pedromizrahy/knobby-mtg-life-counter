@@ -1966,7 +1966,8 @@ static bool playgroup_test_me(void)
 }
 
 
-long playgroup_create_game_for_sync(long playgroup_id, int player_count)
+long playgroup_create_game_for_sync(long playgroup_id, int player_count,
+                                    int life_amount)
 {
     char api_key[PG_API_KEY_MAX];
     NetworkClientSecure tls;
@@ -1978,7 +1979,7 @@ long playgroup_create_game_for_sync(long playgroup_id, int player_count)
     int status;
 
     if (playgroup_id <= 0 || player_count < 2 ||
-        player_count > MAX_DISPLAY_PLAYERS)
+        player_count > MAX_DISPLAY_PLAYERS || life_amount <= 0)
         return 0;
 
     if (!nvs_read_string("api_key", api_key, sizeof(api_key)))
@@ -1996,11 +1997,11 @@ long playgroup_create_game_for_sync(long playgroup_id, int player_count)
 
     snprintf(body, sizeof(body),
              "{\"game\":{\"playgroup_id\":%ld,\"player_amount\":%d,"
-             "\"life_amount\":40,\"api_version\":\"1.0\","
+             "\"life_amount\":%d,\"api_version\":\"1.0\","
              "\"multi_device_enabled\":true,"
              "\"client_identifier\":\"dial-dos-primos\","
              "\"app_version\":\"0.1.0\"}}",
-             playgroup_id, player_count);
+             playgroup_id, player_count, life_amount);
 
     if (!http.begin(tls, "https://playgroup.gg/api/v2/games")) {
         memset(api_key, 0, sizeof(api_key));
