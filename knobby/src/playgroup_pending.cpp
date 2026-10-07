@@ -35,6 +35,7 @@ typedef struct {
     long remote_game_id;
     uint32_t game_started_epoch;
     uint32_t game_started_tick_ms;
+    int16_t starting_life;
     uint8_t player_count;
     int8_t winner;
     int8_t starting_player;
@@ -225,6 +226,7 @@ static bool write_finished_snapshot(int winner)
     snapshot->remote_game_id = 0;
     snapshot->game_started_epoch = current_game_started_epoch;
     snapshot->game_started_tick_ms = current_game_started_tick_ms;
+    snapshot->starting_life = (int16_t)nvs_get_life_total();
     snapshot->player_count = current_seed.player_count;
     snapshot->winner = current_result_confirmed ? current_result_winner : (int8_t)winner;
     snapshot->starting_player = current_starting_player;
@@ -427,6 +429,7 @@ bool playgroup_pending_selftest(void)
     written_snapshot->remote_game_id = 0;
     written_snapshot->game_started_epoch = 1791370000U;
     written_snapshot->game_started_tick_ms = 1234U;
+    written_snapshot->starting_life = 40;
     written_snapshot->player_count = 4;
     written_snapshot->winner = 2;
     written_snapshot->starting_player = 1;
