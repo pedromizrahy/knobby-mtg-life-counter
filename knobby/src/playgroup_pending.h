@@ -15,8 +15,11 @@ extern "C" {
 typedef struct {
     long user_id;
     long deck_id;
+    long commander_id;
     uint8_t mulligans;
     char name[16];
+    char deck_name[64];
+    char commander_name[64];
 } pg_pending_player_seed_t;
 
 typedef struct {
@@ -33,6 +36,13 @@ void playgroup_pending_disable_current(void);
 
 /* Re-evaluate the current game's outcome after elimination/revival changes. */
 void playgroup_pending_reconcile_outcome(void);
+
+/* Remember the first turn owner for Playgroup StartingPlayer reconstruction. */
+void playgroup_pending_note_starting_player(int player);
+
+/* Final questionnaire result. win_condition is the Playgroup API token. */
+void playgroup_pending_set_result(int winner, const char *win_condition,
+                                  bool went_infinite);
 
 /* Diagnostics for the persistent queue. */
 int playgroup_pending_count(void);
