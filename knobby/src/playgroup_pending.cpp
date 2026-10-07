@@ -659,7 +659,7 @@ static bool sync_one_snapshot(const char *path,
     status = playgroup_import_events_for_sync(snapshot->remote_game_id, body);
     heap_caps_free(body);
 
-    if (status == HTTP_CODE_CREATED)
+    if (status == 201)
         return true;
 
     if (playgroup_remote_game_finalized(snapshot->playgroup_id,
@@ -673,12 +673,40 @@ static bool sync_one_snapshot(const char *path,
 
 int playgroup_pending_sync_queue(void)
 {
+    char paths[PG_PENDING_MAX_QUEUE][40];
+    int path_count = 0;
+    int synced = 0;
     File root;
     File file;
     pg_pending_snapshot_t *snapshot = NULL;
-    int synced = 0;
 
     if (!pending_fs_ready())
+        return 0;
+
+    /* Snapshot the tiny directory listing first. This avoids mutating SPIFFS
+       while iterating its directory handle and keeps the control flow simple. */
+    root = SPIFFS.open("/");
+    if (!root || !root.isDirectory())
+        return 0;
+
+    file = root.openNextFile();
+    while (file && path_count < PG_PENDING_MAX_QUEUE) {
+        if (!file.isDirectory() && is_pending_filename(file.name())) {
+            if (file.name()[0] == '/')
+                strlcpy(paths[path_count], file.name(),
+                        sizeof(paths[path_count]));
+            else
+                snprintf(paths[path_count], sizeof(paths[path_count]),
+                         "/%s", file.name());
+            path_count++;
+        }
+        file = root.openNextFile();
+    }
+    if (file)
+        file.close();
+    root.close();
+
+    if (path_count == 0)
         return 0;
 
     snapshot = (pg_pending_snapshot_t *)heap_caps_calloc(
@@ -687,90 +715,46 @@ int playgroup_pending_sync_queue(void)
     if (snapshot == NULL)
         return 0;
 
-    root = SPIFFS.open("/");
-    if (!root || !root.isDirectory()) {
-        heap_caps_free(snapshot);
-        return 0;
-    }
-
-    file = root.openNextFile();
-    while (file) {
-        char path[40];
-        bool candidate = !file.isDirectory() && is_pending_filename(file.name());
-
-        if (!candidate) {
-            file = root.openNextFile();
-            continue;
-        }
-
-        if (file.name()[0] == '/')
-            strlcpy(path, file.name(), sizeof(path));
-        else
-            snprintf(path, sizeof(path), "/%s", file.name());
-
-        file.close();
+    for (int i = 0; i < path_count; i++) {
         memset(snapshot, 0, sizeof(*snapshot));
 
-        if (snapshot_read_file(path, snapshot) &&
-            snapshot_ready_for_sync(snapshot)) {
-            Serial.print("[Playgroup] Syncing pending session ");
-            Serial.print((unsigned long)snapshot->session_id, HEX);
-            Serial.print(" -> ");
-            Serial.println(path);
+        if (!snapshot_read_file(paths[i], snapshot) ||
+            !snapshot_ready_for_sync(snapshot))
+            continue;
 
-            if (sync_one_snapshot(path, snapshot)) {
-                if (SPIFFS.remove(path)) {
-                    synced++;
-                    Serial.println("[Playgroup] Pending game synced and removed.");
-                    if (current_snapshot_saved &&
-                        snapshot->session_id == current_session_id)
-                        current_snapshot_saved = false;
-                }
-            }
+        Serial.print("[Playgroup] Syncing pending session ");
+        Serial.print((unsigned long)snapshot->session_id, HEX);
+        Serial.print(" -> ");
+        Serial.println(paths[i]);
+
+        if (!sync_one_snapshot(paths[i], snapshot)) {
+            /* Network/API failure: stop here. Repeated attempts in the same
+               connection only add latency; the next connection retries. */
+            break;
         }
 
-        /* Re-open the directory because deleting a file invalidates some
-           Arduino-ESP32 SPIFFS directory iterators. */
-        root.close();
-        root = SPIFFS.open("/");
-        if (!root || !root.isDirectory())
+        if (!SPIFFS.remove(paths[i])) {
+            Serial.println("[Playgroup] Remote sync confirmed but local queue removal failed.");
             break;
-
-        file = root.openNextFile();
-        bool passed_current = false;
-        while (file) {
-            char current_path[40];
-            if (file.name()[0] == '/')
-                strlcpy(current_path, file.name(), sizeof(current_path));
-            else
-                snprintf(current_path, sizeof(current_path), "/%s", file.name());
-
-            if (passed_current)
-                break;
-            if (strcmp(current_path, path) == 0)
-                passed_current = true;
-            file = root.openNextFile();
         }
 
-        /* If the file was removed, the old path cannot be found. Restarting
-           would otherwise reprocess earlier unsynced entries forever. For the
-           tiny max-16 queue, process at most one successful sync per call;
-           future connections continue draining the queue. */
-        if (synced > 0)
-            break;
-        if (!passed_current)
-            break;
+        synced++;
+        Serial.println("[Playgroup] Pending game synced and removed.");
+        if (current_snapshot_saved &&
+            snapshot->session_id == current_session_id)
+            current_snapshot_saved = false;
+
+        /* Drain one game per connection so entering Playgroup setup never
+           blocks behind a long offline backlog. */
+        break;
     }
 
-    if (file)
-        file.close();
-    root.close();
     heap_caps_free(snapshot);
 
     if (synced > 0) {
         Serial.print("[Playgroup] Pending sync complete: ");
         Serial.print(synced);
-        Serial.println(" game(s) confirmed.");
+        Serial.println(" game confirmed.");
     }
     return synced;
 }
