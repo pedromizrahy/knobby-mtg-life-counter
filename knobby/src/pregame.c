@@ -2476,6 +2476,8 @@ void build_pregame_screens(void)
             screen_pregame_roster, "MULLIGANS", 142, 42,
             event_roster_continue, LV_EVENT_CLICKED, NULL);
         lv_obj_align(roster_continue_button, LV_ALIGN_BOTTOM_MID, 0, -20);
+        /* Accept touches slightly below the visible button near the round edge. */
+        lv_obj_set_ext_click_area(roster_continue_button, 16);
     }
 
     screen_pregame_deck = lv_obj_create(NULL);
@@ -2607,6 +2609,8 @@ void build_pregame_screens(void)
         lv_obj_t *start = pregame_button(screen_pregame_mulligans, "START GAME", 146, 42,
                                          event_start_game, LV_EVENT_CLICKED, NULL);
         lv_obj_align(start, LV_ALIGN_BOTTOM_MID, 0, -24);
+        /* The circular display registers touches below the painted button. */
+        lv_obj_set_ext_click_area(start, 16);
     }
 
     multiplayer_status_timer = lv_timer_create(multiplayer_status_timer_cb, 500, NULL);
