@@ -390,13 +390,23 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
   ESP_PanelTouch *tp = (ESP_PanelTouch *)indev_drv->user_data;
   ESP_PanelTouchPoint point;
 
-  if (!touch_irq_pending && !tp_tracking) {
+  /* The CST816S interrupt is active-low. Do not rely exclusively on the
+     callback flag: after a few idle seconds the first wake/touch IRQ can
+     arrive before point data is ready (or the edge can be missed). If INT
+     is physically low, poll the controller anyway so the first tap is not
+     silently discarded. */
+  bool touch_int_active =
+      (TOUCH_PIN_NUM_INT >= 0) &&
+      (gpio_get_level((gpio_num_t)TOUCH_PIN_NUM_INT) == 0);
+
+  if (!touch_irq_pending && !tp_tracking && !touch_int_active) {
     data->state = LV_INDEV_STATE_RELEASED;
     return;
   }
 
-  /* Clear before the (multi-ms) I2C read so a touch interrupt arriving
-     mid-read is preserved for the next poll instead of being lost. */
+  /* Clear before the I2C read so an interrupt arriving mid-read survives.
+     If the controller is still asserting INT but point data is not ready
+     yet, the no-point path below re-arms another read. */
   touch_irq_pending = false;
   int read_touch_result = tp->readPoints(&point, 1);
   if (read_touch_result > 0)
@@ -433,6 +443,17 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
   }
   else
   {
+    /* A first read immediately after the wake IRQ can race the controller.
+       While INT is still asserted, retry on the next LVGL poll instead of
+       converting that first tap into a fake release. */
+    if (!tp_tracking &&
+        TOUCH_PIN_NUM_INT >= 0 &&
+        gpio_get_level((gpio_num_t)TOUCH_PIN_NUM_INT) == 0) {
+      touch_irq_pending = true;
+      data->state = LV_INDEV_STATE_RELEASED;
+      return;
+    }
+
     if (tp_tracking && touch_point_valid(tp_last.x, tp_last.y)) {
       check_swipe(tp_last.x, tp_last.y);
     }
