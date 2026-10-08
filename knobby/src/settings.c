@@ -789,10 +789,30 @@ static int setting_page_of[SETTINGS_ITEM_COUNT];
 void refresh_settings_pages_ui(void)
 {
     int i;
+    bool offline = nvs_is_offline_session_active() != 0;
+
     for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
         const setting_item_t *it = &settings_items[i];
         int v;
-        if (setting_btns[i] == NULL || it->get == NULL) continue;
+
+        if (setting_btns[i] == NULL)
+            continue;
+
+        /* Offline never has commander art. Remove ART-related choices from
+           the in-game settings entirely instead of presenting options that
+           cannot apply. Playgroup settings remain untouched. */
+        if (offline &&
+            (strcmp(it->id, "color-mode") == 0 ||
+             strcmp(it->id, "cmd-marker") == 0)) {
+            lv_obj_add_flag(setting_btns[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+
+        lv_obj_clear_flag(setting_btns[i], LV_OBJ_FLAG_HIDDEN);
+
+        if (it->get == NULL)
+            continue;
+
         v = it->get();
         lv_label_set_text(setting_lbls[i], it->label(v));
         set_btn_color(setting_btns[i], it->color ? it->color(v) : 0x1A1A2E);
@@ -803,6 +823,11 @@ static void event_setting_item(lv_event_t *e)
 {
     const setting_item_t *it = lv_event_get_user_data(e);
     if (it == NULL) return;
+
+    if (nvs_is_offline_session_active() &&
+        (strcmp(it->id, "color-mode") == 0 ||
+         strcmp(it->id, "cmd-marker") == 0))
+        return;
     if (it->navigate != NULL) {
         it->navigate();
         return;
