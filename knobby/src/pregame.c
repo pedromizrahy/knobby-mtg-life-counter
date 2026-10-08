@@ -862,11 +862,7 @@ static void event_playgroup_select(lv_event_t *e)
         return;
     }
 
-    if (member_count < pregame_player_count) {
-        if (playgroup_meta_label != NULL)
-            lv_label_set_text(playgroup_meta_label, "Not enough members for these seats");
-        return;
-    }
+    /* Remaining seats may be filled by virtual guests. */
 
     playgroup_roster_active = true;
     clear_selected_player_art();
@@ -907,6 +903,7 @@ static void event_roster_member_cycle(lv_event_t *e)
             selected_commander_id[seat] = 0;
             selected_deck_name[seat][0] = '\0';
             selected_commander_name[seat][0] = '\0';
+            refresh_playgroup_display_names();
             refresh_roster();
             return;
         }
@@ -1280,6 +1277,14 @@ static void event_member_select(lv_event_t *e)
     selected_deck_name[member_picker_seat][0] = '\0';
     selected_commander_name[member_picker_seat][0] = '\0';
     refresh_playgroup_display_names();
+
+    if (seat_is_guest(member_picker_seat) && mapping_offline_game) {
+        if (member_status_label != NULL)
+            lv_label_set_text(member_status_label, "Choose a member to map saved game");
+        selected_member_set[member_picker_seat] = false;
+        refresh_member_picker();
+        return;
+    }
 
     if (seat_is_guest(member_picker_seat)) {
         printf("[Playgroup] P%d selected %s (no account/deck)\n",
