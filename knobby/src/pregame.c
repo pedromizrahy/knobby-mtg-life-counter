@@ -1680,11 +1680,11 @@ static void refresh_roster(void)
             lv_obj_set_style_text_align(roster_labels[i], LV_TEXT_ALIGN_CENTER, 0);
             lv_obj_set_style_text_font(roster_labels[i], font, 0);
 
-            if (pregame_player_count <= 4 && roster_deck_labels[i] != NULL) {
-                /* Review cards are intentionally two fixed single-line rows:
-                   player on top, deck/commander below. A long deck name must
-                   ellipsize instead of growing to a second line and colliding
-                   with the next player's card. */
+            if (playgroup_roster_active &&
+                pregame_player_count <= 4 &&
+                roster_deck_labels[i] != NULL) {
+                /* Playgroup review cards keep two fixed single-line rows:
+                   player on top, deck/commander below. */
                 lv_obj_set_size(roster_deck_labels[i], button_w - 34, 18);
                 lv_label_set_long_mode(roster_deck_labels[i], LV_LABEL_LONG_DOT);
                 lv_obj_set_style_text_align(roster_deck_labels[i], LV_TEXT_ALIGN_CENTER, 0);
@@ -1694,6 +1694,8 @@ static void refresh_roster(void)
                 lv_obj_align(roster_labels[i], LV_ALIGN_TOP_MID, 0, 4);
                 lv_obj_align(roster_deck_labels[i], LV_ALIGN_BOTTOM_MID, 0, -3);
             } else {
+                /* Offline/local cards have no second row, so center the
+                   player text vertically in the button. */
                 lv_obj_center(roster_labels[i]);
             }
             lv_obj_set_size(btn, button_w, button_h);
@@ -2202,8 +2204,8 @@ void build_pregame_screens(void)
         lv_obj_t *title = lv_label_create(screen_pregame_mode);
         lv_label_set_text(title, "HOW ARE YOU PLAYING?");
         lv_obj_set_style_text_color(title, lv_color_white(), 0);
-        lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
-        lv_obj_set_width(title, 300);
+        lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+        lv_obj_set_width(title, 320);
         lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 38);
 
@@ -2228,7 +2230,9 @@ void build_pregame_screens(void)
             lv_obj_align(logo, LV_ALIGN_LEFT_MID, 18, -7);
 
             lv_obj_t *sub = lv_label_create(mode_playgroup_button);
-            lv_label_set_text(sub, "Players, decks & game sync");
+            lv_label_set_text(sub, "Sync with Playgroup");
+            lv_obj_set_width(sub, 170);
+            lv_obj_set_style_text_align(sub, LV_TEXT_ALIGN_CENTER, 0);
             lv_obj_set_style_text_color(sub, lv_color_hex(0x8FA2AE), 0);
             lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
             lv_obj_align(sub, LV_ALIGN_CENTER, 18, 15);
@@ -2244,7 +2248,9 @@ void build_pregame_screens(void)
             lv_obj_align(label, LV_ALIGN_CENTER, 0, -7);
 
             lv_obj_t *sub = lv_label_create(play_offline_button);
-            lv_label_set_text(sub, "Play now, map players later");
+            lv_label_set_text(sub, "Play now, sync later");
+            lv_obj_set_width(sub, 190);
+            lv_obj_set_style_text_align(sub, LV_TEXT_ALIGN_CENTER, 0);
             lv_obj_set_style_text_color(sub, lv_color_hex(0x8FA2AE), 0);
             lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
             lv_obj_align(sub, LV_ALIGN_CENTER, 0, 15);
