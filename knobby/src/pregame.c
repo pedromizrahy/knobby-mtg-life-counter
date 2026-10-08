@@ -38,8 +38,12 @@ static lv_timer_t *multiplayer_status_timer = NULL;
 static lv_obj_t *player_count_label = NULL;
 static lv_obj_t *players_status_label = NULL;
 static lv_obj_t *play_offline_button = NULL;
+static lv_obj_t *pending_map_button = NULL;
+static lv_obj_t *roster_continue_button = NULL;
 static int playgroup_connect_failures = 0;
 static bool offline_playgroup_mode = false;
+static bool mapping_offline_game = false;
+static pg_pending_identity_info_t mapping_identity = {0};
 static lv_obj_t *playgroup_name_label = NULL;
 static lv_obj_t *playgroup_meta_label = NULL;
 static int selected_playgroup_index = 0;
@@ -401,7 +405,11 @@ static void event_local_play(lv_event_t *e)
     playgroup_end_session();
     playgroup_roster_active = false;
     offline_playgroup_mode = false;
+    mapping_offline_game = false;
+    memset(&mapping_identity, 0, sizeof(mapping_identity));
     playgroup_connect_failures = 0;
+    if (!mapping_offline_game && roster_continue_button != NULL)
+        lv_label_set_text(lv_obj_get_child(roster_continue_button, 0), "MULLIGANS");
     if (play_offline_button != NULL)
         lv_obj_add_flag(play_offline_button, LV_OBJ_FLAG_HIDDEN);
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
@@ -542,6 +550,15 @@ static void note_playgroup_connection_failure(const char *message)
 {
     playgroup_connect_failures++;
 
+    if (mapping_offline_game) {
+        if (players_status_label != NULL)
+            lv_label_set_text(players_status_label,
+                              "Need Wi-Fi to map this saved game");
+        if (play_offline_button != NULL)
+            lv_obj_add_flag(play_offline_button, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
     if (players_status_label != NULL) {
         if (playgroup_connect_failures >= 2)
             lv_label_set_text(players_status_label,
@@ -561,6 +578,13 @@ static void event_choose_players(lv_event_t *e)
     offline_playgroup_mode = false;
 
     if (!playgroup_credentials_ready()) {
+        if (mapping_offline_game) {
+            if (players_status_label != NULL)
+                lv_label_set_text(players_status_label,
+                                  "Playgroup API key required to map game");
+            return;
+        }
+
         /* No API credentials means this is plain Local Play, not a
            recoverable Playgroup-offline session. */
         open_local_roster();
@@ -600,6 +624,51 @@ static void event_choose_players(lv_event_t *e)
     selected_playgroup_index = 0;
     refresh_playgroup_picker();
     lv_scr_load(screen_pregame_playgroup);
+}
+
+static void event_map_offline_game(lv_event_t *e)
+{
+    (void)e;
+
+    memset(&mapping_identity, 0, sizeof(mapping_identity));
+    if (!playgroup_pending_get_first_identity_pending(&mapping_identity)) {
+        if (pending_map_button != NULL)
+            lv_obj_add_flag(pending_map_button, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    mapping_offline_game = true;
+    offline_playgroup_mode = false;
+    playgroup_connect_failures = 0;
+    pregame_player_count = mapping_identity.player_count;
+    refresh_player_count_picker();
+
+    for (int i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
+        selected_member_set[i] = false;
+        selected_member_index[i] = 0;
+        selected_deck_id[i] = 0;
+        selected_commander_id[i] = 0;
+        selected_deck_name[i][0] = '\0';
+        selected_commander_name[i][0] = '\0';
+
+        if (i < mapping_identity.player_count &&
+            mapping_identity.player_names[i][0] != '\0')
+            snprintf(player_names[i], sizeof(player_names[i]), "%s",
+                     mapping_identity.player_names[i]);
+        else
+            snprintf(player_names[i], sizeof(player_names[i]), "P%d", i + 1);
+    }
+
+    if (roster_continue_button != NULL)
+        lv_label_set_text(lv_obj_get_child(roster_continue_button, 0), "MAP & SYNC");
+    if (play_offline_button != NULL)
+        lv_obj_add_flag(play_offline_button, LV_OBJ_FLAG_HIDDEN);
+    if (players_status_label != NULL)
+        lv_label_set_text(players_status_label, "Connecting to map saved game...");
+
+    lv_scr_load(screen_pregame_players);
+    lv_refr_now(NULL);
+    event_choose_players(NULL);
 }
 
 static void refresh_playgroup_picker(void)
@@ -1563,6 +1632,72 @@ static void event_roster_continue(lv_event_t *e)
     if (commander_prepare_active)
         return;
 
+    if (mapping_offline_game) {
+        const playgroup_summary_t *pg =
+            playgroup_cached_playgroup(selected_playgroup_index);
+        pg_pending_player_seed_t mapped[MAX_DISPLAY_PLAYERS] = {0};
+        int synced;
+
+        if (pg == NULL || pg->id <= 0)
+            return;
+
+        for (i = 0; i < pregame_player_count; i++) {
+            const playgroup_member_t *member;
+
+            if (!selected_member_set[i] || selected_deck_id[i] <= 0) {
+                if (players_status_label != NULL)
+                    lv_label_set_text(players_status_label,
+                                      "Choose a player and deck for every seat");
+                return;
+            }
+
+            member = playgroup_cached_member(selected_member_index[i]);
+            if (member == NULL || member->user_id <= 0)
+                return;
+
+            mapped[i].user_id = member->user_id;
+            mapped[i].deck_id = selected_deck_id[i];
+            mapped[i].commander_id = selected_commander_id[i];
+            snprintf(mapped[i].name, sizeof(mapped[i].name),
+                     "%s", player_names[i]);
+            snprintf(mapped[i].deck_name, sizeof(mapped[i].deck_name),
+                     "%s", selected_deck_name[i]);
+            snprintf(mapped[i].commander_name, sizeof(mapped[i].commander_name),
+                     "%s", selected_commander_name[i]);
+        }
+
+        if (!playgroup_pending_resolve_identity(
+                mapping_identity.session_id, pg->id, mapped,
+                (uint8_t)pregame_player_count)) {
+            if (players_status_label != NULL)
+                lv_label_set_text(players_status_label,
+                                  "Could not save player mapping");
+            return;
+        }
+
+        lv_scr_load(screen_pregame_players);
+        if (players_status_label != NULL)
+            lv_label_set_text(players_status_label, "Sending saved game...");
+        lv_refr_now(NULL);
+
+        synced = playgroup_pending_sync_queue();
+
+        if (players_status_label != NULL)
+            lv_label_set_text(players_status_label,
+                              synced > 0 ? "Offline game synced"
+                                         : "Game mapped - sync will retry later");
+        lv_refr_now(NULL);
+        vTaskDelay(pdMS_TO_TICKS(900));
+
+        mapping_offline_game = false;
+        memset(&mapping_identity, 0, sizeof(mapping_identity));
+        if (roster_continue_button != NULL)
+            lv_label_set_text(lv_obj_get_child(roster_continue_button, 0),
+                              "MULLIGANS");
+        open_pregame_home();
+        return;
+    }
+
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) mulligans[i] = 0;
     refresh_mulligans();
     lv_scr_load(screen_pregame_mulligans);
@@ -1744,6 +1879,14 @@ static void event_start_game(lv_event_t *e)
 void open_pregame_home(void)
 {
     playgroup_end_session();
+
+    if (pending_map_button != NULL) {
+        if (playgroup_pending_identity_pending_count() > 0)
+            lv_obj_clear_flag(pending_map_button, LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(pending_map_button, LV_OBJ_FLAG_HIDDEN);
+    }
+
     if (screen_pregame_home != NULL)
         lv_scr_load(screen_pregame_home);
 }
@@ -1756,7 +1899,14 @@ bool pregame_handle_back(lv_obj_t *screen)
     }
     if (screen == screen_pregame_players) {
         playgroup_end_session();
-        lv_scr_load(screen_pregame_home);
+        if (mapping_offline_game) {
+            mapping_offline_game = false;
+            memset(&mapping_identity, 0, sizeof(mapping_identity));
+            if (roster_continue_button != NULL)
+                lv_label_set_text(lv_obj_get_child(roster_continue_button, 0),
+                                  "MULLIGANS");
+        }
+        open_pregame_home();
         return true;
     }
     if (screen == screen_pregame_playgroup) {
@@ -1859,6 +2009,19 @@ void build_pregame_screens(void)
             lv_obj_set_style_text_font(settings_icon, &lv_font_montserrat_16, 0);
             lv_obj_center(settings_icon);
         }
+
+        pending_map_button = pregame_button(
+            screen_pregame_home, "SYNC OFFLINE GAME", 176, 30,
+            event_map_offline_game, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(pending_map_button, LV_ALIGN_BOTTOM_MID, 0, -4);
+        lv_obj_set_style_bg_opa(pending_map_button, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(pending_map_button, 0, 0);
+        lv_obj_set_style_text_color(lv_obj_get_child(pending_map_button, 0),
+                                    lv_color_hex(0xC98F6B), 0);
+        lv_obj_set_style_text_font(lv_obj_get_child(pending_map_button, 0),
+                                   &lv_font_montserrat_14, 0);
+        if (playgroup_pending_identity_pending_count() <= 0)
+            lv_obj_add_flag(pending_map_button, LV_OBJ_FLAG_HIDDEN);
     }
 
     screen_pregame_multiplayer = lv_obj_create(NULL);
@@ -2107,9 +2270,10 @@ void build_pregame_screens(void)
             lv_obj_add_flag(roster_deck_labels[i], LV_OBJ_FLAG_HIDDEN);
         }
 
-        lv_obj_t *next = pregame_button(screen_pregame_roster, "MULLIGANS", 142, 42,
-                                        event_roster_continue, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(next, LV_ALIGN_BOTTOM_MID, 0, -14);
+        roster_continue_button = pregame_button(
+            screen_pregame_roster, "MULLIGANS", 142, 42,
+            event_roster_continue, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(roster_continue_button, LV_ALIGN_BOTTOM_MID, 0, -14);
     }
 
     screen_pregame_deck = lv_obj_create(NULL);
