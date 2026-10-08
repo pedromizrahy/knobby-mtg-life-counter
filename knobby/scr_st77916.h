@@ -389,6 +389,8 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
 {
   ESP_PanelTouch *tp = (ESP_PanelTouch *)indev_drv->user_data;
   ESP_PanelTouchPoint point;
+  bool starting_gesture = !tp_tracking;
+  bool irq_flag_seen = touch_irq_pending;
 
   /* The CST816S interrupt is active-low. Do not rely exclusively on the
      callback flag: after a few idle seconds the first wake/touch IRQ can
@@ -411,6 +413,11 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
   int read_touch_result = tp->readPoints(&point, 1);
   if (read_touch_result > 0)
   {
+    if (starting_gesture) {
+      printf("[Touch] start x=%d y=%d irq=%d int=%d\n",
+             point.x, point.y, irq_flag_seen ? 1 : 0,
+             touch_int_active ? 1 : 0);
+    }
     if (!touch_point_valid(point.x, point.y)) {
       touch_reset_state();
       data->state = LV_INDEV_STATE_RELEASED;
@@ -418,7 +425,10 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     }
 
     bool was_dimmed = activity_kick();
-    if (was_dimmed || in_undim_grace()) {
+    bool grace_active = in_undim_grace();
+    if (was_dimmed || grace_active) {
+      printf("[Touch] swallowed wake/grace dimmed=%d grace=%d\n",
+             was_dimmed ? 1 : 0, grace_active ? 1 : 0);
       /* The tap that wakes (or just woke) a dimmed screen must not also
          click the widget under the finger; swallow the whole gesture for
          the grace window, matching the swipe/encoder suppression. */
@@ -449,9 +459,16 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     if (!tp_tracking &&
         TOUCH_PIN_NUM_INT >= 0 &&
         gpio_get_level((gpio_num_t)TOUCH_PIN_NUM_INT) == 0) {
+      printf("[Touch] no-point, retry while INT low irq=%d\n",
+             irq_flag_seen ? 1 : 0);
       touch_irq_pending = true;
       data->state = LV_INDEV_STATE_RELEASED;
       return;
+    }
+
+    if (starting_gesture && (irq_flag_seen || touch_int_active)) {
+      printf("[Touch] no-point released irq=%d int=%d\n",
+             irq_flag_seen ? 1 : 0, touch_int_active ? 1 : 0);
     }
 
     if (tp_tracking && touch_point_valid(tp_last.x, tp_last.y)) {
