@@ -1027,6 +1027,119 @@ void playgroup_pending_reconcile_outcome(void)
     }
 }
 
+bool playgroup_pending_get_first_identity_pending(pg_pending_identity_info_t *out)
+{
+    File root;
+    File file;
+    pg_pending_snapshot_t *snapshot = NULL;
+    bool found = false;
+
+    if (out == NULL || !pending_fs_ready())
+        return false;
+
+    memset(out, 0, sizeof(*out));
+    snapshot = (pg_pending_snapshot_t *)heap_caps_calloc(
+        1, sizeof(pg_pending_snapshot_t),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (snapshot == NULL)
+        return false;
+
+    root = SPIFFS.open("/");
+    if (!root || !root.isDirectory()) {
+        heap_caps_free(snapshot);
+        return false;
+    }
+
+    file = root.openNextFile();
+    while (file && !found) {
+        if (!file.isDirectory() && is_pending_filename(file.name())) {
+            char path[40];
+            if (file.name()[0] == '/')
+                strlcpy(path, file.name(), sizeof(path));
+            else
+                snprintf(path, sizeof(path), "/%s", file.name());
+
+            memset(snapshot, 0, sizeof(*snapshot));
+            if (snapshot_read_file(path, snapshot) &&
+                (snapshot->reserved & PG_PENDING_FLAG_IDENTITY_PENDING) != 0U) {
+                out->session_id = snapshot->session_id;
+                out->player_count = snapshot->player_count;
+                for (int i = 0; i < snapshot->player_count; i++)
+                    strlcpy(out->player_names[i], snapshot->players[i].name,
+                            sizeof(out->player_names[i]));
+                found = true;
+            }
+        }
+        file = root.openNextFile();
+    }
+
+    if (file) file.close();
+    root.close();
+    heap_caps_free(snapshot);
+    return found;
+}
+
+bool playgroup_pending_resolve_identity(uint32_t session_id, long playgroup_id,
+                                        const pg_pending_player_seed_t *players,
+                                        uint8_t player_count)
+{
+    char path[40];
+    pg_pending_snapshot_t *snapshot = NULL;
+    bool ok = false;
+
+    if (session_id == 0 || playgroup_id <= 0 || players == NULL ||
+        player_count < 2 || player_count > MAX_DISPLAY_PLAYERS ||
+        !pending_fs_ready())
+        return false;
+
+    snapshot_path(session_id, path, sizeof(path));
+    snapshot = (pg_pending_snapshot_t *)heap_caps_calloc(
+        1, sizeof(pg_pending_snapshot_t),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (snapshot == NULL)
+        return false;
+
+    if (!snapshot_read_file(path, snapshot) ||
+        snapshot->session_id != session_id ||
+        snapshot->player_count != player_count ||
+        (snapshot->reserved & PG_PENDING_FLAG_IDENTITY_PENDING) == 0U)
+        goto cleanup;
+
+    for (int i = 0; i < player_count; i++) {
+        if (players[i].user_id <= 0 || players[i].deck_id <= 0)
+            goto cleanup;
+    }
+
+    snapshot->playgroup_id = playgroup_id;
+    snapshot->remote_game_id = 0;
+    snapshot->sync_phase = PG_SYNC_PHASE_QUEUED;
+    snapshot->reserved &= (uint16_t)~PG_PENDING_FLAG_IDENTITY_PENDING;
+
+    for (int i = 0; i < player_count; i++) {
+        snapshot->players[i].user_id = players[i].user_id;
+        snapshot->players[i].deck_id = players[i].deck_id;
+        snapshot->players[i].commander_id = players[i].commander_id;
+        strlcpy(snapshot->players[i].name, players[i].name,
+                sizeof(snapshot->players[i].name));
+        strlcpy(snapshot->players[i].deck_name, players[i].deck_name,
+                sizeof(snapshot->players[i].deck_name));
+        strlcpy(snapshot->players[i].commander_name, players[i].commander_name,
+                sizeof(snapshot->players[i].commander_name));
+    }
+
+    ok = snapshot_write_file(path, snapshot);
+    if (ok) {
+        Serial.print("[Playgroup] Offline session ");
+        Serial.print((unsigned long)session_id, HEX);
+        Serial.print(" mapped to playgroup ");
+        Serial.println(playgroup_id);
+    }
+
+cleanup:
+    heap_caps_free(snapshot);
+    return ok;
+}
+
 int playgroup_pending_identity_pending_count(void)
 {
     int count = 0;
