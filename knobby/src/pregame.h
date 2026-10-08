@@ -6,6 +6,7 @@
 extern lv_obj_t *screen_pregame_home;
 extern lv_obj_t *screen_pregame_multiplayer;
 extern lv_obj_t *screen_pregame_players;
+extern lv_obj_t *screen_pregame_mode;
 extern lv_obj_t *screen_pregame_playgroup;
 extern lv_obj_t *screen_pregame_member;
 extern lv_obj_t *screen_pregame_roster;
