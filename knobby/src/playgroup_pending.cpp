@@ -15,6 +15,7 @@
 #define PG_PENDING_MAGIC 0x50475131UL
 #define PG_PENDING_VERSION 2U
 #define PG_PENDING_PATH_PREFIX "/pgq_"
+#define PG_PENDING_FLAG_IDENTITY_PENDING 0x0001U
 
 typedef struct {
     long user_id;
@@ -60,6 +61,7 @@ static uint32_t current_game_started_epoch = 0;
 static uint32_t current_game_started_tick_ms = 0;
 static int8_t current_starting_player = -1;
 static bool current_result_confirmed = false;
+static bool current_identity_pending = false;
 static bool current_went_infinite = false;
 static int8_t current_result_winner = -1;
 static char current_win_condition[32] = {0};
@@ -110,6 +112,11 @@ bool playgroup_pending_current_active(void)
 bool playgroup_pending_result_confirmed(void)
 {
     return current_result_confirmed;
+}
+
+bool playgroup_pending_current_identity_pending(void)
+{
+    return current_active && current_identity_pending;
 }
 
 int playgroup_pending_count(void)
@@ -592,7 +599,9 @@ static bool build_sync_body(const pg_pending_snapshot_t *snapshot,
 
 static bool snapshot_ready_for_sync(const pg_pending_snapshot_t *snapshot)
 {
-    if (snapshot == NULL || !snapshot->result_confirmed ||
+    if (snapshot == NULL ||
+        (snapshot->reserved & PG_PENDING_FLAG_IDENTITY_PENDING) != 0U ||
+        !snapshot->result_confirmed ||
         snapshot->playgroup_id <= 0 ||
         snapshot->winner < 0 || snapshot->winner >= snapshot->player_count ||
         snapshot->win_condition[0] == '\0')
@@ -789,7 +798,8 @@ static bool remove_current_snapshot(void)
 
 void playgroup_pending_begin_game(const pg_pending_seed_t *seed)
 {
-    if (seed == NULL || seed->playgroup_id <= 0 ||
+    if (seed == NULL ||
+        (!seed->identity_pending && seed->playgroup_id <= 0) ||
         seed->player_count < 2 || seed->player_count > MAX_DISPLAY_PLAYERS) {
         playgroup_pending_disable_current();
         return;
@@ -805,6 +815,7 @@ void playgroup_pending_begin_game(const pg_pending_seed_t *seed)
     }
     current_starting_player = -1;
     current_result_confirmed = false;
+    current_identity_pending = seed->identity_pending;
     current_went_infinite = false;
     current_result_winner = -1;
     current_win_condition[0] = '\0';
@@ -815,8 +826,12 @@ void playgroup_pending_begin_game(const pg_pending_seed_t *seed)
 
     Serial.print("[Playgroup] Tracking game session ");
     Serial.print((unsigned long)current_session_id, HEX);
-    Serial.print(" for playgroup ");
-    Serial.println(current_seed.playgroup_id);
+    if (current_identity_pending) {
+        Serial.println(" in offline Playgroup mode (identity mapping required)");
+    } else {
+        Serial.print(" for playgroup ");
+        Serial.println(current_seed.playgroup_id);
+    }
 }
 
 void playgroup_pending_disable_current(void)
@@ -828,6 +843,7 @@ void playgroup_pending_disable_current(void)
     current_game_started_tick_ms = 0;
     current_starting_player = -1;
     current_result_confirmed = false;
+    current_identity_pending = false;
     current_went_infinite = false;
     current_result_winner = -1;
     current_win_condition[0] = '\0';
@@ -869,6 +885,7 @@ static bool write_finished_snapshot(int winner)
 
     snapshot->magic = PG_PENDING_MAGIC;
     snapshot->version = PG_PENDING_VERSION;
+    snapshot->reserved = current_identity_pending ? PG_PENDING_FLAG_IDENTITY_PENDING : 0U;
     snapshot->session_id = current_session_id;
     snapshot->playgroup_id = current_seed.playgroup_id;
     snapshot->remote_game_id = 0;
@@ -1010,12 +1027,64 @@ void playgroup_pending_reconcile_outcome(void)
     }
 }
 
+int playgroup_pending_identity_pending_count(void)
+{
+    int count = 0;
+    File root;
+    File file;
+    pg_pending_snapshot_t *snapshot = NULL;
+
+    if (!pending_fs_ready())
+        return 0;
+
+    snapshot = (pg_pending_snapshot_t *)heap_caps_calloc(
+        1, sizeof(pg_pending_snapshot_t),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (snapshot == NULL)
+        return 0;
+
+    root = SPIFFS.open("/");
+    if (!root || !root.isDirectory()) {
+        heap_caps_free(snapshot);
+        return 0;
+    }
+
+    file = root.openNextFile();
+    while (file) {
+        if (!file.isDirectory() && is_pending_filename(file.name())) {
+            char path[40];
+            if (file.name()[0] == '/')
+                strlcpy(path, file.name(), sizeof(path));
+            else
+                snprintf(path, sizeof(path), "/%s", file.name());
+
+            memset(snapshot, 0, sizeof(*snapshot));
+            if (snapshot_read_file(path, snapshot) &&
+                (snapshot->reserved & PG_PENDING_FLAG_IDENTITY_PENDING) != 0U)
+                count++;
+        }
+        file = root.openNextFile();
+    }
+
+    if (file) file.close();
+    root.close();
+    heap_caps_free(snapshot);
+    return count;
+}
+
 void playgroup_pending_print_status(void)
 {
     int count = playgroup_pending_count();
 
     Serial.print("[Playgroup] Pending game snapshots: ");
     Serial.println(count);
+    {
+        int unresolved = playgroup_pending_identity_pending_count();
+        if (unresolved > 0) {
+            Serial.print("[Playgroup] Offline games awaiting player/deck mapping: ");
+            Serial.println(unresolved);
+        }
+    }
 
     if (current_active) {
         Serial.print("[Playgroup] Current tracked session: ");
