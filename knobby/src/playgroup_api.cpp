@@ -588,7 +588,12 @@ static bool wifi_connect_saved(void)
 
 bool playgroup_prepare_connection(void)
 {
-    return wifi_connect_saved();
+    uint32_t started = millis();
+    bool ok = wifi_connect_saved();
+    Serial.print("[Perf] PG prepare connection total=");
+    Serial.print((unsigned long)(millis() - started));
+    Serial.println(" ms");
+    return ok;
 }
 
 bool playgroup_network_active(void)
@@ -1178,6 +1183,7 @@ bool playgroup_refresh_playgroups(void)
     String response;
     char user_id[24];
     int status;
+    uint32_t perf_started = millis();
 
     cached_playgroup_count = 0;
     if (!wifi_connect_saved()) return false;
@@ -1202,6 +1208,9 @@ bool playgroup_refresh_playgroups(void)
         playgroup_pending_sync_queue();
     }
 
+    Serial.print("[Perf] PG refresh playgroups total=");
+    Serial.print((unsigned long)(millis() - perf_started));
+    Serial.println(" ms");
     return cached_playgroup_count > 0;
 }
 
