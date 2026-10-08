@@ -819,6 +819,8 @@ static void event_playgroup_select(lv_event_t *e)
     const playgroup_summary_t *pg;
     int member_count;
     int i;
+    uint32_t perf_started = lv_tick_get();
+    uint32_t perf_network_started;
     (void)e;
 
     pg = playgroup_cached_playgroup(selected_playgroup_index);
@@ -829,11 +831,15 @@ static void event_playgroup_select(lv_event_t *e)
         lv_refr_now(NULL);
     }
 
+    perf_network_started = lv_tick_get();
     if (!playgroup_refresh_members(pg->id)) {
         if (playgroup_meta_label != NULL)
             lv_label_set_text(playgroup_meta_label, "Connection failed - tap SELECT to retry");
         return;
     }
+
+    printf("[Perf] PG button SELECT members=%lu ms\n",
+           (unsigned long)(lv_tick_get() - perf_network_started));
 
     member_count = playgroup_cached_member_count();
     if (member_count <= 0) {
@@ -863,6 +869,8 @@ static void event_playgroup_select(lv_event_t *e)
     member_picker_index = 0;
     refresh_member_picker();
     lv_scr_load(screen_pregame_member);
+    printf("[Perf] PG button SELECT total=%lu ms\n",
+           (unsigned long)(lv_tick_get() - perf_started));
 }
 
 static void event_roster_member_cycle(lv_event_t *e)
@@ -1068,6 +1076,7 @@ static bool deck_picker_on_more(void)
 static void commander_prepare_worker(void *param)
 {
     int count = initial_deck_count();
+    uint32_t perf_started = millis();
     (void)param;
 
     commander_prepare_total = count;
@@ -1128,6 +1137,9 @@ static void commander_prepare_worker(void *param)
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 
+    printf("[Perf] PG commander prepare total=%lu ms decks=%d failures=%d\n",
+           (unsigned long)(millis() - perf_started),
+           count, (int)commander_prepare_failures);
     commander_prepare_done = true;
     commander_prepare_active = false;
     vTaskDelete(NULL);
@@ -1227,6 +1239,8 @@ static void event_member_select(lv_event_t *e)
 {
     const playgroup_member_t *member;
     char title[64];
+    uint32_t perf_started = lv_tick_get();
+    uint32_t perf_network_started;
     (void)e;
 
     if (commander_prepare_active)
@@ -1262,11 +1276,16 @@ static void event_member_select(lv_event_t *e)
     deck_picker_show_all = false;
     clear_decoded_art_cache();
 
+    perf_network_started = lv_tick_get();
     if (!playgroup_refresh_decks(member->user_id)) {
         if (member_status_label != NULL)
             lv_label_set_text(member_status_label, "Deck load failed - tap SELECT to retry");
         return;
     }
+
+    printf("[Perf] PG SELECT PLAYER decks=%lu ms user=%ld\n",
+           (unsigned long)(lv_tick_get() - perf_network_started),
+           member->user_id);
 
     if (playgroup_cached_deck_count() <= 0) {
         if (member_status_label != NULL)
@@ -1284,6 +1303,8 @@ static void event_member_select(lv_event_t *e)
        so watchdogs and input continue running. The picker opens only after
        the batch is complete; browsing itself never performs network I/O. */
     start_commander_prepare(false);
+    printf("[Perf] PG SELECT PLAYER callback=%lu ms (art continues async)\n",
+           (unsigned long)(lv_tick_get() - perf_started));
 }
 
 static void clear_deck_art(void)
@@ -1499,6 +1520,8 @@ static void event_deck_adjust(lv_event_t *e)
 static void event_roster_open_decks(lv_event_t *e)
 {
     int seat = (int)(intptr_t)lv_event_get_user_data(e);
+    uint32_t perf_started = lv_tick_get();
+    uint32_t perf_network_started;
 
     if (commander_prepare_active)
         return;
@@ -1521,6 +1544,7 @@ static void event_roster_open_decks(lv_event_t *e)
         lv_label_set_text(deck_title_label, title);
     }
 
+    perf_network_started = lv_tick_get();
     if (!playgroup_refresh_decks(member->user_id)) {
         if (deck_name_label != NULL) lv_label_set_text(deck_name_label, "Could not load decks");
         if (deck_commander_label != NULL) lv_label_set_text(deck_commander_label, "");
@@ -1530,8 +1554,13 @@ static void event_roster_open_decks(lv_event_t *e)
         return;
     }
 
+    printf("[Perf] PG roster decks network=%lu ms seat=%d\n",
+           (unsigned long)(lv_tick_get() - perf_network_started), seat + 1);
+
     /* Same non-blocking preparation path used by normal player setup. */
     start_commander_prepare(true);
+    printf("[Perf] PG roster decks callback=%lu ms\n",
+           (unsigned long)(lv_tick_get() - perf_started));
 }
 
 static void event_deck_select(lv_event_t *e)
