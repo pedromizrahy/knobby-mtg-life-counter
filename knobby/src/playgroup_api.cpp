@@ -687,6 +687,16 @@ static bool playgroup_https_get(const String &path, String &response, int &statu
 
     api_http_configure_once();
 
+    if (!api_tls.connected()) {
+        IPAddress resolved;
+        uint32_t dns_started = millis();
+        int dns_ok = WiFi.hostByName(PG_API_HOST, resolved);
+        Serial.print("[Perf] PG first DNS=");
+        Serial.print((unsigned long)(millis() - dns_started));
+        Serial.print(" ms ok=");
+        Serial.println(dns_ok == 1 ? 1 : 0);
+    }
+
     url.reserve(strlen(PG_API_BASE) + path.length() + 1);
     url = PG_API_BASE;
     url += path;
