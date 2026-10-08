@@ -497,7 +497,14 @@ static void refresh_player_count_picker(void)
 
 void pregame_change_player_count(int delta)
 {
-    int next = pregame_player_count + delta;
+    int next;
+
+    /* A saved offline game has a fixed seat count. Identity mapping must
+       preserve those seat indexes because every logged event references them. */
+    if (mapping_offline_game)
+        return;
+
+    next = pregame_player_count + delta;
 
     if (next < 1) next = 1;
     if (next > MAX_DISPLAY_PLAYERS) next = MAX_DISPLAY_PLAYERS;
