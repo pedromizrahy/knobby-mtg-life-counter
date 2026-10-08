@@ -1076,7 +1076,7 @@ static bool deck_picker_on_more(void)
 static void commander_prepare_worker(void *param)
 {
     int count = initial_deck_count();
-    uint32_t perf_started = millis();
+    uint32_t perf_started = lv_tick_get();
     (void)param;
 
     commander_prepare_total = count;
@@ -1138,7 +1138,7 @@ static void commander_prepare_worker(void *param)
     }
 
     printf("[Perf] PG commander prepare total=%lu ms decks=%d failures=%d\n",
-           (unsigned long)(millis() - perf_started),
+           (unsigned long)(lv_tick_get() - perf_started),
            count, (int)commander_prepare_failures);
     commander_prepare_done = true;
     commander_prepare_active = false;
