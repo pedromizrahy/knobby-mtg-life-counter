@@ -717,11 +717,11 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
         } else {
             vib = LIFE_VIB_MID;
         }
-        if (nvs_get_color_mode() == COLOR_MODE_ART) {
-            /* Commander art is the color language in ART mode. Keep the
-               substrate neutral so image opacity never tints a slice with
-               that player's assigned color. Turn ownership is expressed only
-               by neutral light/dark art exposure. */
+        if (nvs_get_color_mode() == COLOR_MODE_ART &&
+            pregame_get_player_commander_art(i) != NULL) {
+            /* Keep real commander artwork neutral in ART mode. A guest (or
+               any player without art) must instead illuminate in their
+               assigned player color, including while taking a turn. */
             bg_color = lv_color_hex(0x080A0D);
             text_color = lv_color_white();
         } else {
