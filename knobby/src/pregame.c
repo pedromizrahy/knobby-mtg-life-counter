@@ -2288,7 +2288,7 @@ void build_pregame_screens(void)
             lv_obj_align(label, LV_ALIGN_CENTER, 18, -7);
 
             lv_obj_t *logo = playgroup_logo_create(mode_playgroup_button);
-            lv_obj_align(logo, LV_ALIGN_LEFT_MID, 18, -7);
+            lv_obj_align(logo, LV_ALIGN_LEFT_MID, 18, 0);
 
             lv_obj_t *sub = lv_label_create(mode_playgroup_button);
             lv_label_set_text(sub, "Sync with Playgroup");
