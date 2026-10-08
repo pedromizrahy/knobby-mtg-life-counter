@@ -21,6 +21,7 @@ extern void back_to_main(void);
 lv_obj_t *screen_pregame_home = NULL;
 lv_obj_t *screen_pregame_multiplayer = NULL;
 lv_obj_t *screen_pregame_players = NULL;
+lv_obj_t *screen_pregame_mode = NULL;
 lv_obj_t *screen_pregame_playgroup = NULL;
 lv_obj_t *screen_pregame_member = NULL;
 lv_obj_t *screen_pregame_roster = NULL;
@@ -37,6 +38,7 @@ static lv_obj_t *multiplayer_status_label = NULL;
 static lv_timer_t *multiplayer_status_timer = NULL;
 static lv_obj_t *player_count_label = NULL;
 static lv_obj_t *players_status_label = NULL;
+static lv_obj_t *mode_playgroup_button = NULL;
 static lv_obj_t *play_offline_button = NULL;
 static lv_obj_t *pending_map_button = NULL;
 static lv_obj_t *roster_continue_button = NULL;
@@ -352,6 +354,58 @@ static void refresh_playgroup_display_names(void)
 static bool member_index_used_by_other_seat(int member_index, int current_seat);
 static int first_eligible_member_index(int current_seat);
 
+static lv_obj_t *playgroup_logo_create(lv_obj_t *parent)
+{
+    const lv_color_t mint = lv_color_hex(0x2ED6B6);
+    lv_obj_t *root = lv_obj_create(parent);
+    lv_obj_remove_style_all(root);
+    lv_obj_set_size(root, 34, 34);
+    lv_obj_clear_flag(root, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* Crisp vector-style reconstruction of Playgroup's official app icon:
+       central disc, four corner nodes, and four curved orbital arms. */
+    lv_obj_t *center = lv_obj_create(root);
+    lv_obj_remove_style_all(center);
+    lv_obj_set_size(center, 18, 18);
+    lv_obj_set_style_radius(center, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(center, mint, 0);
+    lv_obj_set_style_bg_opa(center, LV_OPA_COVER, 0);
+    lv_obj_center(center);
+
+    static const lv_coord_t node_xy[4][2] = {
+        {1, 1}, {26, 1}, {1, 26}, {26, 26}
+    };
+    for (int i = 0; i < 4; i++) {
+        lv_obj_t *node = lv_obj_create(root);
+        lv_obj_remove_style_all(node);
+        lv_obj_set_size(node, 7, 7);
+        lv_obj_set_style_radius(node, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(node, mint, 0);
+        lv_obj_set_style_bg_opa(node, LV_OPA_COVER, 0);
+        lv_obj_set_pos(node, node_xy[i][0], node_xy[i][1]);
+    }
+
+    static const uint16_t starts[4] = {210, 300, 30, 120};
+    for (int i = 0; i < 4; i++) {
+        lv_obj_t *arc = lv_arc_create(root);
+        lv_obj_set_size(arc, 28, 28);
+        lv_obj_center(arc);
+        lv_arc_set_bg_angles(arc, starts[i], starts[i] + 38);
+        lv_arc_set_angles(arc, starts[i], starts[i] + 38);
+        lv_obj_set_style_arc_width(arc, 5, LV_PART_MAIN);
+        lv_obj_set_style_arc_color(arc, mint, LV_PART_MAIN);
+        lv_obj_set_style_arc_opa(arc, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_arc_width(arc, 5, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_color(arc, mint, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_opa(arc, LV_OPA_COVER, LV_PART_INDICATOR);
+        lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
+        lv_obj_clear_flag(arc, LV_OBJ_FLAG_CLICKABLE);
+    }
+
+    return root;
+}
+
 static lv_obj_t *pregame_button(lv_obj_t *parent, const char *text,
                                 lv_coord_t w, lv_coord_t h,
                                 lv_event_cb_t cb, lv_event_code_t event,
@@ -408,6 +462,11 @@ static void event_local_play(lv_event_t *e)
     mapping_offline_game = false;
     memset(&mapping_identity, 0, sizeof(mapping_identity));
     playgroup_connect_failures = 0;
+    if (mode_playgroup_button != NULL) {
+        lv_obj_t *label = lv_obj_get_child(mode_playgroup_button, 0);
+        if (label != NULL)
+            lv_label_set_text(label, "PLAYGROUP");
+    }
     if (!mapping_offline_game && roster_continue_button != NULL)
         lv_label_set_text(lv_obj_get_child(roster_continue_button, 0), "MULLIGANS");
     if (play_offline_button != NULL)
@@ -530,6 +589,20 @@ static void open_local_roster(void)
     lv_scr_load(screen_pregame_roster);
 }
 
+static void event_choose_mode(lv_event_t *e)
+{
+    (void)e;
+
+    playgroup_connect_failures = 0;
+    offline_playgroup_mode = false;
+    if (players_status_label != NULL)
+        lv_label_set_text(players_status_label, "");
+    if (play_offline_button != NULL)
+        lv_obj_clear_flag(play_offline_button, LV_OBJ_FLAG_HIDDEN);
+
+    lv_scr_load(screen_pregame_mode);
+}
+
 static void event_play_offline(lv_event_t *e)
 {
     (void)e;
@@ -566,15 +639,18 @@ static void note_playgroup_connection_failure(const char *message)
         return;
     }
 
-    if (players_status_label != NULL) {
-        if (playgroup_connect_failures >= 2)
-            lv_label_set_text(players_status_label,
-                              "Still offline - retry or play offline");
-        else
-            lv_label_set_text(players_status_label, message);
+    if (players_status_label != NULL)
+        lv_label_set_text(players_status_label,
+                          message != NULL ? message : "Could not connect");
+
+    if (mode_playgroup_button != NULL) {
+        lv_obj_t *label = lv_obj_get_child(mode_playgroup_button, 0);
+        if (label != NULL)
+            lv_label_set_text(label, "RETRY PLAYGROUP");
     }
 
-    if (play_offline_button != NULL && playgroup_connect_failures >= 2)
+    /* PLAY OFFLINE is always available from this screen. */
+    if (play_offline_button != NULL)
         lv_obj_clear_flag(play_offline_button, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -1916,8 +1992,13 @@ bool pregame_handle_back(lv_obj_t *screen)
         open_pregame_home();
         return true;
     }
-    if (screen == screen_pregame_playgroup) {
+    if (screen == screen_pregame_mode) {
         lv_scr_load(screen_pregame_players);
+        return true;
+    }
+    if (screen == screen_pregame_playgroup) {
+        lv_scr_load(mapping_offline_game ? screen_pregame_players
+                                         : screen_pregame_mode);
         return true;
     }
     if (screen == screen_pregame_member) {
@@ -2106,29 +2187,76 @@ void build_pregame_screens(void)
         lv_obj_set_style_text_font(lv_obj_get_child(plus, 0),
                                    &lv_font_montserrat_32, 0);
 
-        players_status_label = lv_label_create(screen_pregame_players);
+        select = pregame_button(screen_pregame_players, "CONTINUE", 150, 44,
+                                event_choose_mode, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(select, LV_ALIGN_CENTER, 0, 82);
+    }
+
+    screen_pregame_mode = lv_obj_create(NULL);
+    lv_obj_set_size(screen_pregame_mode, 360, 360);
+    lv_obj_set_style_bg_color(screen_pregame_mode, lv_color_black(), 0);
+    lv_obj_set_style_border_width(screen_pregame_mode, 0, 0);
+    lv_obj_clear_flag(screen_pregame_mode, LV_OBJ_FLAG_SCROLLABLE);
+
+    {
+        lv_obj_t *title = lv_label_create(screen_pregame_mode);
+        lv_label_set_text(title, "HOW ARE YOU PLAYING?");
+        lv_obj_set_style_text_color(title, lv_color_white(), 0);
+        lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
+        lv_obj_set_width(title, 300);
+        lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 38);
+
+        lv_obj_t *hint = lv_label_create(screen_pregame_mode);
+        lv_label_set_text(hint, "Choose how this game will be tracked");
+        lv_obj_set_style_text_color(hint, lv_color_hex(0x778391), 0);
+        lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+        lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 72);
+
+        mode_playgroup_button = pregame_button(
+            screen_pregame_mode, "PLAYGROUP", 232, 62,
+            event_choose_players, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(mode_playgroup_button, LV_ALIGN_CENTER, 0, -36);
+        lv_obj_set_style_border_color(mode_playgroup_button,
+                                      lv_color_hex(0x2ED6B6), 0);
+
+        {
+            lv_obj_t *label = lv_obj_get_child(mode_playgroup_button, 0);
+            lv_obj_align(label, LV_ALIGN_CENTER, 18, -7);
+
+            lv_obj_t *logo = playgroup_logo_create(mode_playgroup_button);
+            lv_obj_align(logo, LV_ALIGN_LEFT_MID, 18, -7);
+
+            lv_obj_t *sub = lv_label_create(mode_playgroup_button);
+            lv_label_set_text(sub, "Players, decks & game sync");
+            lv_obj_set_style_text_color(sub, lv_color_hex(0x8FA2AE), 0);
+            lv_obj_set_style_text_font(sub, &lv_font_montserrat_12, 0);
+            lv_obj_align(sub, LV_ALIGN_CENTER, 18, 15);
+        }
+
+        play_offline_button = pregame_button(
+            screen_pregame_mode, "PLAY OFFLINE", 232, 62,
+            event_play_offline, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(play_offline_button, LV_ALIGN_CENTER, 0, 42);
+
+        {
+            lv_obj_t *label = lv_obj_get_child(play_offline_button, 0);
+            lv_obj_align(label, LV_ALIGN_CENTER, 0, -7);
+
+            lv_obj_t *sub = lv_label_create(play_offline_button);
+            lv_label_set_text(sub, "Play now, map players later");
+            lv_obj_set_style_text_color(sub, lv_color_hex(0x8FA2AE), 0);
+            lv_obj_set_style_text_font(sub, &lv_font_montserrat_12, 0);
+            lv_obj_align(sub, LV_ALIGN_CENTER, 0, 15);
+        }
+
+        players_status_label = lv_label_create(screen_pregame_mode);
         lv_label_set_text(players_status_label, "");
-        lv_obj_set_width(players_status_label, 280);
+        lv_obj_set_width(players_status_label, 290);
         lv_obj_set_style_text_align(players_status_label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_color(players_status_label, lv_color_hex(0xC98F6B), 0);
         lv_obj_set_style_text_font(players_status_label, &lv_font_montserrat_14, 0);
-        lv_obj_align(players_status_label, LV_ALIGN_CENTER, 0, 47);
-
-        select = pregame_button(screen_pregame_players, "SELECT", 150, 44,
-                                event_choose_players, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(select, LV_ALIGN_CENTER, 0, 78);
-
-        play_offline_button = pregame_button(
-            screen_pregame_players, "PLAY OFFLINE", 150, 34,
-            event_play_offline, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(play_offline_button, LV_ALIGN_BOTTOM_MID, 0, -6);
-        lv_obj_set_style_bg_opa(play_offline_button, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(play_offline_button, 0, 0);
-        lv_obj_set_style_text_color(lv_obj_get_child(play_offline_button, 0),
-                                    lv_color_hex(0xC98F6B), 0);
-        lv_obj_set_style_text_font(lv_obj_get_child(play_offline_button, 0),
-                                   &lv_font_montserrat_14, 0);
-        lv_obj_add_flag(play_offline_button, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_align(players_status_label, LV_ALIGN_BOTTOM_MID, 0, -24);
     }
 
     screen_pregame_playgroup = lv_obj_create(NULL);
