@@ -25,6 +25,7 @@ typedef struct {
 typedef struct {
     long playgroup_id;
     uint8_t player_count;
+    bool identity_pending;
     pg_pending_player_seed_t players[MAX_DISPLAY_PLAYERS];
 } pg_pending_seed_t;
 
@@ -56,6 +57,8 @@ int playgroup_pending_sync_queue(void);
 /* Lightweight UI state; no storage/network side effects. */
 bool playgroup_pending_current_active(void);
 bool playgroup_pending_result_confirmed(void);
+bool playgroup_pending_current_identity_pending(void);
+int playgroup_pending_identity_pending_count(void);
 
 #ifdef __cplusplus
 }
