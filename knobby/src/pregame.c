@@ -2475,7 +2475,7 @@ void build_pregame_screens(void)
         roster_continue_button = pregame_button(
             screen_pregame_roster, "MULLIGANS", 142, 42,
             event_roster_continue, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(roster_continue_button, LV_ALIGN_BOTTOM_MID, 0, -14);
+        lv_obj_align(roster_continue_button, LV_ALIGN_BOTTOM_MID, 0, -20);
     }
 
     screen_pregame_deck = lv_obj_create(NULL);
@@ -2606,7 +2606,7 @@ void build_pregame_screens(void)
 
         lv_obj_t *start = pregame_button(screen_pregame_mulligans, "START GAME", 146, 42,
                                          event_start_game, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(start, LV_ALIGN_BOTTOM_MID, 0, -18);
+        lv_obj_align(start, LV_ALIGN_BOTTOM_MID, 0, -24);
     }
 
     multiplayer_status_timer = lv_timer_create(multiplayer_status_timer_cb, 500, NULL);
