@@ -29,6 +29,12 @@ typedef struct {
     pg_pending_player_seed_t players[MAX_DISPLAY_PLAYERS];
 } pg_pending_seed_t;
 
+typedef struct {
+    uint32_t session_id;
+    uint8_t player_count;
+    char player_names[MAX_DISPLAY_PLAYERS][16];
+} pg_pending_identity_info_t;
+
 /* Start tracking a Playgroup-backed game after the game state has been reset. */
 void playgroup_pending_begin_game(const pg_pending_seed_t *seed);
 
@@ -59,6 +65,10 @@ bool playgroup_pending_current_active(void);
 bool playgroup_pending_result_confirmed(void);
 bool playgroup_pending_current_identity_pending(void);
 int playgroup_pending_identity_pending_count(void);
+bool playgroup_pending_get_first_identity_pending(pg_pending_identity_info_t *out);
+bool playgroup_pending_resolve_identity(uint32_t session_id, long playgroup_id,
+                                        const pg_pending_player_seed_t *players,
+                                        uint8_t player_count);
 
 #ifdef __cplusplus
 }
