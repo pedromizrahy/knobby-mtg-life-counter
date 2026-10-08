@@ -749,7 +749,7 @@ static void event_map_offline_game(lv_event_t *e)
     if (players_status_label != NULL)
         lv_label_set_text(players_status_label, "Connecting to map saved game...");
 
-    lv_scr_load(screen_pregame_players);
+    lv_scr_load(screen_pregame_mode);
     lv_refr_now(NULL);
     event_choose_players(NULL);
 }
@@ -2230,7 +2230,7 @@ void build_pregame_screens(void)
             lv_obj_t *sub = lv_label_create(mode_playgroup_button);
             lv_label_set_text(sub, "Players, decks & game sync");
             lv_obj_set_style_text_color(sub, lv_color_hex(0x8FA2AE), 0);
-            lv_obj_set_style_text_font(sub, &lv_font_montserrat_12, 0);
+            lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
             lv_obj_align(sub, LV_ALIGN_CENTER, 18, 15);
         }
 
@@ -2246,7 +2246,7 @@ void build_pregame_screens(void)
             lv_obj_t *sub = lv_label_create(play_offline_button);
             lv_label_set_text(sub, "Play now, map players later");
             lv_obj_set_style_text_color(sub, lv_color_hex(0x8FA2AE), 0);
-            lv_obj_set_style_text_font(sub, &lv_font_montserrat_12, 0);
+            lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, 0);
             lv_obj_align(sub, LV_ALIGN_CENTER, 0, 15);
         }
 
