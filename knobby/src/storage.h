@@ -21,6 +21,8 @@ void nvs_set_color_mode(int value);
    appearance preference (e.g. Play Offline always uses player colors). */
 void nvs_set_color_mode_runtime_override(int value);
 void nvs_clear_color_mode_runtime_override(void);
+void nvs_set_offline_session_active(int active);
+int nvs_is_offline_session_active(void);
 int nvs_get_deselect_timeout(void);
 void nvs_set_deselect_timeout(int value);
 int nvs_get_orientation(void);
