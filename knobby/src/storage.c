@@ -9,6 +9,7 @@ static int cached_brightness = DEFAULT_BRIGHTNESS_PERCENT;
 static int cached_auto_dim = AUTO_DIM_OFF;
 static int cached_color_mode = 0;
 static int runtime_color_mode_override = -1;
+static int runtime_offline_session_active = 0;
 static int cached_deselect_timeout = 0; /* index: 0=never, 1=5s, 2=15s, 3=30s */
 static int cached_orientation = ORIENTATION_MODE_ABSOLUTE;
 static int cached_display_rotation = 0; /* physical rotation, degrees = value * 90 */
@@ -176,6 +177,16 @@ void nvs_set_color_mode_runtime_override(int value)
 void nvs_clear_color_mode_runtime_override(void)
 {
     runtime_color_mode_override = -1;
+}
+
+void nvs_set_offline_session_active(int active)
+{
+    runtime_offline_session_active = (active != 0) ? 1 : 0;
+}
+
+int nvs_is_offline_session_active(void)
+{
+    return runtime_offline_session_active;
 }
 
 int nvs_get_deselect_timeout(void)
