@@ -53,6 +53,13 @@ static int selected_member_index[MAX_DISPLAY_PLAYERS] = {0};
 static bool selected_member_set[MAX_DISPLAY_PLAYERS] = {false};
 static int member_picker_seat = 0;
 static int member_picker_index = 0;
+/* Guest is the virtual last picker item, index == current member count. */
+static bool seat_is_guest(int seat)
+{
+    return seat >= 0 && seat < MAX_DISPLAY_PLAYERS && selected_member_set[seat] &&
+           selected_member_index[seat] == playgroup_cached_member_count();
+}
+
 static lv_obj_t *member_title_label = NULL;
 static lv_obj_t *member_name_label = NULL;
 static lv_obj_t *member_position_label = NULL;
@@ -313,6 +320,13 @@ static void refresh_playgroup_display_names(void)
         if (!selected_member_set[i])
             continue;
 
+        if (seat_is_guest(i)) {
+            int guest_number = 1;
+            for (int j = 0; j < i; j++)
+                if (seat_is_guest(j)) guest_number++;
+            snprintf(first[i], sizeof(first[i]), "GUEST %d", guest_number);
+            continue;
+        }
         member = playgroup_cached_member(selected_member_index[i]);
         if (member == NULL)
             continue;
@@ -876,7 +890,7 @@ static void event_playgroup_select(lv_event_t *e)
 static void event_roster_member_cycle(lv_event_t *e)
 {
     int seat = (int)(intptr_t)lv_event_get_user_data(e);
-    int member_count = playgroup_cached_member_count();
+    int member_count = playgroup_cached_member_count() + 1;
     int candidate;
 
     if (!playgroup_roster_active || seat < 0 || seat >= pregame_player_count ||
@@ -901,6 +915,7 @@ static void event_roster_member_cycle(lv_event_t *e)
 
 static bool member_index_used_by_other_seat(int member_index, int current_seat)
 {
+    if (member_index == playgroup_cached_member_count()) return false;
     const playgroup_member_t *candidate = playgroup_cached_member(member_index);
 
     if (candidate == NULL)
@@ -922,7 +937,7 @@ static bool member_index_used_by_other_seat(int member_index, int current_seat)
 
 static int eligible_member_count(int current_seat)
 {
-    int count = playgroup_cached_member_count();
+    int count = playgroup_cached_member_count() + 1;
     int eligible = 0;
 
     for (int i = 0; i < count; i++) {
@@ -934,7 +949,7 @@ static int eligible_member_count(int current_seat)
 
 static int first_eligible_member_index(int current_seat)
 {
-    int count = playgroup_cached_member_count();
+    int count = playgroup_cached_member_count() + 1;
 
     for (int i = 0; i < count; i++) {
         if (!member_index_used_by_other_seat(i, current_seat))
@@ -945,7 +960,7 @@ static int first_eligible_member_index(int current_seat)
 
 static int member_eligible_position(int member_index, int current_seat)
 {
-    int count = playgroup_cached_member_count();
+    int count = playgroup_cached_member_count() + 1;
     int pos = 0;
 
     for (int i = 0; i < count; i++) {
@@ -961,7 +976,7 @@ static int member_eligible_position(int member_index, int current_seat)
 static void refresh_member_picker(void)
 {
     const playgroup_member_t *member;
-    int count = playgroup_cached_member_count();
+    int count = playgroup_cached_member_count() + 1;
     int eligible;
     int position;
     char title[32];
@@ -986,7 +1001,7 @@ static void refresh_member_picker(void)
     }
 
     member = playgroup_cached_member(member_picker_index);
-    if (member == NULL)
+    if (member == NULL && member_picker_index != playgroup_cached_member_count())
         return;
 
     eligible = eligible_member_count(member_picker_seat);
@@ -999,7 +1014,7 @@ static void refresh_member_picker(void)
     }
 
     if (member_name_label != NULL)
-        lv_label_set_text(member_name_label, member->username);
+        lv_label_set_text(member_name_label, member != NULL ? member->username : "GUEST");
 
     if (member_position_label != NULL) {
         snprintf(pos, sizeof(pos), "%d / %d", position, eligible);
@@ -1012,7 +1027,7 @@ static void refresh_member_picker(void)
 
 void pregame_change_member(int delta)
 {
-    int count = playgroup_cached_member_count();
+    int count = playgroup_cached_member_count() + 1;
 
     if (commander_prepare_active)
         return;
@@ -1250,7 +1265,7 @@ static void event_member_select(lv_event_t *e)
         return;
 
     member = playgroup_cached_member(member_picker_index);
-    if (member == NULL)
+    if (member == NULL && member_picker_index != playgroup_cached_member_count())
         return;
 
     if (member_index_used_by_other_seat(member_picker_index, member_picker_seat)) {
@@ -1265,6 +1280,20 @@ static void event_member_select(lv_event_t *e)
     selected_deck_name[member_picker_seat][0] = '\0';
     selected_commander_name[member_picker_seat][0] = '\0';
     refresh_playgroup_display_names();
+
+    if (seat_is_guest(member_picker_seat)) {
+        printf("[Playgroup] P%d selected %s (no account/deck)\n",
+               member_picker_seat + 1, player_names[member_picker_seat]);
+        if (member_picker_seat + 1 < pregame_player_count) {
+            member_picker_seat++;
+            member_picker_index = first_eligible_member_index(member_picker_seat);
+            refresh_member_picker();
+        } else {
+            refresh_roster();
+            lv_scr_load(screen_pregame_roster);
+        }
+        return;
+    }
 
     if (member_status_label != NULL) {
         lv_label_set_text(member_status_label, "Loading decks...");
@@ -1531,6 +1560,7 @@ static void event_roster_open_decks(lv_event_t *e)
     if (!playgroup_roster_active || seat < 0 || seat >= pregame_player_count)
         return;
 
+    if (seat_is_guest(seat)) return;
     member = playgroup_cached_member(selected_member_index[seat]);
     if (member == NULL)
         return;
@@ -1693,9 +1723,15 @@ static void refresh_roster(void)
 
         if (i < pregame_player_count) {
             if (playgroup_roster_active && member_count > 0) {
-                const playgroup_member_t *member =
-                    playgroup_cached_member(selected_member_index[i] % member_count);
-                if (member != NULL) {
+                const playgroup_member_t *member = seat_is_guest(i)
+                    ? NULL : playgroup_cached_member(selected_member_index[i] % member_count);
+                if (seat_is_guest(i)) {
+                    snprintf(buf, sizeof(buf), "P%d  %s", i + 1, player_names[i]);
+                    if (roster_deck_labels[i] != NULL) {
+                        lv_label_set_text(roster_deck_labels[i], "Guest - no deck");
+                        lv_obj_clear_flag(roster_deck_labels[i], LV_OBJ_FLAG_HIDDEN);
+                    }
+                } else if (member != NULL) {
                     if (pregame_player_count <= 4) {
                         snprintf(buf, sizeof(buf), "P%d  %s", i + 1, player_names[i]);
                         if (roster_deck_labels[i] != NULL) {
@@ -1954,8 +1990,8 @@ static void event_start_game(lv_event_t *e)
             pending_seed.identity_pending = false;
 
             for (i = 0; i < pregame_player_count; i++) {
-                const playgroup_member_t *member =
-                    playgroup_cached_member(selected_member_index[i]);
+                const playgroup_member_t *member = seat_is_guest(i)
+                    ? NULL : playgroup_cached_member(selected_member_index[i]);
 
                 pending_seed.players[i].user_id =
                     (member != NULL) ? member->user_id : 0;
