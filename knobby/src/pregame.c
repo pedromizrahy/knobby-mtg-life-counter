@@ -1566,6 +1566,8 @@ static void event_roster_open_decks(lv_event_t *e)
 static void event_deck_select(lv_event_t *e)
 {
     const playgroup_deck_t *deck;
+    uint32_t perf_started = lv_tick_get();
+    uint32_t perf_copy_started;
     (void)e;
 
     if (deck_picker_seat < 0 || deck_picker_seat >= pregame_player_count)
@@ -1595,9 +1597,11 @@ static void event_deck_select(lv_event_t *e)
         deck_decoded_cache_entry_t *selected_art =
             find_decoded_art(deck->scryfall_id);
 
-        /* The picker only opens after batch preparation. Never perform
-           network I/O from SELECT DECK: a missing image is a cache/prep
-           failure, not a reason to block the UI and risk another watchdog. */
+        /* All top-deck commander images were already loaded, decoded and
+           persisted during the explicit 1/N preparation screen. SELECT must
+           only preserve the already-decoded chosen art in PSRAM; never touch
+           flash or network here. */
+        perf_copy_started = lv_tick_get();
         if (selected_art != NULL) {
             if (!set_selected_player_art(deck_picker_seat, selected_art)) {
                 printf("[Playgroup] Could not preserve selected commander art for P%d.\n",
@@ -1607,11 +1611,9 @@ static void event_deck_select(lv_event_t *e)
                        deck_picker_seat + 1);
             }
         }
-
-        /* Persist only the chosen deck after its compressed image is known
-           to be cached. */
-        if (deck->scryfall_id[0] != '\0')
-            playgroup_persist_cached_image(deck->scryfall_id);
+        printf("[Perf] PG SELECT DECK art-copy=%lu ms P%d\n",
+               (unsigned long)(lv_tick_get() - perf_copy_started),
+               deck_picker_seat + 1);
     }
 
     clear_deck_art();
@@ -1623,11 +1625,17 @@ static void event_deck_select(lv_event_t *e)
         member_picker_index = first_eligible_member_index(member_picker_seat);
         refresh_member_picker();
         lv_scr_load(screen_pregame_member);
+        printf("[Perf] PG SELECT DECK total=%lu ms P%d -> next player\n",
+               (unsigned long)(lv_tick_get() - perf_started),
+               deck_picker_seat + 1);
         return;
     }
 
     refresh_roster();
     lv_scr_load(screen_pregame_roster);
+    printf("[Perf] PG SELECT DECK total=%lu ms P%d -> roster\n",
+           (unsigned long)(lv_tick_get() - perf_started),
+           deck_picker_seat + 1);
 }
 
 static void refresh_roster(void)
