@@ -242,54 +242,6 @@ static deck_decoded_cache_entry_t *store_decoded_art(const char *scryfall_id,
     return &decoded_art_cache[slot];
 }
 
-static deck_decoded_cache_entry_t *ensure_selected_deck_art(
-    const playgroup_deck_t *deck)
-{
-    deck_decoded_cache_entry_t *decoded;
-    uint8_t *data = NULL;
-    uint8_t *pixels = NULL;
-    size_t data_size = 0;
-    uint16_t decoded_w = 0;
-    uint16_t decoded_h = 0;
-    uint32_t started = lv_tick_get();
-
-    if (deck == NULL || deck->scryfall_id[0] == '\0')
-        return NULL;
-
-    decoded = find_decoded_art(deck->scryfall_id);
-    if (decoded != NULL)
-        return decoded;
-
-    /* Only the deck the user actually selected is required for gameplay.
-       Prefer cache/flash; network is used only if this exact art is missing. */
-    if (!playgroup_download_deck_image(deck->art_crop_url,
-                                       deck->scryfall_id,
-                                       &data, &data_size)) {
-        printf("[Playgroup] Selected commander art unavailable for %s.\n",
-               deck->scryfall_id);
-        return NULL;
-    }
-
-    if (!commander_image_decode_rgb565(data, data_size,
-                                       &pixels, &decoded_w, &decoded_h)) {
-        playgroup_free_image(data);
-        printf("[Playgroup] Selected commander art decode failed.\n");
-        return NULL;
-    }
-    playgroup_free_image(data);
-
-    decoded = store_decoded_art(deck->scryfall_id, pixels,
-                                decoded_w, decoded_h);
-    if (decoded == NULL) {
-        commander_image_free_pixels(pixels);
-        return NULL;
-    }
-
-    printf("[Perf] PG selected commander art ready=%lu ms\n",
-           (unsigned long)(lv_tick_get() - started));
-    return decoded;
-}
-
 static void show_decoded_art(deck_decoded_cache_entry_t *entry)
 {
     uint32_t zoom_w;
@@ -1291,6 +1243,9 @@ static void event_member_select(lv_event_t *e)
     uint32_t perf_network_started;
     (void)e;
 
+    if (commander_prepare_active)
+        return;
+
     if (member_picker_seat < 0 || member_picker_seat >= pregame_player_count)
         return;
 
@@ -1344,15 +1299,11 @@ static void event_member_select(lv_event_t *e)
         lv_label_set_text(deck_title_label, title);
     }
 
-    /* Open immediately after the deck list arrives. Commander art is lazy:
-       only the visible deck is prepared, and SELECT guarantees the chosen
-       deck's art before leaving this picker. */
-    refresh_deck_picker(true);
-    clear_deck_art();
-    lv_scr_load(screen_pregame_deck);
-    schedule_deck_art();
-
-    printf("[Perf] PG SELECT PLAYER callback=%lu ms (picker opened immediately)\n",
+    /* Prepare in a low-priority worker. The LVGL/main task remains free,
+       so watchdogs and input continue running. The picker opens only after
+       the batch is complete; browsing itself never performs network I/O. */
+    start_commander_prepare(false);
+    printf("[Perf] PG SELECT PLAYER callback=%lu ms (art continues async)\n",
            (unsigned long)(lv_tick_get() - perf_started));
 }
 
@@ -1572,6 +1523,8 @@ static void event_roster_open_decks(lv_event_t *e)
     uint32_t perf_started = lv_tick_get();
     uint32_t perf_network_started;
 
+    if (commander_prepare_active)
+        return;
     const playgroup_member_t *member;
     char title[64];
 
@@ -1604,19 +1557,15 @@ static void event_roster_open_decks(lv_event_t *e)
     printf("[Perf] PG roster decks network=%lu ms seat=%d\n",
            (unsigned long)(lv_tick_get() - perf_network_started), seat + 1);
 
-    refresh_deck_picker(true);
-    clear_deck_art();
-    lv_scr_load(screen_pregame_deck);
-    schedule_deck_art();
-
-    printf("[Perf] PG roster decks callback=%lu ms (picker opened immediately)\n",
+    /* Same non-blocking preparation path used by normal player setup. */
+    start_commander_prepare(true);
+    printf("[Perf] PG roster decks callback=%lu ms\n",
            (unsigned long)(lv_tick_get() - perf_started));
 }
 
 static void event_deck_select(lv_event_t *e)
 {
     const playgroup_deck_t *deck;
-    uint32_t perf_started = lv_tick_get();
     (void)e;
 
     if (deck_picker_seat < 0 || deck_picker_seat >= pregame_player_count)
@@ -1643,10 +1592,12 @@ static void event_deck_select(lv_event_t *e)
              "%s", deck->commander);
 
     {
-        uint32_t perf_art_started = lv_tick_get();
         deck_decoded_cache_entry_t *selected_art =
-            ensure_selected_deck_art(deck);
+            find_decoded_art(deck->scryfall_id);
 
+        /* The picker only opens after batch preparation. Never perform
+           network I/O from SELECT DECK: a missing image is a cache/prep
+           failure, not a reason to block the UI and risk another watchdog. */
         if (selected_art != NULL) {
             if (!set_selected_player_art(deck_picker_seat, selected_art)) {
                 printf("[Playgroup] Could not preserve selected commander art for P%d.\n",
@@ -1657,9 +1608,10 @@ static void event_deck_select(lv_event_t *e)
             }
         }
 
-        printf("[Perf] PG SELECT DECK art=%lu ms P%d\n",
-               (unsigned long)(lv_tick_get() - perf_art_started),
-               deck_picker_seat + 1);
+        /* Persist only the chosen deck after its compressed image is known
+           to be cached. */
+        if (deck->scryfall_id[0] != '\0')
+            playgroup_persist_cached_image(deck->scryfall_id);
     }
 
     clear_deck_art();
@@ -1671,17 +1623,11 @@ static void event_deck_select(lv_event_t *e)
         member_picker_index = first_eligible_member_index(member_picker_seat);
         refresh_member_picker();
         lv_scr_load(screen_pregame_member);
-        printf("[Perf] PG SELECT DECK total=%lu ms P%d\n",
-               (unsigned long)(lv_tick_get() - perf_started),
-               deck_picker_seat + 1);
         return;
     }
 
     refresh_roster();
     lv_scr_load(screen_pregame_roster);
-    printf("[Perf] PG SELECT DECK total=%lu ms P%d\n",
-           (unsigned long)(lv_tick_get() - perf_started),
-           deck_picker_seat + 1);
 }
 
 static void refresh_roster(void)
@@ -1815,7 +1761,11 @@ static void event_roster_continue(lv_event_t *e)
     int i;
     (void)e;
 
-    /* Navigation never waits for commander-art preparation. */
+    /* Commander-art preparation is relevant only to Playgroup roster/deck
+       flows. Offline has no art, so it must never delay MULLIGANS. */
+    if (commander_prepare_active && !offline_playgroup_mode)
+        return;
+
     if (mapping_offline_game) {
         const playgroup_summary_t *pg =
             playgroup_cached_playgroup(selected_playgroup_index);
