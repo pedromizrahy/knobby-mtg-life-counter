@@ -2558,6 +2558,8 @@ void build_pregame_screens(void)
         deck_select_button = pregame_button(screen_pregame_deck, "SELECT", 132, 38,
                                             event_deck_select, LV_EVENT_CLICKED, NULL);
         lv_obj_align(deck_select_button, LV_ALIGN_BOTTOM_MID, 0, -22);
+        /* Expand invisible tap target toward the lower circular edge. */
+        lv_obj_set_ext_click_area(deck_select_button, 20);
 
         deck_more_button = pregame_button(screen_pregame_deck, "MORE DECKS", 210, 74,
                                           event_deck_select, LV_EVENT_CLICKED, NULL);
