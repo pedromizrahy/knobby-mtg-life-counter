@@ -381,8 +381,9 @@ static bool build_sync_body(const pg_pending_snapshot_t *snapshot,
                                  id_base + ordinal++, "Login",
                                  i, i, i, base_epoch, 0) ||
             !json_appendf(body, capacity, &length,
-                          ",\"metadata\":{\"user_id\":%ld,"
-                          "\"roster_player_id\":null,\"username\":\"",
+                          player->user_id > 0
+                              ? ",\"metadata\":{\"user_id\":%ld,\"roster_player_id\":null,\"username\":\""
+                              : ",\"metadata\":{\"user_id\":null,\"roster_player_id\":null,\"username\":\"",
                           player->user_id) ||
             !json_append_escaped(body, capacity, &length, player->name) ||
             !json_appendf(body, capacity, &length,
@@ -395,7 +396,19 @@ static bool build_sync_body(const pg_pending_snapshot_t *snapshot,
     for (int i = 0; i < snapshot->player_count; i++) {
         const pg_pending_player_snapshot_t *player = &snapshot->players[i];
 
-        if (!append_event_prefix(body, capacity, &length, &first,
+        if (player->user_id <= 0) {
+            /* Native guest without an assigned deck: do not fake IDs. */
+            if (!append_event_prefix(body, capacity, &length, &first,
+                                     id_base + ordinal++, "DeckSelect",
+                                     i, i, i, base_epoch + 1U, 0) ||
+                !json_appendf(body, capacity, &length,
+                              ",\"metadata\":{\"deck_id\":null,\"deck_name\":\"\","
+                              "\"commander_id\":null,\"commander_name\":\"\","
+                              "\"partner_id\":null,\"partner_name\":null,"
+                              "\"playgroup_id\":%ld,\"counters\":[]}}",
+                              snapshot->playgroup_id))
+                return false;
+        } else if (!append_event_prefix(body, capacity, &length, &first,
                                  id_base + ordinal++, "DeckSelect",
                                  i, i, i, base_epoch + 1U, 0) ||
             !json_appendf(body, capacity, &length,
@@ -608,9 +621,14 @@ static bool snapshot_ready_for_sync(const pg_pending_snapshot_t *snapshot)
         return false;
 
     for (int i = 0; i < snapshot->player_count; i++) {
-        if (snapshot->players[i].user_id <= 0 ||
-            snapshot->players[i].deck_id <= 0)
+        /* Guests intentionally have neither account nor deck IDs. */
+        if (snapshot->players[i].user_id <= 0) {
+            if (snapshot->players[i].deck_id != 0 ||
+                snapshot->players[i].name[0] == '\0')
+                return false;
+        } else if (snapshot->players[i].deck_id <= 0) {
             return false;
+        }
     }
     return true;
 }
