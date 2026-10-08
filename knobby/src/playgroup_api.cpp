@@ -76,6 +76,21 @@ static bool art_http_configured = false;
 static NetworkClientSecure api_tls;
 static HTTPClient api_http;
 static bool api_http_configured = false;
+/* Account identity is cached only in RAM and bound to the current API key. */
+static char api_cached_user_id[24] = {0};
+static uint64_t api_cached_key_hash = 0;
+static bool api_cached_identity_valid = false;
+
+static uint64_t api_key_hash(const char *key)
+{
+    uint64_t hash = 1469598103934665603ULL;
+    while (key != NULL && *key) {
+        hash ^= (uint8_t)*key++;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
 
 static void api_http_reset(void)
 {
@@ -1198,15 +1213,51 @@ bool playgroup_refresh_playgroups(void)
     cached_playgroup_count = 0;
     if (!wifi_connect_saved()) return false;
 
-    if (!playgroup_https_get("/me", me, status) || status != HTTP_CODE_OK ||
-        !json_extract_number_token(me, "id", user_id, sizeof(user_id))) {
+    /* A validated /me response remains authoritative for the same API key.
+       Reuse its user ID across Wi-Fi sessions; the first request still performs
+       a fully validated TLS handshake. Never persist the token or identity. */
+    char api_key[PG_API_KEY_MAX];
+    if (!nvs_read_string("api_key", api_key, sizeof(api_key)))
         return false;
+    uint64_t key_hash = api_key_hash(api_key);
+    memset(api_key, 0, sizeof(api_key));
+
+    bool cached_identity = api_cached_identity_valid &&
+                           api_cached_key_hash == key_hash;
+    if (cached_identity) {
+        strlcpy(user_id, api_cached_user_id, sizeof(user_id));
+        Serial.println("[Perf] PG /me skipped: cached authenticated identity");
+    } else {
+        api_cached_identity_valid = false;
+        if (!playgroup_https_get("/me", me, status) || status != HTTP_CODE_OK ||
+            !json_extract_number_token(me, "id", user_id, sizeof(user_id))) {
+            return false;
+        }
     }
 
     String path = String("/users/") + user_id + "/playgroups";
-    if (!playgroup_https_get(path, response, status) || status != HTTP_CODE_OK) {
-        return false;
+    bool fetched = playgroup_https_get(path, response, status) &&
+                   status == HTTP_CODE_OK;
+    if (!fetched && cached_identity) {
+        /* Cached identity may be stale. Revalidate it once on an HTTP
+           authorization failure, not on network timeouts. */
+        if (status == HTTP_CODE_UNAUTHORIZED || status == HTTP_CODE_FORBIDDEN ||
+            status == HTTP_CODE_NOT_FOUND) {
+            api_cached_identity_valid = false;
+            if (!playgroup_https_get("/me", me, status) ||
+                status != HTTP_CODE_OK ||
+                !json_extract_number_token(me, "id", user_id, sizeof(user_id)))
+                return false;
+            path = String("/users/") + user_id + "/playgroups";
+            fetched = playgroup_https_get(path, response, status) &&
+                      status == HTTP_CODE_OK;
+        }
     }
+    if (!fetched)
+        return false;
+    strlcpy(api_cached_user_id, user_id, sizeof(api_cached_user_id));
+    api_cached_key_hash = key_hash;
+    api_cached_identity_valid = true;
 
     json_for_each_top_level_object(response, parse_playgroup_object, NULL, PG_MAX_PLAYGROUPS);
 
