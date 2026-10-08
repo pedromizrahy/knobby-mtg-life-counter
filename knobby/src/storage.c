@@ -8,6 +8,7 @@ static bool settings_dirty = false;
 static int cached_brightness = DEFAULT_BRIGHTNESS_PERCENT;
 static int cached_auto_dim = AUTO_DIM_OFF;
 static int cached_color_mode = 0;
+static int runtime_color_mode_override = -1;
 static int cached_deselect_timeout = 0; /* index: 0=never, 1=5s, 2=15s, 3=30s */
 static int cached_orientation = ORIENTATION_MODE_ABSOLUTE;
 static int cached_display_rotation = 0; /* physical rotation, degrees = value * 90 */
@@ -155,13 +156,26 @@ void nvs_set_auto_dim(int value)
 
 int nvs_get_color_mode(void)
 {
-    return cached_color_mode;
+    return (runtime_color_mode_override >= 0)
+        ? runtime_color_mode_override
+        : cached_color_mode;
 }
 
 void nvs_set_color_mode(int value)
 {
     cached_color_mode = (value < 0) ? COLOR_MODE_PLAYER : (value >= COLOR_MODE_COUNT) ? COLOR_MODE_PLAYER : value;
     settings_dirty = true;
+}
+
+void nvs_set_color_mode_runtime_override(int value)
+{
+    runtime_color_mode_override =
+        (value < 0 || value >= COLOR_MODE_COUNT) ? COLOR_MODE_PLAYER : value;
+}
+
+void nvs_clear_color_mode_runtime_override(void)
+{
+    runtime_color_mode_override = -1;
 }
 
 int nvs_get_deselect_timeout(void)
