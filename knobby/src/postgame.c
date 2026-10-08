@@ -268,22 +268,28 @@ static void event_infinite_confirm(lv_event_t *event)
            infinite_index ? "yes" : "no");
 
     lv_scr_load(screen_postgame_sync);
-    show_sync_status("CONNECTING TO WI-FI...", "Your game is already saved");
 
-    if (playgroup_pending_count() > 0) {
-        printf("[Playgroup] Result saved; attempting immediate sync...\n");
-        connected = playgroup_prepare_connection();
-
-        if (connected) {
-            show_sync_status("SENDING TO PLAYGROUP...", "Uploading game data");
-            synced = playgroup_pending_sync_queue();
-        }
-    }
-
-    if (synced > 0) {
-        show_sync_status("GAME SAVED", "Synced to Playgroup");
+    if (playgroup_pending_current_identity_pending()) {
+        printf("[Playgroup] Offline game saved; player/deck mapping required before sync.\n");
+        show_sync_status("SAVED OFFLINE", "Map players when you're online");
     } else {
-        show_sync_status("SAVED OFFLINE", "Will sync automatically later");
+        show_sync_status("CONNECTING TO WI-FI...", "Your game is already saved");
+
+        if (playgroup_pending_count() > 0) {
+            printf("[Playgroup] Result saved; attempting immediate sync...\n");
+            connected = playgroup_prepare_connection();
+
+            if (connected) {
+                show_sync_status("SENDING TO PLAYGROUP...", "Uploading game data");
+                synced = playgroup_pending_sync_queue();
+            }
+        }
+
+        if (synced > 0) {
+            show_sync_status("GAME SAVED", "Synced to Playgroup");
+        } else {
+            show_sync_status("SAVED OFFLINE", "Will sync automatically later");
+        }
     }
 
     /* Leave the final state visible briefly, then return to New Game.
