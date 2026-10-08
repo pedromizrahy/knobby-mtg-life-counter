@@ -698,7 +698,7 @@ static void event_choose_players(lv_event_t *e)
     }
 
     if (!playgroup_prepare_connection()) {
-        note_playgroup_connection_failure("Wi-Fi failed - tap SELECT to retry");
+        note_playgroup_connection_failure("Wi-Fi failed\nTap RETRY PLAYGROUP");
         return;
     }
 
@@ -712,7 +712,7 @@ static void event_choose_players(lv_event_t *e)
 
     if (!playgroup_refresh_playgroups() || playgroup_cached_playgroup_count() <= 0) {
         playgroup_end_session();
-        note_playgroup_connection_failure("Wi-Fi/API failed - tap SELECT to retry");
+        note_playgroup_connection_failure("Playgroup connection failed\nTap RETRY PLAYGROUP");
         return;
     }
 
@@ -2319,11 +2319,11 @@ void build_pregame_screens(void)
 
         players_status_label = lv_label_create(screen_pregame_mode);
         lv_label_set_text(players_status_label, "");
-        lv_obj_set_width(players_status_label, 290);
+        lv_obj_set_width(players_status_label, 230);
         lv_obj_set_style_text_align(players_status_label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_color(players_status_label, lv_color_hex(0xC98F6B), 0);
         lv_obj_set_style_text_font(players_status_label, &lv_font_montserrat_14, 0);
-        lv_obj_align(players_status_label, LV_ALIGN_BOTTOM_MID, 0, -24);
+        lv_obj_align(players_status_label, LV_ALIGN_TOP_MID, 0, 276);
     }
 
     screen_pregame_playgroup = lv_obj_create(NULL);
