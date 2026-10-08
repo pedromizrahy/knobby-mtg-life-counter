@@ -37,6 +37,9 @@ static lv_obj_t *multiplayer_status_label = NULL;
 static lv_timer_t *multiplayer_status_timer = NULL;
 static lv_obj_t *player_count_label = NULL;
 static lv_obj_t *players_status_label = NULL;
+static lv_obj_t *play_offline_button = NULL;
+static int playgroup_connect_failures = 0;
+static bool offline_playgroup_mode = false;
 static lv_obj_t *playgroup_name_label = NULL;
 static lv_obj_t *playgroup_meta_label = NULL;
 static int selected_playgroup_index = 0;
@@ -397,6 +400,10 @@ static void event_local_play(lv_event_t *e)
     clear_selected_player_art();
     playgroup_end_session();
     playgroup_roster_active = false;
+    offline_playgroup_mode = false;
+    playgroup_connect_failures = 0;
+    if (play_offline_button != NULL)
+        lv_obj_add_flag(play_offline_button, LV_OBJ_FLAG_HIDDEN);
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
         snprintf(player_names[i], sizeof(player_names[i]), "P%d", i + 1);
         selected_deck_id[i] = 0;
@@ -508,11 +515,54 @@ static void open_local_roster(void)
     lv_scr_load(screen_pregame_roster);
 }
 
+static void event_play_offline(lv_event_t *e)
+{
+    (void)e;
+
+    offline_playgroup_mode = true;
+    playgroup_roster_active = false;
+    playgroup_end_session();
+
+    if (players_status_label != NULL)
+        lv_label_set_text(players_status_label, "");
+
+    for (int i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
+        snprintf(player_names[i], sizeof(player_names[i]), "P%d", i + 1);
+        selected_deck_id[i] = 0;
+        selected_commander_id[i] = 0;
+        selected_deck_name[i][0] = '\0';
+        selected_commander_name[i][0] = '\0';
+    }
+
+    refresh_roster();
+    lv_scr_load(screen_pregame_roster);
+}
+
+static void note_playgroup_connection_failure(const char *message)
+{
+    playgroup_connect_failures++;
+
+    if (players_status_label != NULL) {
+        if (playgroup_connect_failures >= 2)
+            lv_label_set_text(players_status_label,
+                              "Still offline - retry or play offline");
+        else
+            lv_label_set_text(players_status_label, message);
+    }
+
+    if (play_offline_button != NULL && playgroup_connect_failures >= 2)
+        lv_obj_clear_flag(play_offline_button, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void event_choose_players(lv_event_t *e)
 {
     (void)e;
 
+    offline_playgroup_mode = false;
+
     if (!playgroup_credentials_ready()) {
+        /* No API credentials means this is plain Local Play, not a
+           recoverable Playgroup-offline session. */
         open_local_roster();
         return;
     }
@@ -523,8 +573,7 @@ static void event_choose_players(lv_event_t *e)
     }
 
     if (!playgroup_prepare_connection()) {
-        if (players_status_label != NULL)
-            lv_label_set_text(players_status_label, "Wi-Fi failed - tap SELECT to retry");
+        note_playgroup_connection_failure("Wi-Fi failed - tap SELECT to retry");
         return;
     }
 
@@ -537,11 +586,14 @@ static void event_choose_players(lv_event_t *e)
     }
 
     if (!playgroup_refresh_playgroups() || playgroup_cached_playgroup_count() <= 0) {
-        if (players_status_label != NULL)
-            lv_label_set_text(players_status_label, "Wi-Fi/API failed - tap SELECT to retry");
+        playgroup_end_session();
+        note_playgroup_connection_failure("Wi-Fi/API failed - tap SELECT to retry");
         return;
     }
 
+    playgroup_connect_failures = 0;
+    if (play_offline_button != NULL)
+        lv_obj_add_flag(play_offline_button, LV_OBJ_FLAG_HIDDEN);
     if (players_status_label != NULL)
         lv_label_set_text(players_status_label, "");
 
@@ -1620,6 +1672,7 @@ static void event_start_game(lv_event_t *e)
         if (pg != NULL && pg->id > 0) {
             pending_seed.playgroup_id = pg->id;
             pending_seed.player_count = (uint8_t)pregame_player_count;
+            pending_seed.identity_pending = false;
 
             for (i = 0; i < pregame_player_count; i++) {
                 const playgroup_member_t *member =
@@ -1644,6 +1697,21 @@ static void event_start_game(lv_event_t *e)
         }
     }
 
+    if (!track_playgroup_game && offline_playgroup_mode) {
+        pending_seed.playgroup_id = 0;
+        pending_seed.player_count = (uint8_t)pregame_player_count;
+        pending_seed.identity_pending = true;
+
+        for (i = 0; i < pregame_player_count; i++) {
+            snprintf(pending_seed.players[i].name,
+                     sizeof(pending_seed.players[i].name),
+                     "P%d", i + 1);
+            pending_seed.players[i].mulligans = mulligans[i];
+        }
+
+        track_playgroup_game = true;
+    }
+
     playgroup_end_session();
 
     nvs_set_num_players(pregame_player_count);
@@ -1664,6 +1732,11 @@ static void event_start_game(lv_event_t *e)
         playgroup_pending_begin_game(&pending_seed);
     else
         playgroup_pending_disable_current();
+
+    offline_playgroup_mode = false;
+    playgroup_connect_failures = 0;
+    if (play_offline_button != NULL)
+        lv_obj_add_flag(play_offline_button, LV_OBJ_FLAG_HIDDEN);
 
     back_to_main();
 }
@@ -1873,7 +1946,19 @@ void build_pregame_screens(void)
 
         select = pregame_button(screen_pregame_players, "SELECT", 150, 44,
                                 event_choose_players, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(select, LV_ALIGN_CENTER, 0, 86);
+        lv_obj_align(select, LV_ALIGN_CENTER, 0, 78);
+
+        play_offline_button = pregame_button(
+            screen_pregame_players, "PLAY OFFLINE", 150, 34,
+            event_play_offline, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(play_offline_button, LV_ALIGN_BOTTOM_MID, 0, -6);
+        lv_obj_set_style_bg_opa(play_offline_button, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(play_offline_button, 0, 0);
+        lv_obj_set_style_text_color(lv_obj_get_child(play_offline_button, 0),
+                                    lv_color_hex(0xC98F6B), 0);
+        lv_obj_set_style_text_font(lv_obj_get_child(play_offline_button, 0),
+                                   &lv_font_montserrat_14, 0);
+        lv_obj_add_flag(play_offline_button, LV_OBJ_FLAG_HIDDEN);
     }
 
     screen_pregame_playgroup = lv_obj_create(NULL);
