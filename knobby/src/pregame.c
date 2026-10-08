@@ -458,6 +458,7 @@ static void event_local_play(lv_event_t *e)
     clear_selected_player_art();
     playgroup_end_session();
     nvs_clear_color_mode_runtime_override();
+    nvs_set_offline_session_active(0);
     playgroup_roster_active = false;
     offline_playgroup_mode = false;
     mapping_offline_game = false;
@@ -615,6 +616,7 @@ static void event_play_offline(lv_event_t *e)
     /* Offline has no commander art. Force player-color rendering for this
        game only; the user's saved ART/COLOR preference remains untouched. */
     nvs_set_color_mode_runtime_override(COLOR_MODE_PLAYER);
+    nvs_set_offline_session_active(1);
 
     if (players_status_label != NULL)
         lv_label_set_text(players_status_label, "");
@@ -665,6 +667,7 @@ static void event_choose_players(lv_event_t *e)
 
     offline_playgroup_mode = false;
     nvs_clear_color_mode_runtime_override();
+    nvs_set_offline_session_active(0);
 
     if (!playgroup_credentials_ready()) {
         if (mapping_offline_game) {
@@ -1971,6 +1974,7 @@ void open_pregame_home(void)
 {
     playgroup_end_session();
     nvs_clear_color_mode_runtime_override();
+    nvs_set_offline_session_active(0);
 
     if (pending_map_button != NULL) {
         if (playgroup_pending_identity_pending_count() > 0)
