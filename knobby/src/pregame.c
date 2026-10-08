@@ -613,6 +613,15 @@ static void event_play_offline(lv_event_t *e)
     playgroup_roster_active = false;
     playgroup_end_session();
 
+    /* A Playgroup commander-art worker may still be finishing from a prior
+       online attempt. Offline does not use that art, so never let its UI
+       timer block or redirect this flow. The worker may finish harmlessly
+       in the background and its cache can be reused later. */
+    if (commander_prepare_timer != NULL)
+        lv_timer_pause(commander_prepare_timer);
+    commander_prepare_done = false;
+    commander_prepare_from_roster = false;
+
     /* Offline has no commander art. Force player-color rendering for this
        game only; the user's saved ART/COLOR preference remains untouched. */
     nvs_set_color_mode_runtime_override(COLOR_MODE_PLAYER);
@@ -1723,7 +1732,9 @@ static void event_roster_continue(lv_event_t *e)
     int i;
     (void)e;
 
-    if (commander_prepare_active)
+    /* Commander-art preparation is relevant only to Playgroup roster/deck
+       flows. Offline has no art, so it must never delay MULLIGANS. */
+    if (commander_prepare_active && !offline_playgroup_mode)
         return;
 
     if (mapping_offline_game) {
@@ -1794,6 +1805,8 @@ static void event_roster_continue(lv_event_t *e)
 
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) mulligans[i] = 0;
     refresh_mulligans();
+    if (offline_playgroup_mode)
+        printf("[Pregame] Offline roster -> mulligans\n");
     lv_scr_load(screen_pregame_mulligans);
 }
 
