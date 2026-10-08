@@ -42,6 +42,7 @@ static lv_obj_t *drag_hint = NULL;
 static lv_obj_t *drag_hint_label = NULL;
 
 #include <string.h>
+#include "esp_timer.h"
 
 // ---------- screens ----------
 lv_obj_t *screen_multiplayer = NULL;
@@ -1222,6 +1223,11 @@ static int roulette_panel_index_for_player(int player)
 
 static void roulette_set_player_slice_emphasis(int player, bool selected)
 {
+    static uint32_t roulette_sample_count[2] = {0, 0};
+    static uint64_t roulette_total_us[2] = {0, 0};
+    static uint32_t roulette_max_us[2] = {0, 0};
+    int mode_bucket = (nvs_get_color_mode() == COLOR_MODE_ART) ? 1 : 0;
+    int64_t sample_start_us = esp_timer_get_time();
     int panel_index = roulette_panel_index_for_player(player);
     const mp_panel_spec_t *spec;
     lv_obj_t *panel;
@@ -1264,6 +1270,23 @@ static void roulette_set_player_slice_emphasis(int player, bool selected)
         lv_obj_set_style_text_opa(life_lbl, LV_OPA_COVER, 0);
     if (name_lbl != NULL)
         lv_obj_set_style_text_opa(name_lbl, LV_OPA_COVER, 0);
+
+    {
+        uint32_t elapsed_us = (uint32_t)(esp_timer_get_time() - sample_start_us);
+        roulette_sample_count[mode_bucket]++;
+        roulette_total_us[mode_bucket] += elapsed_us;
+        if (elapsed_us > roulette_max_us[mode_bucket])
+            roulette_max_us[mode_bucket] = elapsed_us;
+
+        if ((roulette_sample_count[mode_bucket] % 24U) == 0U) {
+            printf("[Perf] Roulette %s slice avg=%lu us max=%lu us samples=%lu\n",
+                   mode_bucket ? "ART" : "COLOR",
+                   (unsigned long)(roulette_total_us[mode_bucket] /
+                                   roulette_sample_count[mode_bucket]),
+                   (unsigned long)roulette_max_us[mode_bucket],
+                   (unsigned long)roulette_sample_count[mode_bucket]);
+        }
+    }
 }
 
 void refresh_multiplayer_selection_animation(void)
