@@ -203,9 +203,9 @@ void dial_sprite_show(lv_obj_t *parent,int kind,unsigned frame,int result)
         unsigned second=(frame<f->roll_count)?frame:
                          f->roll_count+(unsigned)units;
         render_slot(parent,1,units_frame,second,89,0);
-        /* Larger percentile dice with a visible gap between their rendered bounds. */
-        if(images[0]) lv_img_set_zoom(images[0],240);
-        if(images[1]) lv_img_set_zoom(images[1],240);
+        /* Native-size percentile sprites: no shrinking in idle or after rolls. */
+        if(images[0]) lv_img_set_zoom(images[0],256);
+        if(images[1]) lv_img_set_zoom(images[1],256);
     } else {
         if(images[0]) {
             lv_img_set_zoom(images[0],256);
