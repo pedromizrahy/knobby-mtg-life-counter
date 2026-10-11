@@ -21,7 +21,8 @@ void refresh_intro_ui(void)
     const lv_img_dsc_t *heads=dial_art_get(0);
     if(dial_sprite_available(99)) {
         lv_obj_add_flag(coin_clip,LV_OBJ_FLAG_HIDDEN);
-        dial_sprite_show(screen_intro,99,0U,0);
+        /* Decode the full-quality static image once, not on every intro tick. */
+        if(intro_frame==0U) dial_sprite_show(screen_intro,99,0U,0);
     } else if(heads) {
         lv_img_set_src(coin_image,heads);
         lv_obj_clear_flag(coin_clip,LV_OBJ_FLAG_HIDDEN);
