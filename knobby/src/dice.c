@@ -62,7 +62,17 @@ static void set_face(int number)
         lv_obj_add_flag(clip,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
-        if(!rolling) dial_sprite_show(screen_dice,selected,32U,last_result<0?0:last_result);
+        if(!rolling) {
+            /* Before any roll, show the first genuine tumble frame rather
+             * than treating result #1 (a flat facing sprite) as idle art.
+             * Once rolled, preserve the actual landed result. */
+            const bool preview = last_result < 0;
+            const unsigned sprite_frame = preview &&
+                (selected==7 || (selected==2 && dial_sprite_d6_3d_ready()))
+                ? 0U : 32U;
+            dial_sprite_show(screen_dice,selected,sprite_frame,
+                             preview ? 0 : last_result);
+        }
         return;
     }
     dial_sprite_hide();
