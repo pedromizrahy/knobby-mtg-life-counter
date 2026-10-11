@@ -71,6 +71,7 @@ void dice_change_selection(int delta)
     last_result=-1;
     visible_coin=0;
     lv_obj_set_width(clip,188);
+    lv_obj_align(clip,LV_ALIGN_CENTER,0,0);
     lv_img_set_angle(picture,0);
     lv_img_set_zoom(picture,256);
     refresh_dice_ui();
@@ -90,6 +91,7 @@ static void animate(lv_timer_t *timer)
         unsigned phase=(frame*8U)%ROLL_FRAMES;
         int edge=(int)(phase <= ROLL_FRAMES/2U ? phase : ROLL_FRAMES-phase);
         lv_obj_set_width(clip,188-(edge*174)/(ROLL_FRAMES/2));
+        lv_obj_align(clip,LV_ALIGN_CENTER,0,0);
         visible_coin=(int)((frame*8U/ROLL_FRAMES)&1U);
         if(frame>=ROLL_FRAMES) visible_coin=target;
         set_face(-1);
