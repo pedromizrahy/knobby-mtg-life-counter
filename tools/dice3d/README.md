@@ -15,3 +15,8 @@ The rendering pipeline has not yet been tested on the physical device. Check fla
 Use the same vendored mesh definitions to build coherent D4, D8, D10, D12, D20 and percentile dice assets. Render numbers with antialiasing, scale to fit each face, then export with the same RGB565 compression. The existing coin source needs separate cleanup and is **not changed** by this work.
 
 Avoid silently installing headers from prior V-series ZIP packages after generating these frames.
+
+
+## Python V9 offline sprites (no Blender)
+
+V9 pre-rendered sprites are distributed separately in `DIAL_DOS_PRIMOS_V9_CORRECOES.zip` because large generated frame arrays are not versioned in this Git branch. It includes the complete Python D6 renderer and the ready-to-install `dial_d6_frames.h` (78 frames, 224x224), conservative antialias adjustments for D8/D10/D12, and coin frames based on the V4 detailed art with limited lower-rim color cleanup. `INSTALAR_V9_COMPLETO.cmd` copies and SHA-256 checks these five headers, then compiles without uploading. It must be extracted in full. The device does **not** run Python or Blender. D100 enlargement is handled in firmware (commit `93a414e`). D20 type re-layout is still unimplemented; do not claim otherwise. The visual output requires on-device QA before acceptance.
