@@ -32,7 +32,7 @@ static int random_roll(int sides)
     return (int)(esp_random() % (unsigned)sides) + 1;
 }
 
-static void refresh_dice_ui(void)
+void refresh_dice_ui(void)
 {
     char result[12];
     if (label_type == NULL) return;
