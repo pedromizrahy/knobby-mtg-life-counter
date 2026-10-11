@@ -147,7 +147,7 @@ static void animate(lv_timer_t *timer)
     }
     frame++;
     if(dial_sprite_available(selected)) {
-        unsigned sprite_frame=selected==2 ? (frame>=ROLL_FRAMES?12U:(frame*11U)/ROLL_FRAMES) : (frame>=ROLL_FRAMES?32U:(frame*31U)/ROLL_FRAMES);
+        unsigned sprite_frame=selected==2 && dial_sprite_d6_3d_ready() ? (frame>=ROLL_FRAMES?12U:(frame*11U)/ROLL_FRAMES) : (frame>=ROLL_FRAMES?32U:(frame*31U)/ROLL_FRAMES);
         dial_sprite_show(screen_dice,selected,sprite_frame,target);
     } else if(selected==0) {
         /* Fold the visible image into an edge and swap sides between flips. */
