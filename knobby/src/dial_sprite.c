@@ -91,6 +91,13 @@ static const dial_frames_t *source_for(int kind)
     }
 }
 bool dial_sprite_available(int kind) { return source_for(kind)!=NULL; }
+bool dial_sprite_d6_3d_ready(void) {
+#if HAVE_D6 && defined(DIAL_D6_BLENDER_V1)
+    return true;
+#else
+    return false;
+#endif
+}
 
 static const dial_frames_t *source_units_for_d100(void)
 {
@@ -173,7 +180,7 @@ void dial_sprite_show(lv_obj_t *parent,int kind,unsigned frame,int result)
         idx=(result==1 ? f->roll_count : 0U)+frame;
     }
     else if(kind==0) idx=2U*f->roll_count+(result==1?1U:0U);
-    else if(kind==2) {
+    else if(kind==2 && dial_sprite_d6_3d_ready()) {
         /* D6: six independent 3D tumble paths followed by six
          * corresponding landing frames, generated from ONE Blender mesh. */
         unsigned value=(result>=1 && result<=6)?(unsigned)result:1U;
