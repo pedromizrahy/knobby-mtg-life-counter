@@ -180,8 +180,6 @@ void build_dice_screen(void)
     face_number=lv_label_create(screen_dice);
     lv_obj_set_style_text_color(face_number,lv_color_white(),0);
     lv_obj_set_style_text_font(face_number,&lv_font_montserrat_32,0);
-    lv_obj_set_style_text_shadow_color(face_number,lv_color_black(),0);
-    lv_obj_set_style_text_shadow_width(face_number,3,0);
     lv_obj_align(face_number,LV_ALIGN_CENTER,0,-1);
     lv_obj_add_flag(face_number,LV_OBJ_FLAG_EVENT_BUBBLE);
 
