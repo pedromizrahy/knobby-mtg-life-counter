@@ -30,6 +30,7 @@ void refresh_intro_ui(void)
         if(dial_art_get(0)) lv_img_set_src(coin_image,dial_art_get(0));
         lv_img_set_zoom(coin_image,360);
     }
+    lv_obj_align(coin_clip,LV_ALIGN_CENTER,0,-32);
     lv_obj_align(coin_image,LV_ALIGN_CENTER,0,0);
     if(intro_frame>=22U) {
         lv_obj_clear_flag(heading,LV_OBJ_FLAG_HIDDEN);
