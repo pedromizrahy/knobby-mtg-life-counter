@@ -173,6 +173,13 @@ void dial_sprite_show(lv_obj_t *parent,int kind,unsigned frame,int result)
         idx=(result==1 ? f->roll_count : 0U)+frame;
     }
     else if(kind==0) idx=2U*f->roll_count+(result==1?1U:0U);
+    else if(kind==2 && frame<f->roll_count) {
+        /* V5 D6 roll frames use a different model than the final cube.
+         * Roll the exact destination cube instead, so there is no visual
+         * jump and the result stays visible after the timer stops. */
+        int value=(result>=1 && result<=6)?result:1;
+        idx=f->roll_count+(unsigned)(value-1);
+    }
     else if(frame<f->roll_count) idx=frame;
     else {
         int max=(int)(f->total-f->roll_count);
@@ -181,18 +188,23 @@ void dial_sprite_show(lv_obj_t *parent,int kind,unsigned frame,int result)
         if(value<1||value>max)value=1;
         idx=f->roll_count+(unsigned)(value-1);
     }
-    render_slot(parent,0,f,idx,kind==99?-0:(kind==7?-73:0),kind==99?-44:0);
+    render_slot(parent,0,f,idx,kind==7?-80:0,kind==99?-44:0);
     if(kind==7) {
         const dial_frames_t *units_frame=source_units_for_d100();
         int units=result%10;
         unsigned second=(frame<f->roll_count)?frame:
                          f->roll_count+(unsigned)units;
-        render_slot(parent,1,units_frame,second,73,0);
+        render_slot(parent,1,units_frame,second,80,0);
         /* A pair of 184px sprites must be reduced to avoid overlap. */
-        if(images[0]) lv_img_set_zoom(images[0],198);
-        if(images[1]) lv_img_set_zoom(images[1],198);
+        if(images[0]) lv_img_set_zoom(images[0],212);
+        if(images[1]) lv_img_set_zoom(images[1],212);
     } else {
-        if(images[0]) lv_img_set_zoom(images[0],256);
+        if(images[0]) {
+            lv_img_set_zoom(images[0],256);
+            /* Animate the same final D6 mesh during its roll. */
+            lv_img_set_angle(images[0],kind==2 && frame<f->roll_count
+                ? (int16_t)((f->roll_count-frame)*170U % 3600U) : 0);
+        }
         if(images[1]) lv_obj_add_flag(images[1],LV_OBJ_FLAG_HIDDEN);
     }
 }
