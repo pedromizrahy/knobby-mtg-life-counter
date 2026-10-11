@@ -94,7 +94,7 @@ def main():
     die.data.materials.append(blue)
     bevel=die.modifiers.new("Gold Rim",type="BEVEL")
     bevel.width=.13;bevel.segments=3
-    bevel.affect="EDGES" if hasattr(bevel,"affect") else None
+    if hasattr(bevel,"affect"): bevel.affect="EDGES"
     bevel.loop_slide=True
     bevel.profile=.5
     # Material index: appended after blue for bevel surfaces.
