@@ -1,83 +1,280 @@
 #include "dice.h"
+#include "dice_art.h"
+#include "d20_anim.h"
+#include "dial_sprite.h"
 #include "game.h"
 #include "esp_random.h"
+#include <stdio.h>
 
-// ---------- state ----------
-lv_obj_t *screen_dice = NULL;
-static lv_obj_t *label_dice_result = NULL;
-static lv_obj_t *label_dice_hint = NULL;
+#define ITEM_COUNT 8
+#define FRAME_MS 33
+#define ROLL_FRAMES 36
 
-// ---------- refresh ----------
+static const int sides[ITEM_COUNT]={0,4,6,8,10,12,20,100};
+static const char *names[ITEM_COUNT]={"COIN","D4","D6","D8","D10","D12","D20","D100"};
+lv_obj_t *screen_dice=NULL;
+static lv_obj_t *title=NULL,*hint=NULL,*clip=NULL,*picture=NULL,*picture_units=NULL,*face_number=NULL,*units_number=NULL,*coin_fallback=NULL;
+static lv_timer_t *roll_timer=NULL;
+static int selected=0,target=0,last_result=-1;
+static unsigned frame=0;
+static bool rolling=false;
+static int visible_coin=0;
+
+static int random_result(int n)
+{
+    uint32_t r,limit;
+    if (n==0) return (int)(esp_random() & 1U);
+    limit=UINT32_MAX-(UINT32_MAX % (uint32_t)n);
+    do { r=esp_random(); } while(r>=limit);
+    return (int)(r % (uint32_t)n)+1;
+}
+static void set_art(int art)
+{
+    const lv_img_dsc_t *src=dial_art_get(art);
+    if(src) {
+        lv_img_set_src(picture,src);
+        lv_obj_clear_flag(picture,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(coin_fallback,LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(picture,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(coin_fallback,LV_OBJ_FLAG_HIDDEN);
+    }
+}
+static void set_face(int number)
+{
+    char buf[16];
+    if(selected==6 && d20_anim_available()) {
+        dial_sprite_hide();
+        lv_obj_clear_flag(clip,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(picture,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(coin_fallback,LV_OBJ_FLAG_HIDDEN);
+        if(!rolling) {
+            if(last_result>0) d20_anim_show(screen_dice,40U,last_result);
+            else d20_anim_show(screen_dice,0U,0);
+        }
+        return;
+    }
+    d20_anim_hide();
+    if(dial_sprite_available(selected)) {
+        lv_obj_add_flag(clip,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
+        if(!rolling) dial_sprite_show(screen_dice,selected,32U,last_result<0?0:last_result);
+        return;
+    }
+    dial_sprite_hide();
+    lv_obj_clear_flag(clip,LV_OBJ_FLAG_HIDDEN);
+    if(selected==0) {
+        lv_obj_add_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
+        set_art(visible_coin);
+        lv_label_set_text(coin_fallback,visible_coin==0?"HEADS":"TAILS");
+    } else {
+        if(selected==ITEM_COUNT-1) {
+            const lv_img_dsc_t *ten=dial_art_get(5);
+            set_art(5);
+            if(ten) {
+                lv_img_set_src(picture_units,ten);
+                lv_obj_clear_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
+                lv_img_set_zoom(picture,180);
+                lv_img_set_zoom(picture_units,180);
+                lv_obj_align(picture,LV_ALIGN_CENTER,-55,0);
+                lv_obj_align(picture_units,LV_ALIGN_CENTER,55,0);
+            }
+            if(number>0) {
+                int tens=(number==100)?0:(number/10)*10;
+                snprintf(buf,sizeof(buf),"%02d",tens);
+                lv_label_set_text(face_number,buf);
+                snprintf(buf,sizeof(buf),"%d",number%10);
+                lv_label_set_text(units_number,buf);
+                lv_obj_clear_flag(face_number,LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(units_number,LV_OBJ_FLAG_HIDDEN);
+                lv_obj_align(face_number,LV_ALIGN_CENTER,-55,-1);
+                lv_obj_align(units_number,LV_ALIGN_CENTER,55,-1);
+            } else {
+                lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
+            }
+            return;
+        }
+        lv_obj_add_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_align(face_number,LV_ALIGN_CENTER,0,-1);
+        lv_img_set_zoom(picture,256);
+        lv_obj_align(picture,LV_ALIGN_CENTER,0,0);
+        set_art(selected+1);
+        if(number>0) {
+            snprintf(buf,sizeof(buf),"%d",number);
+            lv_label_set_text(face_number,buf);
+            lv_obj_clear_flag(face_number,LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(face_number);
+        } else {
+            lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_label_set_text(coin_fallback,names[selected]);
+    }
+}
 void refresh_dice_ui(void)
 {
-    char buf[8];
-
-    if (label_dice_result == NULL) return;
-
-    if (dice_result <= 0) {
-        lv_label_set_text(label_dice_result, "--");
+    if(!title) return;
+    lv_label_set_text(title,names[selected]);
+    set_face(last_result);
+}
+void dice_change_selection(int delta)
+{
+    if(rolling || delta==0) return;
+    selected=(selected+(delta>0?1:-1)+ITEM_COUNT)%ITEM_COUNT;
+    last_result=-1;
+    visible_coin=0;
+    lv_obj_set_width(clip,selected==ITEM_COUNT-1?265:188);
+    lv_obj_align(clip,LV_ALIGN_CENTER,0,0);
+    lv_img_set_angle(picture,0);
+    lv_img_set_zoom(picture,256);
+    refresh_dice_ui();
+}
+static void animate(lv_timer_t *timer)
+{
+    int current;
+    (void)timer;
+    if(!rolling || lv_scr_act()!=screen_dice) {
+        rolling=false;
+        lv_timer_pause(roll_timer);
+        return;
+    }
+    frame++;
+    if(dial_sprite_available(selected)) {
+        unsigned sprite_frame=frame>=ROLL_FRAMES?32U:(frame*31U)/ROLL_FRAMES;
+        dial_sprite_show(screen_dice,selected,sprite_frame,target);
+    } else if(selected==0) {
+        /* Fold the visible image into an edge and swap sides between flips. */
+        unsigned phase=(frame*8U)%ROLL_FRAMES;
+        int edge=(int)(phase <= ROLL_FRAMES/2U ? phase : ROLL_FRAMES-phase);
+        lv_obj_set_width(clip,188-(edge*174)/(ROLL_FRAMES/2));
+        lv_obj_align(clip,LV_ALIGN_CENTER,0,0);
+        visible_coin=(int)((frame*8U/ROLL_FRAMES)&1U);
+        if(frame>=ROLL_FRAMES) visible_coin=target;
+        set_face(-1);
+    } else if(selected==6 && d20_anim_available()) {
+        /* Play the actual pre-rendered 3D roll. The last frame is rendered
+         * for the predetermined result, so the numbered face matches. */
+        unsigned sprite_frame=(frame * 39U)/ROLL_FRAMES;
+        if(frame>=ROLL_FRAMES) sprite_frame=40U;
+        d20_anim_show(screen_dice,sprite_frame,target);
     } else {
-        snprintf(buf, sizeof(buf), "%d", dice_result);
-        lv_label_set_text(label_dice_result, buf);
+        current=(frame>=ROLL_FRAMES)?target:random_result(sides[selected]);
+        /* Keep numeral on the die, not outside it; hide it while tumbling,
+         * then reveal the destination face near the end. */
+        lv_img_set_angle(picture,(int16_t)((frame*231U)%3600U));
+        if(selected!=ITEM_COUNT-1)
+            lv_img_set_zoom(picture,(uint16_t)(230U+((frame%7U)*6U)));
+        else lv_img_set_angle(picture_units,(int16_t)((frame*193U)%3600U));
+        set_face(frame>=ROLL_FRAMES-5U?target:current);
+    }
+    if(frame>=ROLL_FRAMES) {
+        rolling=false;
+        last_result=target;
+        visible_coin=target;
+        lv_obj_set_width(clip,selected==ITEM_COUNT-1?265:188);
+        lv_obj_align(clip,LV_ALIGN_CENTER,0,0);
+        lv_img_set_angle(picture,0);
+        lv_img_set_angle(picture_units,0);
+        lv_img_set_zoom(picture,256);
+        set_face(target);
+        lv_label_set_text(hint,"Turn dial to select  |  Tap to roll");
+        lv_timer_pause(roll_timer);
+        printf("[Dice] %s => %d\n",names[selected],target);
     }
 }
-
-// ---------- open ----------
+void dice_roll_selected(void)
+{
+    if(rolling || !roll_timer) return;
+    target=random_result(sides[selected]);
+    frame=0;
+    rolling=true;
+    last_result=-1;
+    lv_label_set_text(hint,"Rolling...");
+    lv_timer_reset(roll_timer);
+    lv_timer_resume(roll_timer);
+}
 void open_dice_screen(void)
 {
-    lv_anim_t anim;
-
+    if(!screen_dice) return;
+    if(roll_timer) lv_timer_pause(roll_timer);
+    rolling=false;
+    selected=0;target=0;last_result=-1;visible_coin=0;
+    lv_obj_set_width(clip,188);
+    lv_img_set_angle(picture,0);
+    lv_img_set_zoom(picture,256);
+    lv_label_set_text(hint,"Turn dial to select  |  Tap to roll");
+    d20_anim_hide();
     refresh_dice_ui();
     load_screen_if_needed(screen_dice);
-
-    if (label_dice_result != NULL) {
-        lv_obj_set_y(label_dice_result, -10);
-        lv_anim_init(&anim);
-        lv_anim_set_var(&anim, label_dice_result);
-        lv_anim_set_values(&anim, -10, -24);
-        lv_anim_set_time(&anim, 120);
-        lv_anim_set_playback_time(&anim, 140);
-        lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
-        lv_anim_set_exec_cb(&anim, (lv_anim_exec_xcb_t)lv_obj_set_y);
-        lv_anim_start(&anim);
-    }
 }
+static void clicked(lv_event_t *e) { (void)e; dice_roll_selected(); }
+void event_tool_dice(lv_event_t *e) { (void)e; open_dice_screen(); }
 
-// ---------- events ----------
-static void event_dice_tap(lv_event_t *e)
-{
-    (void)e;
-    dice_result = (int)(esp_random() % 20U) + 1;
-    open_dice_screen();
-}
-
-void event_tool_dice(lv_event_t *e)
-{
-    (void)e;
-    dice_result = (int)(esp_random() % 20U) + 1;
-    open_dice_screen();
-}
-
-// ---------- build ----------
 void build_dice_screen(void)
 {
-    screen_dice = lv_obj_create(NULL);
-    lv_obj_set_size(screen_dice, 360, 360);
-    lv_obj_set_style_bg_color(screen_dice, lv_color_black(), 0);
-    lv_obj_set_style_border_width(screen_dice, 0, 0);
-    lv_obj_set_scrollbar_mode(screen_dice, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_add_flag(screen_dice, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(screen_dice, event_dice_tap, LV_EVENT_LONG_PRESSED, NULL);
+    screen_dice=lv_obj_create(NULL);
+    lv_obj_set_size(screen_dice,360,360);
+    lv_obj_set_style_bg_color(screen_dice,lv_color_black(),0);
+    lv_obj_set_style_border_width(screen_dice,0,0);
+    lv_obj_set_style_pad_all(screen_dice,0,0);
+    lv_obj_set_scrollbar_mode(screen_dice,LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(screen_dice,LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(screen_dice,clicked,LV_EVENT_CLICKED,NULL);
 
-    label_dice_result = lv_label_create(screen_dice);
-    lv_label_set_text(label_dice_result, "--");
-    lv_obj_set_style_text_color(label_dice_result, lv_color_hex(0x06D6A0), 0);
-    lv_obj_set_style_text_font(label_dice_result, &lv_font_montserrat_bold_116, 0);
-    lv_obj_align(label_dice_result, LV_ALIGN_CENTER, 0, -10);
+    title=lv_label_create(screen_dice);
+    lv_obj_set_style_text_color(title,lv_color_hex(0xF5C653),0);
+    lv_obj_set_style_text_font(title,&lv_font_montserrat_32,0);
+    lv_obj_align(title,LV_ALIGN_TOP_MID,0,45);
 
-    label_dice_hint = lv_label_create(screen_dice);
-    lv_label_set_text(label_dice_hint, "Hold to re-roll");
-    lv_obj_set_style_text_color(label_dice_hint, lv_color_hex(0x8A8A8A), 0);
-    lv_obj_set_style_text_font(label_dice_hint, &lv_font_montserrat_14, 0);
-    lv_obj_align(label_dice_hint, LV_ALIGN_CENTER, 0, 42);
+    clip=lv_obj_create(screen_dice);
+    lv_obj_set_size(clip,188,188);
+    lv_obj_set_style_bg_opa(clip,LV_OPA_TRANSP,0);
+    lv_obj_set_style_border_width(clip,0,0);
+    lv_obj_set_style_pad_all(clip,0,0);
+    lv_obj_set_scrollbar_mode(clip,LV_SCROLLBAR_MODE_OFF);
+    lv_obj_clear_flag(clip,LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(clip,LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_align(clip,LV_ALIGN_CENTER,0,0);
+
+    picture=lv_img_create(clip);
+    lv_obj_center(picture);
+    lv_obj_add_flag(picture,LV_OBJ_FLAG_EVENT_BUBBLE);
+    picture_units=lv_img_create(clip);
+    lv_obj_center(picture_units);
+    lv_obj_add_flag(picture_units,LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
+
+    coin_fallback=lv_label_create(clip);
+    lv_obj_set_style_text_color(coin_fallback,lv_color_white(),0);
+    lv_obj_set_style_text_font(coin_fallback,&lv_font_montserrat_32,0);
+    lv_obj_center(coin_fallback);
+    lv_obj_add_flag(coin_fallback,LV_OBJ_FLAG_EVENT_BUBBLE);
+
+    face_number=lv_label_create(screen_dice);
+    lv_obj_set_style_text_color(face_number,lv_color_white(),0);
+    lv_obj_set_style_text_font(face_number,&lv_font_montserrat_32,0);
+    lv_obj_align(face_number,LV_ALIGN_CENTER,0,-1);
+    lv_obj_add_flag(face_number,LV_OBJ_FLAG_EVENT_BUBBLE);
+    units_number=lv_label_create(screen_dice);
+    lv_obj_set_style_text_color(units_number,lv_color_white(),0);
+    lv_obj_set_style_text_font(units_number,&lv_font_montserrat_32,0);
+    lv_obj_align(units_number,LV_ALIGN_CENTER,55,-1);
+    lv_obj_add_flag(units_number,LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
+
+    hint=lv_label_create(screen_dice);
+    lv_obj_set_style_text_color(hint,lv_color_hex(0x999999),0);
+    lv_obj_set_style_text_font(hint,&lv_font_montserrat_14,0);
+    lv_obj_align(hint,LV_ALIGN_BOTTOM_MID,0,-39);
+
+    roll_timer=lv_timer_create(animate,FRAME_MS,NULL);
+    lv_timer_pause(roll_timer);
+    refresh_dice_ui();
 }

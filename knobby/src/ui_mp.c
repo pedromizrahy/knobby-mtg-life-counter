@@ -4,6 +4,9 @@
 #include "game.h"
 #include "storage.h"
 #include "hw.h"
+#include "timer.h"
+#include "ui_damage_resolver.h"
+#include "pregame.h"
 
 static lv_obj_t *add_low_battery_icon(lv_obj_t *parent)
 {
@@ -17,8 +20,29 @@ static lv_obj_t *add_low_battery_icon(lv_obj_t *parent)
 }
 
 static lv_obj_t *mp_battery_icon = NULL;
+static lv_obj_t *mp_turn_badge = NULL;
+static lv_obj_t *mp_turn_label = NULL;
+static lv_obj_t *mp_turn_round_label = NULL;
+static lv_obj_t *mp_turn_hold_fill = NULL;
+static lv_obj_t *mp_reminder_overlay = NULL;
+static lv_obj_t *mp_reminder_overlay_label = NULL;
+
+#define DAMAGE_DRAG_THRESHOLD_PX 18
+#define DAMAGE_DRAG_CENTER_HOLD_MS 600
+
+static int drag_source_player = -1;
+static int drag_target_player = -1;
+static bool drag_active = false;
+static bool drag_center_ready = false;
+static bool drag_edge_navigation = false;
+static uint32_t drag_target_enter_ms = 0;
+static uint32_t drag_release_ms = 0;
+static lv_point_t drag_start_point = {0, 0};
+static lv_obj_t *drag_hint = NULL;
+static lv_obj_t *drag_hint_label = NULL;
 
 #include <string.h>
+#include "esp_timer.h"
 
 // ---------- screens ----------
 lv_obj_t *screen_multiplayer = NULL;
@@ -85,9 +109,11 @@ static void wedge_compute_geometry(const mp_panel_spec_t *panels, int panel_coun
         const mp_panel_spec_t *spec = &panels[i];
         int16_t bis = wedge_bisector_deg(spec);
 
+        int label_radius = (panel_count >= 5) ? 104 : WEDGE_LABEL_RADIUS;
+
         wedge_geom[i].bis_deg = bis;
-        wedge_geom[i].label_dx = wedge_polar(lv_trigo_cos(bis), WEDGE_LABEL_RADIUS);
-        wedge_geom[i].label_dy = wedge_polar(lv_trigo_sin(bis), WEDGE_LABEL_RADIUS);
+        wedge_geom[i].label_dx = wedge_polar(lv_trigo_cos(bis), label_radius);
+        wedge_geom[i].label_dy = wedge_polar(lv_trigo_sin(bis), label_radius);
 
         /* One boundary per panel covers every separator exactly once */
         wedge_sep_ends[i].x = WEDGE_CX + wedge_polar(lv_trigo_cos(spec->wedge_start), 180);
@@ -103,19 +129,49 @@ typedef struct {
     bool switch_font_by_orientation;
 } mp_layout_spec_t;
 
+static bool wedge_contains_angle(const mp_panel_spec_t *spec, int angle);
+static lv_opa_t art_turn_life_opa_for_player(int player);
+
 /* ---------- shared widget state ---------- */
 static struct {
     lv_obj_t *panels[MULTIPLAYER_COUNT];
     lv_obj_t *life_labels[MULTIPLAYER_COUNT];
     lv_obj_t *name_labels[MULTIPLAYER_COUNT];
+    lv_obj_t *art_images[MULTIPLAYER_COUNT];
+    lv_obj_t *art_overlays[MULTIPLAYER_COUNT];
     lv_obj_t *counter_rows[MULTIPLAYER_COUNT][COUNTER_TYPE_COUNT];
     lv_obj_t *counter_values[MULTIPLAYER_COUNT][COUNTER_TYPE_COUNT];
+    lv_obj_t *cmd_markers[MULTIPLAYER_COUNT][MAX_DISPLAY_PLAYERS];
     const mp_layout_spec_t *layout;
 } mp_state;
 
 static lv_timer_t *select_timeout_timer = NULL;
 
 /* ---------- small helpers ---------- */
+static void mp_label_set_text_if_changed(lv_obj_t *label, const char *text)
+{
+    const char *current;
+
+    if (label == NULL || text == NULL) return;
+    current = lv_label_get_text(label);
+    if (current == NULL || strcmp(current, text) != 0)
+        lv_label_set_text(label, text);
+}
+
+static void mp_set_text_color_if_changed(lv_obj_t *obj, lv_color_t color)
+{
+    if (obj == NULL) return;
+    if (lv_obj_get_style_text_color(obj, LV_PART_MAIN).full != color.full)
+        lv_obj_set_style_text_color(obj, color, 0);
+}
+
+static void mp_set_bg_opa_if_changed(lv_obj_t *obj, lv_opa_t opa)
+{
+    if (obj == NULL) return;
+    if (lv_obj_get_style_bg_opa(obj, LV_PART_MAIN) != opa)
+        lv_obj_set_style_bg_opa(obj, opa, 0);
+}
+
 static const lv_font_t *get_counter_badge_font(const counter_definition_t *definition)
 {
     if (definition != NULL && definition->icon_text != NULL) {
@@ -183,6 +239,169 @@ static void apply_label_rotation(lv_obj_t *life_lbl, lv_obj_t *name_lbl,
 }
 
 static void get_counter_equator_anchor(lv_obj_t *panel,
+                                       lv_coord_t *anchor_x, lv_coord_t *anchor_y);
+
+static int visible_commander_count(int target_player)
+{
+    int source;
+    int count = 0;
+
+    for (source = 0; source < MAX_DISPLAY_PLAYERS; source++) {
+        if (source != target_player &&
+            cmd_damage_totals[source][target_player] > 0)
+            count++;
+    }
+    return count;
+}
+
+static void refresh_commander_markers(const mp_panel_spec_t *spec,
+                                      lv_obj_t *panel,
+                                      lv_obj_t **markers,
+                                      int panel_index,
+                                      int target_player,
+                                      lv_color_t value_color,
+                                      int16_t row_angle)
+{
+    int source;
+    int visible = 0;
+    int counter_visible = 0;
+    int sources[MAX_DISPLAY_PLAYERS];
+    lv_coord_t anchor_x = 0;
+    lv_coord_t anchor_y = 0;
+
+    for (source = 0; source < COUNTER_TYPE_COUNT; source++) {
+        if (counter_type_is_enabled((counter_type_t)source) &&
+            get_counter_value(target_player, (counter_type_t)source) > 0)
+            counter_visible++;
+    }
+
+    for (source = 0; source < MAX_DISPLAY_PLAYERS; source++) {
+        if (source == target_player || cmd_damage_totals[source][target_player] <= 0) {
+            if (markers[source] != NULL)
+                lv_obj_add_flag(markers[source], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+
+        /* Commander markers are intentionally lazy. With 5/6 players,
+           pre-creating every source marker for every panel produces dozens
+           of LVGL objects before the first action and was enough to make
+           Start Game unstable on-device. Allocate only when damage exists. */
+        if (markers[source] == NULL) {
+            lv_obj_t *marker = make_plain_box(panel, 28, 34);
+            lv_obj_t *dot = lv_obj_create(marker);
+            lv_obj_t *art_clip = lv_obj_create(marker);
+            lv_obj_t *art = lv_img_create(art_clip);
+            lv_obj_t *value;
+
+            lv_obj_remove_style_all(dot);
+            lv_obj_set_size(dot, 10, 10);
+            lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+            lv_obj_align(dot, LV_ALIGN_TOP_MID, 0, 1);
+
+            lv_obj_remove_style_all(art_clip);
+            lv_obj_set_size(art_clip, 18, 18);
+            lv_obj_set_style_radius(art_clip, LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_clip_corner(art_clip, true, 0);
+            lv_obj_clear_flag(art_clip, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_align(art_clip, LV_ALIGN_TOP_MID, 0, 0);
+            lv_obj_add_flag(art_clip, LV_OBJ_FLAG_HIDDEN);
+
+            lv_obj_remove_style_all(art);
+            lv_obj_clear_flag(art, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_align(art, LV_ALIGN_CENTER, 0, 0);
+
+            value = lv_label_create(marker);
+            lv_label_set_text(value, "0");
+            lv_obj_set_style_text_font(value, &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_color(value, lv_color_white(), 0);
+            lv_obj_set_style_text_align(value, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_align(value, LV_ALIGN_BOTTOM_MID, 0, -1);
+
+            lv_obj_add_flag(marker, LV_OBJ_FLAG_HIDDEN);
+            markers[source] = marker;
+        }
+
+        sources[visible++] = source;
+    }
+
+    if (!spec_is_wedge(spec))
+        get_counter_equator_anchor(panel, &anchor_x, &anchor_y);
+
+    for (source = 0; source < visible; source++) {
+        int src = sources[source];
+        int total = counter_visible + visible;
+        int slot = counter_visible + source;
+        char buf[8];
+        lv_obj_t *marker = markers[src];
+        lv_obj_t *dot = lv_obj_get_child(marker, 0);
+        lv_obj_t *art_clip = lv_obj_get_child(marker, 1);
+        lv_obj_t *art = (art_clip != NULL) ? lv_obj_get_child(art_clip, 0) : NULL;
+        lv_obj_t *value = lv_obj_get_child(marker, 2);
+        lv_coord_t xoff;
+        lv_coord_t yoff;
+
+        snprintf(buf, sizeof(buf), "%d", cmd_damage_totals[src][target_player]);
+
+        if (dot != NULL && art_clip != NULL) {
+            const lv_img_dsc_t *commander_art =
+                pregame_get_player_commander_art(src);
+            bool use_art =
+                nvs_get_cmd_marker_mode() == CMD_MARKER_ART &&
+                commander_art != NULL &&
+                art != NULL;
+
+            if (use_art) {
+                uint32_t zoom_w =
+                    (18U * 256U + commander_art->header.w - 1U) /
+                    commander_art->header.w;
+                uint32_t zoom_h =
+                    (18U * 256U + commander_art->header.h - 1U) /
+                    commander_art->header.h;
+                uint16_t zoom = (uint16_t)((zoom_w > zoom_h) ? zoom_w : zoom_h);
+
+                if (zoom < 1U) zoom = 1U;
+                lv_img_set_src(art, commander_art);
+                lv_img_set_zoom(art, zoom);
+                lv_obj_align(art, LV_ALIGN_CENTER, 0, 0);
+                lv_obj_add_flag(dot, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(art_clip, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_set_style_bg_color(
+                    dot, get_effective_player_color(src, src, LIFE_VIB_VIV), 0);
+                lv_obj_clear_flag(dot, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(art_clip, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+        if (value != NULL) {
+            lv_label_set_text(value, buf);
+            lv_obj_set_style_text_color(value, value_color, 0);
+        }
+
+        if (spec_is_wedge(spec)) {
+            const int radius = 158;
+            const int step_deg =
+                (mp_state.layout != NULL && mp_state.layout->panel_count >= 5)
+                    ? 9 : 14;
+            int angle = (wedge_geom[panel_index].bis_deg
+                         + ((total - 1) * step_deg / 2)
+                         - (slot * step_deg) + 360) % 360;
+            xoff = wedge_polar(lv_trigo_cos((int16_t)angle), radius);
+            yoff = wedge_polar(lv_trigo_sin((int16_t)angle), radius);
+        } else {
+            const lv_coord_t step = 30;
+            xoff = anchor_x +
+                   (lv_coord_t)((slot * step) - ((total - 1) * step / 2));
+            yoff = anchor_y;
+        }
+
+        lv_obj_align(marker, LV_ALIGN_CENTER, xoff, yoff);
+        apply_object_rotation(marker, row_angle, 0, 0);
+        lv_obj_clear_flag(marker, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void get_counter_equator_anchor(lv_obj_t *panel,
                                        lv_coord_t *anchor_x, lv_coord_t *anchor_y)
 {
     lv_obj_t *parent;
@@ -191,7 +410,7 @@ static void get_counter_equator_anchor(lv_obj_t *panel,
     lv_coord_t parent_h;
     lv_coord_t panel_center_y;
     lv_coord_t target_world_y;
-    const lv_coord_t equator_gap = 24;
+    const lv_coord_t equator_gap = 18;
     const lv_coord_t edge_margin = 24;
 
     if (anchor_x == NULL || anchor_y == NULL) return;
@@ -212,7 +431,25 @@ static void get_counter_equator_anchor(lv_obj_t *panel,
     if (target_world_y < panel_y + edge_margin) target_world_y = panel_y + edge_margin;
     if (target_world_y > panel_y + panel_h - edge_margin) target_world_y = panel_y + panel_h - edge_margin;
 
-    *anchor_x = 0;
+    {
+        lv_coord_t panel_x = lv_obj_get_x(panel);
+        lv_coord_t panel_w = lv_obj_get_width(panel);
+        lv_coord_t parent_w = lv_obj_get_width(parent);
+        lv_coord_t panel_center_x = panel_x + (panel_w / 2);
+
+        /* Keep the combined poison/commander band close to the central
+           divider but outside the timer safe-zone. The previous outward
+           shift could clip the first counter (notably Infect) when several
+           commander markers were present. */
+        if (panel_w < parent_w) {
+            /* 4P quadrants: hug the center divider vertically, but keep the
+               whole row on the outer side of the center timer. */
+            *anchor_x = (panel_center_x < (parent_w / 2)) ? -20 : 20;
+        } else {
+            /* 2P: alternate sides of the center timer for the two rows. */
+            *anchor_x = (panel_center_y < (parent_h / 2)) ? 72 : -72;
+        }
+    }
     *anchor_y = target_world_y - panel_center_y;
 }
 
@@ -263,13 +500,25 @@ static int16_t get_3p_orientation_angle(int mode, int panel_index)
 
 static int16_t get_4p_orientation_angle(int mode, int panel_index)
 {
-    static const int16_t angled_rot[MULTIPLAYER_COUNT] = {450, 1350, 2250, 3150};
+    static const int16_t angled_rot[4] = {450, 1350, 2250, 3150};
 
     switch (mode) {
         case ORIENTATION_MODE_CENTRIC:
             return angled_rot[panel_index];
         case ORIENTATION_MODE_TABLETOP:
             return (panel_index == 1 || panel_index == 2) ? 1800 : 0;
+        default:
+            return 0;
+    }
+}
+
+static int16_t get_radial_orientation_angle(int mode, int panel_index)
+{
+    switch (mode) {
+        case ORIENTATION_MODE_CENTRIC:
+            return (int16_t)(((wedge_geom[panel_index].bis_deg + 270) % 360) * 10);
+        case ORIENTATION_MODE_TABLETOP:
+            return (wedge_geom[panel_index].label_dy < 0) ? 1800 : 0;
         default:
             return 0;
     }
@@ -298,6 +547,23 @@ static const mp_panel_spec_t panels_4p[] = {
     {180, 180, 180, 180, -10, 3, 3},
 };
 
+/* Equal radial seats with P1 centered at the bottom. */
+static const mp_panel_spec_t panels_5p[] = {
+    {0, 0, 360, 360, 0, 0, 0,  54, 126},
+    {0, 0, 360, 360, 0, 1, 1, 126, 198},
+    {0, 0, 360, 360, 0, 2, 2, 198, 270},
+    {0, 0, 360, 360, 0, 3, 3, 270, 342},
+    {0, 0, 360, 360, 0, 4, 4, 342,  54},
+};
+static const mp_panel_spec_t panels_6p[] = {
+    {0, 0, 360, 360, 0, 0, 0,  60, 120},
+    {0, 0, 360, 360, 0, 1, 1, 120, 180},
+    {0, 0, 360, 360, 0, 2, 2, 180, 240},
+    {0, 0, 360, 360, 0, 3, 3, 240, 300},
+    {0, 0, 360, 360, 0, 4, 4, 300,   0},
+    {0, 0, 360, 360, 0, 5, 5,   0,  60},
+};
+
 static const mp_layout_spec_t layout_2p = {
     .panel_count = 2,
     .panels = panels_2p,
@@ -318,12 +584,26 @@ static const mp_layout_spec_t layout_4p = {
     .angle_fn = get_4p_orientation_angle,
     .switch_font_by_orientation = true,
 };
+static const mp_layout_spec_t layout_5p = {
+    .panel_count = 5,
+    .panels = panels_5p,
+    .angle_fn = get_radial_orientation_angle,
+    .switch_font_by_orientation = true,
+};
+static const mp_layout_spec_t layout_6p = {
+    .panel_count = 6,
+    .panels = panels_6p,
+    .angle_fn = get_radial_orientation_angle,
+    .switch_font_by_orientation = true,
+};
 
 static const mp_layout_spec_t *get_layout(int track)
 {
     if (track == 2) return &layout_2p;
     if (track == 3) return &layout_3p;
-    return &layout_4p;
+    if (track == 4) return &layout_4p;
+    if (track == 5) return &layout_5p;
+    return &layout_6p;
 }
 
 /* Snap a player's seat angle to upright-or-flipped (display-rotation step
@@ -358,6 +638,7 @@ static void refresh_counter_rows(const mp_panel_spec_t *spec, int16_t wedge_bis,
 {
     int type;
     int visible_count = 0;
+    int cmd_count = visible_commander_count(player_index);
     int visible_types[COUNTER_TYPE_COUNT];
     char buf[8];
     const lv_coord_t step = 30;
@@ -378,43 +659,41 @@ static void refresh_counter_rows(const mp_panel_spec_t *spec, int16_t wedge_bis,
             continue;
         }
 
-        visible_types[visible_count] = type;
-        visible_count++;
+        visible_types[visible_count++] = type;
     }
 
     for (type = 0; type < visible_count; type++) {
         int value;
         int counter_type = visible_types[type];
-        lv_coord_t x_offset = (lv_coord_t)((type * step) - ((visible_count - 1) * step / 2));
+        int total = visible_count + cmd_count;
         lv_coord_t local_x;
         lv_coord_t local_y;
 
         if (spec_is_wedge(spec)) {
-            /* Badges on an arc near the rim, centered on the wedge
-               bisector: constant clearance from both the rim and the
-               life/name labels regardless of badge count. */
-            const int radius = 152;
-            const int step_deg = 12;
-            int a = (wedge_bis + ((visible_count - 1) * step_deg / 2)
-                     - (type * step_deg) + 360) % 360;
-            local_x = wedge_polar(lv_trigo_cos((int16_t)a), radius);
-            local_y = wedge_polar(lv_trigo_sin((int16_t)a), radius);
+            const int radius = 158;
+            const int step_deg =
+                (mp_state.layout != NULL && mp_state.layout->panel_count >= 5)
+                    ? 9 : 14;
+            int angle = (wedge_bis + ((total - 1) * step_deg / 2)
+                         - (type * step_deg) + 360) % 360;
+            local_x = wedge_polar(lv_trigo_cos((int16_t)angle), radius);
+            local_y = wedge_polar(lv_trigo_sin((int16_t)angle), radius);
         } else {
-            local_x = anchor_x + x_offset;
+            local_x = anchor_x +
+                      (lv_coord_t)((type * step) - ((total - 1) * step / 2));
             local_y = anchor_y;
         }
 
         value = get_counter_value(player_index, (counter_type_t)counter_type);
-
         snprintf(buf, sizeof(buf), "%d", value);
         lv_label_set_text(value_labels[counter_type], buf);
         lv_obj_set_style_text_color(value_labels[counter_type], text_color, 0);
         {
             lv_obj_t *glyph = lv_obj_get_child(rows[counter_type], 0);
-            if (glyph != NULL) {
+            if (glyph != NULL)
                 lv_obj_set_style_text_color(glyph, text_color, 0);
-            }
         }
+
         lv_obj_clear_flag(rows[counter_type], LV_OBJ_FLAG_HIDDEN);
         lv_obj_align(rows[counter_type], LV_ALIGN_CENTER, local_x, local_y);
         apply_object_rotation(rows[counter_type], row_angle, 0, 0);
@@ -431,15 +710,37 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
 
     {
         int vib;
-        if (selection_count() == 0) vib = LIFE_VIB_MID;
-        else vib = selected ? LIFE_VIB_VIV : LIFE_VIB_DIM;
-        bg_color = get_effective_player_color(i, color_i, vib);
-        text_color = color_is_light(bg_color) ? lv_color_black() : lv_color_white();
+        if (player_selection_animation_active()) {
+            vib = selected ? LIFE_VIB_VIV : LIFE_VIB_DIM;
+        } else if (turn_timer_enabled && active_turn_player >= 0) {
+            vib = (active_turn_player == i) ? LIFE_VIB_VIV : LIFE_VIB_DIM;
+        } else {
+            vib = LIFE_VIB_MID;
+        }
+        if (nvs_get_color_mode() == COLOR_MODE_ART &&
+            pregame_get_player_commander_art(i) != NULL) {
+            /* Keep real commander artwork neutral in ART mode. A guest (or
+               any player without art) must instead illuminate in their
+               assigned player color, including while taking a turn. */
+            bg_color = lv_color_hex(0x080A0D);
+            text_color = lv_color_white();
+        } else {
+            bg_color = get_effective_player_color(i, color_i, vib);
+            text_color = color_is_light(bg_color)
+                       ? lv_color_black()
+                       : lv_color_white();
+        }
     }
 
     if (player_eliminated[i]) {
         bg_color = lv_color_hex(0x404040);
         text_color = lv_color_hex(0x808080);
+    }
+
+    if (nvs_get_color_mode() == COLOR_MODE_ART &&
+        turn_timer_enabled && active_turn_player >= 0 &&
+        active_turn_player != i && !player_eliminated[i]) {
+        text_color = lv_color_hex(0x8A949E);
     }
 
     /* Only write the color when it actually changed: every style write
@@ -453,10 +754,13 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
     if (life_lbl != NULL) {
         if (preview_here) {
             snprintf(buf, sizeof(buf), "%+d", pending_life_delta);
-            lv_label_set_text(life_lbl, buf);
+            mp_label_set_text_if_changed(life_lbl, buf);
             {
                 lv_color_t preview_c;
-                if (nvs_get_color_mode() == COLOR_MODE_PLAYER && !player_has_override[i]) {
+                if (nvs_get_color_mode() == COLOR_MODE_ART) {
+                    preview_c = lv_color_white();
+                } else if (nvs_get_color_mode() == COLOR_MODE_PLAYER &&
+                           !player_has_override[i]) {
                     preview_c = get_player_preview_color(color_i, pending_life_delta);
                     if (color_is_light(bg_color) && color_is_light(preview_c))
                         preview_c = lv_color_black();
@@ -465,12 +769,20 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
                 } else {
                     preview_c = color_is_light(bg_color) ? lv_color_black() : lv_color_white();
                 }
-                lv_obj_set_style_text_color(life_lbl, preview_c, 0);
+                mp_set_text_color_if_changed(life_lbl, preview_c);
             }
         } else {
             snprintf(buf, sizeof(buf), "%d", player_life[i]);
-            lv_label_set_text(life_lbl, buf);
-            lv_obj_set_style_text_color(life_lbl, text_color, 0);
+            mp_label_set_text_if_changed(life_lbl, buf);
+            mp_set_text_color_if_changed(life_lbl, text_color);
+        }
+
+        if (!player_selection_animation_active()) {
+            lv_obj_set_style_text_opa(
+                life_lbl,
+                preview_here ? LV_OPA_COVER
+                             : art_turn_life_opa_for_player(i),
+                0);
         }
     }
 
@@ -479,14 +791,535 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
             char total_buf[16];
             int new_total = player_life[i] + pending_life_delta;
             snprintf(total_buf, sizeof(total_buf), "= %d", new_total);
-            lv_label_set_text(name_lbl, total_buf);
+            mp_label_set_text_if_changed(name_lbl, total_buf);
         } else {
-            lv_label_set_text(name_lbl, player_names[i]);
+            mp_label_set_text_if_changed(name_lbl, player_names[i]);
         }
-        lv_obj_set_style_text_color(name_lbl, text_color, 0);
+        mp_set_text_color_if_changed(name_lbl, text_color);
     }
 
     return text_color;
+}
+
+static int16_t timer_facing_angle_for_player(int player)
+{
+    int i;
+
+    if (!nvs_get_timer_face_player() || mp_state.layout == NULL) return 0;
+
+    for (i = 0; i < mp_state.layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &mp_state.layout->panels[i];
+
+        if (spec->player_index != player) continue;
+
+        if (spec_is_wedge(spec)) {
+            return (wedge_geom[i].label_dy < 0) ? 1800 : 0;
+        }
+
+        return (spec->y + spec->h / 2 < 180) ? 1800 : 0;
+    }
+
+    return 0;
+}
+
+static lv_color_t multiplayer_timer_accent(int player)
+{
+    /*
+     * Commander Art already supplies the table's color. Keep the timer
+     * deliberately neutral/premium there; Color mode continues to identify
+     * the active seat with its assigned player color.
+     */
+    if (nvs_get_color_mode() == COLOR_MODE_ART)
+        return lv_color_hex(0xCFEFFF);
+
+    if (player >= 0 && player < MAX_GAME_PLAYERS) {
+        int color_index = player;
+
+        if (mp_state.layout != NULL) {
+            for (int i = 0; i < mp_state.layout->panel_count; i++) {
+                const mp_panel_spec_t *spec = &mp_state.layout->panels[i];
+                if (spec->player_index == player) {
+                    color_index = spec->color_index;
+                    break;
+                }
+            }
+        }
+
+        return get_effective_player_color(player, color_index, LIFE_VIB_VIV);
+    }
+
+    return lv_color_hex(0xCFEFFF);
+}
+
+void refresh_multiplayer_turn_ui(void)
+{
+    char time_buf[24];
+    char round_buf[24];
+    uint32_t total_seconds;
+    uint32_t minutes;
+    uint32_t seconds;
+    const char *name;
+    lv_color_t active_color;
+    int16_t timer_angle = timer_facing_angle_for_player(active_turn_player);
+
+    if (mp_turn_badge == NULL || mp_turn_label == NULL ||
+        mp_turn_round_label == NULL) return;
+
+    if (!turn_ui_visible || active_turn_player < 0) {
+        lv_obj_add_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
+        if (mp_turn_hold_fill != NULL)
+            lv_obj_add_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    total_seconds = get_current_turn_elapsed_ms() / 1000;
+    minutes = total_seconds / 60;
+    seconds = total_seconds % 60;
+
+    if (active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS)
+        name = player_names[active_turn_player];
+    else
+        name = "P?";
+
+    active_color = multiplayer_timer_accent(active_turn_player);
+
+    snprintf(time_buf, sizeof(time_buf), "%lu:%02lu",
+             (unsigned long)minutes, (unsigned long)seconds);
+    mp_label_set_text_if_changed(mp_turn_label, time_buf);
+
+    if (nvs_get_turn_show_name()) {
+        snprintf(round_buf, sizeof(round_buf), "%s | R%d | T%d",
+                 name, round_number, turn_in_round);
+    } else {
+        snprintf(round_buf, sizeof(round_buf), "R%d | T%d",
+                 round_number, turn_in_round);
+    }
+    mp_label_set_text_if_changed(mp_turn_round_label, round_buf);
+
+    apply_object_rotation(mp_turn_badge, timer_angle, 0, 0);
+    if (mp_reminder_overlay_label != NULL) {
+        apply_object_rotation(mp_reminder_overlay_label, timer_angle, 0, 0);
+    }
+
+    if (mp_turn_hold_fill != NULL) {
+        lv_obj_set_style_bg_color(mp_turn_hold_fill, active_color,
+                                  LV_PART_INDICATOR);
+
+        if (turn_hold_active) {
+            lv_bar_set_value(mp_turn_hold_fill, turn_hold_progress,
+                             LV_ANIM_OFF);
+            lv_obj_clear_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_bar_set_value(mp_turn_hold_fill, 0, LV_ANIM_OFF);
+            lv_obj_add_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (turn_reminder_active && nvs_get_turn_visual_alert()) {
+        lv_color_t alert = lv_palette_main(LV_PALETTE_RED);
+        lv_obj_set_style_text_color(mp_turn_label, alert, 0);
+        lv_obj_set_style_text_color(mp_turn_round_label, alert, 0);
+        lv_obj_set_style_border_color(mp_turn_badge, alert, 0);
+        lv_obj_set_style_border_width(mp_turn_badge, 2, 0);
+        lv_obj_set_style_bg_color(mp_turn_badge, lv_color_hex(0x101010), 0);
+
+        /* Threshold alert: pulse a soft red halo around the timer instead
+           of flashing the whole card/screen. The halo only animates during
+           the short reminder sequence; the red text/border remain until
+           the turn changes. */
+        lv_obj_set_style_shadow_color(mp_turn_badge, alert, 0);
+        lv_obj_set_style_shadow_width(
+            mp_turn_badge,
+            10 + (turn_reminder_pulse_level * 18U) / 100U, 0);
+        lv_obj_set_style_shadow_spread(
+            mp_turn_badge,
+            2 + (turn_reminder_pulse_level * 4U) / 100U, 0);
+        lv_obj_set_style_shadow_opa(
+            mp_turn_badge,
+            (lv_opa_t)(55U + (turn_reminder_pulse_level * 165U) / 100U), 0);
+
+        if (mp_turn_hold_fill != NULL)
+            lv_obj_set_style_bg_color(mp_turn_hold_fill, alert,
+                                      LV_PART_INDICATOR);
+    } else {
+        lv_obj_set_style_text_color(mp_turn_label, lv_color_white(), 0);
+        lv_obj_set_style_text_color(
+            mp_turn_round_label,
+            nvs_get_color_mode() == COLOR_MODE_ART
+                ? lv_color_hex(0xB9D5E3)
+                : lv_color_hex(0xB8B8B8), 0);
+        lv_obj_set_style_border_color(mp_turn_badge, active_color, 0);
+        lv_obj_set_style_border_width(mp_turn_badge, 2, 0);
+        lv_obj_set_style_bg_color(mp_turn_badge, lv_color_hex(0x0C0C0C), 0);
+        lv_obj_set_style_shadow_width(mp_turn_badge, 0, 0);
+        lv_obj_set_style_shadow_spread(mp_turn_badge, 0, 0);
+        lv_obj_set_style_shadow_opa(mp_turn_badge, LV_OPA_TRANSP, 0);
+    }
+
+    lv_obj_clear_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
+
+    if (mp_reminder_overlay != NULL && mp_reminder_overlay_label != NULL) {
+        if (turn_reminder_overlay_active && nvs_get_turn_visual_alert()) {
+            char alert_buf[24];
+            int reminder_minutes = nvs_get_turn_reminder_minutes();
+
+            snprintf(alert_buf, sizeof(alert_buf), "%d MIN", reminder_minutes);
+            mp_label_set_text_if_changed(mp_reminder_overlay_label, alert_buf);
+            lv_obj_set_style_bg_opa(mp_reminder_overlay, LV_OPA_90, 0);
+            lv_obj_clear_flag(mp_reminder_overlay, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(mp_reminder_overlay);
+        } else {
+            lv_obj_add_flag(mp_reminder_overlay, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+void refresh_multiplayer_player_name(int player)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+
+    if (layout == NULL || player < 0)
+        return;
+
+    for (int i = 0; i < layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &layout->panels[i];
+
+        if (spec->player_index != player)
+            continue;
+
+        /*
+         * While a life preview is active, the name label temporarily shows
+         * the projected total ("= N"). Preserve that transient display; the
+         * real player name will be restored by the normal preview refresh.
+         */
+        if (life_preview_active && is_player_selected(player))
+            return;
+
+        mp_label_set_text_if_changed(mp_state.name_labels[i],
+                                     player_names[player]);
+        return;
+    }
+}
+
+static lv_opa_t art_turn_shade_opa_for_player(int player)
+{
+    /*
+     * ART mode communicates turn ownership with luminance only.
+     * The active slice should read immediately as "lit", while inactive
+     * slices recede enough that the distinction is obvious at a glance.
+     */
+    if (!turn_timer_enabled || active_turn_player < 0)
+        return LV_OPA_40;
+
+    return (player == active_turn_player) ? LV_OPA_TRANSP : LV_OPA_90;
+}
+
+static lv_opa_t art_turn_life_opa_for_player(int player)
+{
+    if (nvs_get_color_mode() != COLOR_MODE_ART ||
+        !turn_timer_enabled || active_turn_player < 0)
+        return LV_OPA_COVER;
+
+    return (player == active_turn_player) ? LV_OPA_COVER : LV_OPA_60;
+}
+
+void refresh_multiplayer_player_state(int player)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+    int orientation_mode;
+
+    if (layout == NULL || player < 0)
+        return;
+
+    orientation_mode = nvs_get_orientation();
+
+    for (int i = 0; i < layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &layout->panels[i];
+        lv_obj_t *panel;
+        lv_obj_t *life_lbl;
+        lv_obj_t *name_lbl;
+        int16_t angle;
+        int16_t counter_angle;
+        lv_color_t text_color;
+        lv_opa_t shade_opa = LV_OPA_50;
+
+        if (spec->player_index != player)
+            continue;
+
+        panel = mp_state.panels[i];
+        life_lbl = mp_state.life_labels[i];
+        name_lbl = mp_state.name_labels[i];
+        angle = layout->angle_fn(orientation_mode, i);
+        counter_angle =
+            get_counter_row_angle(orientation_mode, spec, panel, angle);
+
+        /*
+         * State-only refresh: life/name/color + counters + commander markers.
+         * Geometry, image source, zoom and object tree stay untouched.
+         */
+        text_color = refresh_mp_panel(panel, life_lbl, name_lbl,
+                                      spec->player_index, spec->color_index);
+
+        if (nvs_get_color_mode() == COLOR_MODE_ART &&
+            mp_state.art_overlays[i] != NULL) {
+            shade_opa = art_turn_shade_opa_for_player(spec->player_index);
+            mp_set_bg_opa_if_changed(mp_state.art_overlays[i], shade_opa);
+        }
+
+        refresh_counter_rows(spec, wedge_geom[i].bis_deg, panel,
+                             mp_state.counter_rows[i],
+                             mp_state.counter_values[i],
+                             spec->player_index, text_color,
+                             angle, counter_angle);
+
+        refresh_commander_markers(spec, panel, mp_state.cmd_markers[i], i,
+                                  spec->player_index, text_color,
+                                  counter_angle);
+        return;
+    }
+}
+
+void refresh_multiplayer_commander_markers(void)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+    int orientation_mode;
+    int i;
+
+    if (layout == NULL)
+        return;
+
+    orientation_mode = nvs_get_orientation();
+
+    for (i = 0; i < layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &layout->panels[i];
+        lv_obj_t *panel = mp_state.panels[i];
+        lv_obj_t *name_lbl = mp_state.name_labels[i];
+        int16_t angle = layout->angle_fn(orientation_mode, i);
+        int16_t counter_angle =
+            get_counter_row_angle(orientation_mode, spec, panel, angle);
+        lv_color_t text_color = (name_lbl != NULL)
+            ? lv_obj_get_style_text_color(name_lbl, LV_PART_MAIN)
+            : get_player_text_color(spec->player_index);
+
+        /*
+         * Commander Marker: Dot <-> Art changes only the marker contents.
+         * Do not repaint player panels, counters, labels, geometry or images.
+         */
+        refresh_commander_markers(spec, panel, mp_state.cmd_markers[i], i,
+                                  spec->player_index, text_color,
+                                  counter_angle);
+    }
+}
+
+void refresh_multiplayer_turn_state(void)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+    int i;
+
+    if (layout == NULL)
+        return;
+
+    for (i = 0; i < layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &layout->panels[i];
+
+        /* Turn changes affect panel emphasis and text contrast, but not
+           counters, commander markers, geometry, or image sources. */
+        refresh_mp_panel(mp_state.panels[i],
+                         mp_state.life_labels[i],
+                         mp_state.name_labels[i],
+                         spec->player_index,
+                         spec->color_index);
+
+        if (nvs_get_color_mode() == COLOR_MODE_ART &&
+            mp_state.art_overlays[i] != NULL) {
+            lv_opa_t shade_opa =
+                art_turn_shade_opa_for_player(spec->player_index);
+
+            mp_set_bg_opa_if_changed(mp_state.art_overlays[i], shade_opa);
+        }
+    }
+
+    refresh_multiplayer_turn_ui();
+}
+
+void refresh_multiplayer_life_preview(void)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+    int i;
+
+    if (layout == NULL)
+        return;
+
+    for (i = 0; i < layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &layout->panels[i];
+        int player = spec->player_index;
+        lv_obj_t *life_lbl = mp_state.life_labels[i];
+        lv_obj_t *name_lbl = mp_state.name_labels[i];
+        lv_color_t text_color;
+        char buf[16];
+
+        if (!is_player_selected(player))
+            continue;
+
+        if (nvs_get_color_mode() == COLOR_MODE_ART) {
+            text_color = lv_color_white();
+        } else {
+            lv_color_t bg_color =
+                get_effective_player_color(player, spec->color_index, LIFE_VIB_VIV);
+            text_color = color_is_light(bg_color) ? lv_color_black() : lv_color_white();
+        }
+
+        if (life_lbl != NULL) {
+            if (life_preview_active) {
+                lv_color_t preview_c = text_color;
+
+                snprintf(buf, sizeof(buf), "%+d", pending_life_delta);
+
+                if (nvs_get_color_mode() == COLOR_MODE_PLAYER &&
+                    !player_has_override[player]) {
+                    lv_color_t bg_color =
+                        get_effective_player_color(player, spec->color_index, LIFE_VIB_VIV);
+                    preview_c =
+                        get_player_preview_color(spec->color_index, pending_life_delta);
+                    if (color_is_light(bg_color) == color_is_light(preview_c))
+                        preview_c = text_color;
+                }
+
+                mp_label_set_text_if_changed(life_lbl, buf);
+                mp_set_text_color_if_changed(life_lbl, preview_c);
+            } else {
+                snprintf(buf, sizeof(buf), "%d", player_life[player]);
+                mp_label_set_text_if_changed(life_lbl, buf);
+                mp_set_text_color_if_changed(life_lbl, text_color);
+            }
+        }
+
+        if (name_lbl != NULL) {
+            if (life_preview_active) {
+                snprintf(buf, sizeof(buf), "= %d",
+                         player_life[player] + pending_life_delta);
+                mp_label_set_text_if_changed(name_lbl, buf);
+            } else {
+                mp_label_set_text_if_changed(name_lbl, player_names[player]);
+            }
+            mp_set_text_color_if_changed(name_lbl, text_color);
+        }
+    }
+}
+
+static int roulette_panel_index_for_player(int player)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+
+    if (layout == NULL)
+        return -1;
+
+    for (int i = 0; i < layout->panel_count; i++) {
+        if (layout->panels[i].player_index == player)
+            return i;
+    }
+    return -1;
+}
+
+static void roulette_set_player_slice_emphasis(int player, bool selected)
+{
+    static uint32_t roulette_sample_count[2] = {0, 0};
+    static uint64_t roulette_total_us[2] = {0, 0};
+    static uint32_t roulette_max_us[2] = {0, 0};
+    int mode_bucket = (nvs_get_color_mode() == COLOR_MODE_ART) ? 1 : 0;
+    int64_t sample_start_us = esp_timer_get_time();
+    int panel_index = roulette_panel_index_for_player(player);
+    const mp_panel_spec_t *spec;
+    lv_obj_t *panel;
+    lv_obj_t *life_lbl;
+    lv_obj_t *name_lbl;
+
+    if (panel_index < 0 || mp_state.layout == NULL)
+        return;
+
+    spec = &mp_state.layout->panels[panel_index];
+    panel = mp_state.panels[panel_index];
+    life_lbl = mp_state.life_labels[panel_index];
+    name_lbl = mp_state.name_labels[panel_index];
+
+    /*
+     * Roulette emphasis belongs to the whole pizza slice, not just the
+     * number. Only the previous and current slice are touched on each hop.
+     */
+    if (nvs_get_color_mode() == COLOR_MODE_ART &&
+        mp_state.art_overlays[panel_index] != NULL) {
+        mp_set_bg_opa_if_changed(
+            mp_state.art_overlays[panel_index],
+            selected ? LV_OPA_TRANSP : LV_OPA_90);
+    } else if (panel != NULL) {
+        lv_color_t bg = get_effective_player_color(
+            player, spec->color_index,
+            selected ? LIFE_VIB_VIV : LIFE_VIB_DIM);
+        lv_color_t text = color_is_light(bg)
+                        ? lv_color_black()
+                        : lv_color_white();
+
+        if (lv_obj_get_style_bg_color(panel, LV_PART_MAIN).full != bg.full)
+            lv_obj_set_style_bg_color(panel, bg, 0);
+        mp_set_text_color_if_changed(life_lbl, text);
+        mp_set_text_color_if_changed(name_lbl, text);
+    }
+
+    /* Text stays fully readable; the moving cue is the slice itself. */
+    if (life_lbl != NULL)
+        lv_obj_set_style_text_opa(life_lbl, LV_OPA_COVER, 0);
+    if (name_lbl != NULL)
+        lv_obj_set_style_text_opa(name_lbl, LV_OPA_COVER, 0);
+
+    {
+        uint32_t elapsed_us = (uint32_t)(esp_timer_get_time() - sample_start_us);
+        roulette_sample_count[mode_bucket]++;
+        roulette_total_us[mode_bucket] += elapsed_us;
+        if (elapsed_us > roulette_max_us[mode_bucket])
+            roulette_max_us[mode_bucket] = elapsed_us;
+
+        if ((roulette_sample_count[mode_bucket] % 24U) == 0U) {
+            printf("[Perf] Roulette %s slice avg=%lu us max=%lu us samples=%lu\n",
+                   mode_bucket ? "ART" : "COLOR",
+                   (unsigned long)(roulette_total_us[mode_bucket] /
+                                   roulette_sample_count[mode_bucket]),
+                   (unsigned long)roulette_max_us[mode_bucket],
+                   (unsigned long)roulette_sample_count[mode_bucket]);
+        }
+    }
+}
+
+void refresh_multiplayer_selection_animation(void)
+{
+    const mp_layout_spec_t *layout = mp_state.layout;
+
+    if (layout == NULL)
+        return;
+
+    /* Initial roulette frame: dim every slice except the current seat. */
+    for (int i = 0; i < layout->panel_count; i++) {
+        int player = layout->panels[i].player_index;
+        roulette_set_player_slice_emphasis(player, is_player_selected(player));
+    }
+}
+
+void refresh_multiplayer_selection_step(int previous_player, int current_player)
+{
+    /* Hot path: exactly two slices change per hop. */
+    if (previous_player != current_player)
+        roulette_set_player_slice_emphasis(previous_player, false);
+    roulette_set_player_slice_emphasis(current_player, true);
+}
+
+void refresh_multiplayer_selection_finish(void)
+{
+    /*
+     * player_select_anim_steps is already zero when this runs, so the normal
+     * refresh no longer sees roulette mode. Restore the table once; if turn
+     * tracking is enabled, turn_timer_start_for_player() immediately applies
+     * the winner's stronger turn emphasis afterwards.
+     */
+    refresh_multiplayer_turn_state();
 }
 
 /* ---------- unified refresh ---------- */
@@ -529,6 +1362,17 @@ void refresh_multiplayer_ui(void)
         text_color = refresh_mp_panel(panel, life_lbl, name_lbl,
                                       spec->player_index, spec->color_index);
 
+        /* In Art mode, use the dark overlay as the turn-owner cue:
+           inactive slices stay comfortably dark for readability, while the
+           active player's commander art becomes noticeably brighter. */
+        if (nvs_get_color_mode() == COLOR_MODE_ART &&
+            mp_state.art_overlays[i] != NULL) {
+            lv_opa_t shade_opa =
+                art_turn_shade_opa_for_player(spec->player_index);
+
+            mp_set_bg_opa_if_changed(mp_state.art_overlays[i], shade_opa);
+        }
+
         if (layout->switch_font_by_orientation) {
             const lv_font_t *life_font;
             lv_coord_t life_pivot_y;
@@ -538,7 +1382,9 @@ void refresh_multiplayer_ui(void)
                    orientation; drop to the smaller one only when the
                    value is too wide and would reach into the counter
                    arc beside the number (3+ digits). */
-                life_font = &lv_font_montserrat_bold_56;
+                life_font = (layout->panel_count >= 5)
+                          ? &lv_font_montserrat_bold_44
+                          : &lv_font_montserrat_bold_56;
                 if (life_lbl != NULL) {
                     lv_point_t ts;
                     lv_txt_get_size(&ts, lv_label_get_text(life_lbl),
@@ -561,9 +1407,11 @@ void refresh_multiplayer_ui(void)
             }
             if (name_lbl != NULL) {
                 lv_obj_clear_flag(name_lbl, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_align(name_lbl, LV_ALIGN_CENTER, bx, by + 30);
+                lv_obj_align(name_lbl, LV_ALIGN_CENTER, bx,
+                             by + ((layout->panel_count >= 5) ? 22 : 27));
             }
-            apply_label_rotation(life_lbl, name_lbl, angle, life_pivot_y, -30);
+            apply_label_rotation(life_lbl, name_lbl, angle, life_pivot_y,
+                                 (layout->panel_count >= 5) ? -22 : -27);
         } else {
             apply_label_rotation(life_lbl, name_lbl, angle, 10, -30);
         }
@@ -571,12 +1419,221 @@ void refresh_multiplayer_ui(void)
         refresh_counter_rows(spec, wedge_geom[i].bis_deg, panel,
                              mp_state.counter_rows[i], mp_state.counter_values[i],
                              spec->player_index, text_color, angle, counter_angle);
+
+        refresh_commander_markers(spec, panel, mp_state.cmd_markers[i], i,
+                                  spec->player_index, text_color, counter_angle);
+    }
+
+    refresh_multiplayer_turn_ui();
+}
+
+static int player_at_screen_point(lv_coord_t x, lv_coord_t y)
+{
+    int i;
+    int dx = x - WEDGE_CX;
+    int dy = y - WEDGE_CY;
+
+    if (mp_state.layout == NULL) return -1;
+
+    /* The center/timer is a universal multi-target gesture zone for every
+       layout, including rectangular 2P/4P layouts. */
+    if ((dx * dx) + (dy * dy) < (62 * 62)) return -2;
+
+    for (i = 0; i < mp_state.layout->panel_count; i++) {
+        const mp_panel_spec_t *spec = &mp_state.layout->panels[i];
+
+        if (spec_is_wedge(spec)) {
+            int dx = x - WEDGE_CX;
+            int dy = y - WEDGE_CY;
+            int angle;
+
+            if (dx == 0 && dy == 0) dx = 1;
+            angle = lv_atan2(dy, dx);
+            if (wedge_contains_angle(spec, angle)) return spec->player_index;
+        } else if (x >= spec->x && x < spec->x + spec->w &&
+                   y >= spec->y && y < spec->y + spec->h) {
+            return spec->player_index;
+        }
+    }
+
+    return -1;
+}
+
+static void drag_hint_hide(void)
+{
+    if (drag_hint != NULL) lv_obj_add_flag(drag_hint, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void drag_hint_refresh(void)
+{
+    char buf[64];
+
+    if (drag_hint == NULL || drag_hint_label == NULL ||
+        drag_source_player < 0 ||
+        (drag_target_player < 0 && drag_target_player != -2)) {
+        drag_hint_hide();
+        return;
+    }
+
+    if (drag_target_player == -2) {
+        snprintf(buf, sizeof(buf), "%s\n%s",
+                 player_names[drag_source_player],
+                 drag_center_ready ? "Multiple targets" : "Hold for targets");
+    } else {
+        snprintf(buf, sizeof(buf), "%s > %s\nDamage",
+                 player_names[drag_source_player],
+                 player_names[drag_target_player]);
+    }
+
+    lv_label_set_text(drag_hint_label, buf);
+    lv_obj_clear_flag(drag_hint, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(drag_hint);
+}
+
+static void damage_drag_reset(void)
+{
+    drag_source_player = -1;
+    drag_target_player = -1;
+    drag_active = false;
+    drag_center_ready = false;
+    drag_edge_navigation = false;
+    drag_target_enter_ms = 0;
+    drag_hint_hide();
+}
+
+void multiplayer_cancel_damage_drag(void)
+{
+    damage_drag_reset();
+}
+
+bool multiplayer_damage_drag_active(void)
+{
+    return drag_active && !drag_edge_navigation;
+}
+
+static void event_multiplayer_drag(lv_event_t *e)
+{
+    int player = (int)(intptr_t)lv_event_get_user_data(e);
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_indev_t *indev = lv_indev_get_act();
+    lv_point_t point;
+
+    if (player < 0 || player >= MULTIPLAYER_COUNT) return;
+    if (indev == NULL) return;
+    lv_indev_get_point(indev, &point);
+
+    if (code == LV_EVENT_PRESSED) {
+        if (player_selection_animation_active()) return;
+        if (player_eliminated[player]) return;
+        drag_source_player = player;
+        drag_target_player = -1;
+        drag_active = false;
+        drag_center_ready = false;
+        drag_target_enter_ms = 0;
+        drag_start_point = point;
+        drag_hint_hide();
+
+        /* Edge-origin straight swipes belong to table navigation/menu, not
+           damage. Reserving this thin rim prevents the menu gesture from
+           arming "Hold for targets" underneath it. */
+        drag_edge_navigation =
+            point.x <= 34 || point.x >= 326 ||
+            point.y <= 34 || point.y >= 326;
+        return;
+    }
+
+    if (drag_source_player != player) {
+        if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST)
+            damage_drag_reset();
+        return;
+    }
+
+    if (code == LV_EVENT_PRESSING) {
+        int dx = point.x - drag_start_point.x;
+        int dy = point.y - drag_start_point.y;
+        int target;
+        int center_dx = point.x - WEDGE_CX;
+        int center_dy = point.y - WEDGE_CY;
+        int center_dist2 = (center_dx * center_dx) + (center_dy * center_dy);
+
+        if (drag_edge_navigation) return;
+
+        if (!drag_active &&
+            (dx * dx) + (dy * dy) >=
+                (DAMAGE_DRAG_THRESHOLD_PX * DAMAGE_DRAG_THRESHOLD_PX)) {
+            drag_active = true;
+        }
+        if (!drag_active) return;
+
+        /* Once the finger enters the center, keep a slightly larger sticky
+           hold zone so normal touch jitter cannot drop the target just before
+           the 600 ms multi-target hold completes. */
+        if (drag_target_player == -2 && center_dist2 < (82 * 82))
+            target = -2;
+        else
+            target = player_at_screen_point(point.x, point.y);
+        if (target == drag_source_player) target = -1;
+
+        if (target != drag_target_player) {
+            drag_target_player = target;
+            drag_target_enter_ms = lv_tick_get();
+            drag_center_ready = false;
+        } else if (drag_target_player == -2 && !drag_center_ready &&
+                   lv_tick_elaps(drag_target_enter_ms) >=
+                       DAMAGE_DRAG_CENTER_HOLD_MS) {
+            int source = drag_source_player;
+
+            drag_center_ready = true;
+            drag_hint_refresh();
+
+            /* The center gesture is complete after the short hold; open the
+               multi-target picker immediately instead of requiring a second
+               release gesture. */
+            drag_release_ms = lv_tick_get();
+            damage_drag_reset();
+            open_damage_resolver(source);
+            lv_indev_wait_release(indev);
+            return;
+        }
+
+        drag_hint_refresh();
+        return;
+    }
+
+    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        bool was_drag = drag_active;
+        bool center_multi = drag_active && drag_target_player == -2 &&
+                            drag_center_ready;
+        bool handled = drag_active && drag_target_player >= 0 &&
+                       drag_target_player != drag_source_player &&
+                       !player_eliminated[drag_target_player];
+        int source = drag_source_player;
+        int target = drag_target_player;
+
+        /*
+         * Suppress the follow-up click only after an actual drag.
+         * A normal tap also emits RELEASED before SHORT_CLICKED; recording
+         * every release here made every multiplayer tap look like a
+         * post-drag click and effectively disabled player selection.
+         */
+        if (was_drag) {
+            drag_release_ms = lv_tick_get();
+        }
+        damage_drag_reset();
+
+        if (center_multi) {
+            open_damage_resolver(source);
+        } else if (handled) {
+            open_damage_resolver_for_target(source, target, false);
+        }
     }
 }
 
 /* ---------- events ---------- */
 static void event_multiplayer_select(lv_event_t *e)
 {
+    if (lv_tick_elaps(drag_release_ms) < 250) return;
+
     int player = (int)(intptr_t)lv_event_get_user_data(e);
     bool had_pending;
     bool was_selected;
@@ -584,14 +1641,9 @@ static void event_multiplayer_select(lv_event_t *e)
     if (player < 0 || player >= MULTIPLAYER_COUNT) return;
     if (player_eliminated[player]) return;
 
-    /* A tap during the first-player roulette stops the spin and leaves
-       nothing selected (the spinning highlight is not a real selection). */
-    if (player_selection_animation_active()) {
-        stop_player_selection_animation();
-        selection_clear();
-        refresh_multiplayer_ui();
-        return;
-    }
+    /* The random-first roulette owns the HUD until it lands. Ignore
+       incidental table touches instead of letting them stop the draw. */
+    if (player_selection_animation_active()) return;
 
     /* Capture state before committing: the commit clears the selection in
        multi-select mode, so we can't read it afterwards. */
@@ -627,19 +1679,27 @@ static void event_multiplayer_select(lv_event_t *e)
         }
     }
     select_kick_timer();
-    refresh_multiplayer_ui();
 }
 
 static void event_multiplayer_open_menu(lv_event_t *e)
 {
     int player = (int)(intptr_t)lv_event_get_user_data(e);
 
+    /* LVGL emits LONG_PRESSED at ~500 ms on the source panel even when the
+       finger has already dragged into the center. Multi-target needs ~600 ms,
+       so resetting here made the hint disappear just before it could fire.
+       Once a real drag is active, the drag state owns the gesture. */
+    if (drag_active) {
+        return;
+    }
+
+    /* A stationary long-press is a menu gesture. Clear stale hint state
+       before leaving the HUD. */
+    damage_drag_reset();
+
     if (player < 0 || player >= MULTIPLAYER_COUNT) return;
 
-    if (player_selection_animation_active()) {
-        stop_player_selection_animation();
-        selection_clear();
-    }
+    if (player_selection_animation_active()) return;
 
     /* Resolve any pending dialed delta before leaving the screen, so the
        auto-commit can't fire later against a context the user left. */
@@ -675,7 +1735,6 @@ static void select_timeout_cb(lv_timer_t *timer)
     selection_clear();
     if (select_timeout_timer != NULL)
         lv_timer_pause(select_timeout_timer);
-    refresh_multiplayer_ui();
 }
 
 void select_kick_timer(void)
@@ -731,8 +1790,9 @@ static void event_wedge_panel(lv_event_t *e)
         lv_draw_mask_angle_init(&wedge_mask_params[idx], WEDGE_CX, WEDGE_CY,
                                 spec->wedge_start, spec->wedge_end);
         wedge_mask_ids[idx] = lv_draw_mask_add(&wedge_mask_params[idx], NULL);
-    } else if (code == LV_EVENT_DRAW_MAIN_END) {
-        /* Remove before children draw so labels are not clipped */
+    } else if (code == LV_EVENT_DRAW_POST_END) {
+        /* Keep the angular mask through child drawing so commander-art
+           backgrounds are clipped to their own pizza slice as well. */
         lv_draw_mask_remove_id(wedge_mask_ids[idx]);
     } else if (code == LV_EVENT_HIT_TEST) {
         lv_hit_test_info_t *info = lv_event_get_param(e);
@@ -772,6 +1832,13 @@ void rebuild_multiplayer_layout(int track)
         battery_icon_unregister(mp_battery_icon);
         mp_battery_icon = NULL;
     }
+    mp_turn_badge = NULL;
+    mp_turn_label = NULL;
+    mp_turn_round_label = NULL;
+    mp_turn_hold_fill = NULL;
+    drag_hint = NULL;
+    drag_hint_label = NULL;
+    damage_drag_reset();
 
     lv_obj_clean(screen_multiplayer);
     memset(&mp_state, 0, sizeof(mp_state));
@@ -790,7 +1857,14 @@ void rebuild_multiplayer_layout(int track)
 
         panel = lv_btn_create(screen_multiplayer);
         lv_obj_remove_style_all(panel);
-        lv_obj_clear_flag(panel, LV_OBJ_FLAG_PRESS_LOCK);
+        /*
+         * Keep the initial player panel as the active press target while the
+         * finger crosses into another panel. The damage drag reads the global
+         * pointer position and resolves the destination itself; without
+         * PRESS_LOCK LVGL sends PRESS_LOST as soon as the pointer leaves the
+         * source panel, so source -> target drags cannot complete.
+         */
+        lv_obj_add_flag(panel, LV_OBJ_FLAG_PRESS_LOCK);
         lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
         lv_obj_set_size(panel, spec->w, spec->h);
         lv_obj_set_pos(panel, spec->x, spec->y);
@@ -804,21 +1878,62 @@ void rebuild_multiplayer_layout(int track)
                events (presses, draw phases) the handler doesn't act on */
             lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_COVER_CHECK, (void *)(intptr_t)i);
             lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_DRAW_MAIN_BEGIN, (void *)(intptr_t)i);
-            lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_DRAW_MAIN_END, (void *)(intptr_t)i);
+            lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_DRAW_POST_END, (void *)(intptr_t)i);
             lv_obj_add_event_cb(panel, event_wedge_panel, LV_EVENT_HIT_TEST, (void *)(intptr_t)i);
         } else {
             lv_obj_set_style_border_width(panel, 1, 0);
             lv_obj_set_style_border_color(panel, lv_color_black(), 0);
         }
+        lv_obj_add_event_cb(panel, event_multiplayer_drag, LV_EVENT_PRESSED, (void *)(intptr_t)p);
+        lv_obj_add_event_cb(panel, event_multiplayer_drag, LV_EVENT_PRESSING, (void *)(intptr_t)p);
+        lv_obj_add_event_cb(panel, event_multiplayer_drag, LV_EVENT_RELEASED, (void *)(intptr_t)p);
+        lv_obj_add_event_cb(panel, event_multiplayer_drag, LV_EVENT_PRESS_LOST, (void *)(intptr_t)p);
         lv_obj_add_event_cb(panel, event_multiplayer_select, LV_EVENT_SHORT_CLICKED, (void *)(intptr_t)p);
         lv_obj_add_event_cb(panel, event_multiplayer_open_menu, LV_EVENT_LONG_PRESSED, (void *)(intptr_t)p);
         mp_state.panels[i] = panel;
 
+        if (nvs_get_color_mode() == COLOR_MODE_ART) {
+            const lv_img_dsc_t *commander_art = pregame_get_player_commander_art(p);
+            if (commander_art != NULL &&
+                commander_art->header.w > 0 && commander_art->header.h > 0) {
+                uint32_t zoom_w =
+                    ((uint32_t)spec->w * 256U + commander_art->header.w - 1U) /
+                    commander_art->header.w;
+                uint32_t zoom_h =
+                    ((uint32_t)spec->h * 256U + commander_art->header.h - 1U) /
+                    commander_art->header.h;
+                uint16_t zoom = (uint16_t)((zoom_w > zoom_h) ? zoom_w : zoom_h);
+                lv_obj_t *art = lv_img_create(panel);
+                lv_obj_t *shade = make_plain_box(panel, spec->w, spec->h);
+
+                if (zoom < 1U) zoom = 1U;
+                if (zoom > 1024U) zoom = 1024U;
+
+                lv_img_set_src(art, commander_art);
+                lv_img_set_zoom(art, zoom);
+                lv_obj_align(art, LV_ALIGN_CENTER, 0, 0);
+                lv_obj_set_style_img_opa(art, LV_OPA_COVER, 0);
+                lv_obj_clear_flag(art, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+                lv_obj_set_style_bg_color(shade, lv_color_black(), 0);
+                lv_obj_set_style_bg_opa(shade, LV_OPA_40, 0);
+                lv_obj_align(shade, LV_ALIGN_CENTER, 0, 0);
+                mp_state.art_overlays[i] = shade;
+
+            }
+        }
+
         name_lbl = lv_label_create(panel);
         lv_label_set_text(name_lbl, player_names[p]);
         lv_obj_set_style_text_color(name_lbl, lv_color_white(), 0);
-        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_22, 0);
-        lv_obj_align(name_lbl, LV_ALIGN_CENTER, 0, 30);
+        lv_obj_set_style_text_font(name_lbl,
+            (layout->panel_count >= 5) ? &lv_font_montserrat_14
+                                       : &lv_font_montserrat_22, 0);
+        lv_obj_set_width(name_lbl,
+            (layout->panel_count >= 5) ? 104 : 148);
+        lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_align(name_lbl, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(name_lbl, LV_ALIGN_CENTER, 0, 27);
         mp_state.name_labels[i] = name_lbl;
 
         life_lbl = lv_label_create(panel);
@@ -840,6 +1955,10 @@ void rebuild_multiplayer_layout(int track)
         create_counter_row(panel, COUNTER_TYPE_EXPERIENCE,
             &mp_state.counter_rows[i][COUNTER_TYPE_EXPERIENCE],
             &mp_state.counter_values[i][COUNTER_TYPE_EXPERIENCE], p);
+
+        /* Commander damage markers are created lazily by
+           refresh_commander_markers() only after non-zero damage exists.
+           This keeps the initial 5/6-player LVGL object count bounded. */
     }
 
     if (layout->panel_count > 0 && spec_is_wedge(&layout->panels[0])) {
@@ -850,7 +1969,92 @@ void rebuild_multiplayer_layout(int track)
         lv_obj_add_event_cb(sep, event_wedge_separators, LV_EVENT_DRAW_MAIN, NULL);
     }
 
+    drag_hint = lv_obj_create(screen_multiplayer);
+    lv_obj_remove_style_all(drag_hint);
+    lv_obj_set_size(drag_hint, 150, 58);
+    lv_obj_align(drag_hint, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_radius(drag_hint, 16, 0);
+    lv_obj_set_style_bg_color(drag_hint, lv_color_hex(0x101010), 0);
+    lv_obj_set_style_bg_opa(drag_hint, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(drag_hint, 2, 0);
+    lv_obj_set_style_border_color(drag_hint, lv_color_white(), 0);
+    lv_obj_clear_flag(drag_hint, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(drag_hint, LV_OBJ_FLAG_HIDDEN);
+
+    drag_hint_label = lv_label_create(drag_hint);
+    lv_label_set_text(drag_hint_label, "");
+    lv_obj_set_style_text_color(drag_hint_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(drag_hint_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_align(drag_hint_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(drag_hint_label);
+
+    mp_turn_badge = lv_btn_create(screen_multiplayer);
+    lv_obj_remove_style_all(mp_turn_badge);
+    lv_obj_set_size(mp_turn_badge, 108, 62);
+    lv_obj_align(mp_turn_badge, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_radius(mp_turn_badge, 22, 0);
+    lv_obj_set_style_bg_color(mp_turn_badge, lv_color_hex(0x111111), 0);
+    lv_obj_set_style_bg_opa(mp_turn_badge, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(mp_turn_badge, 1, 0);
+    lv_obj_set_style_border_color(mp_turn_badge, lv_color_hex(0x777777), 0);
+    lv_obj_add_event_cb(mp_turn_badge, event_turn_hold, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(mp_turn_badge, event_turn_hold, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(mp_turn_badge, event_turn_hold, LV_EVENT_PRESS_LOST, NULL);
+    lv_obj_add_flag(mp_turn_badge, LV_OBJ_FLAG_HIDDEN);
+
+    /*
+     * Hold-to-pass progress fills the timer card from left to right. The
+     * translucent layer sits behind the labels, so progress is obvious
+     * without reading as a loading spinner.
+     */
+    mp_turn_hold_fill = lv_bar_create(mp_turn_badge);
+    lv_obj_remove_style_all(mp_turn_hold_fill);
+    lv_obj_set_size(mp_turn_hold_fill, 104, 58);
+    lv_obj_align(mp_turn_hold_fill, LV_ALIGN_CENTER, 0, 0);
+    lv_bar_set_range(mp_turn_hold_fill, 0, 1000);
+    lv_bar_set_value(mp_turn_hold_fill, 0, LV_ANIM_OFF);
+    lv_obj_set_style_radius(mp_turn_hold_fill, 20, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(mp_turn_hold_fill, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_radius(mp_turn_hold_fill, 20, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(mp_turn_hold_fill, lv_color_hex(0xCFEFFF),
+                              LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(mp_turn_hold_fill, LV_OPA_20,
+                            LV_PART_INDICATOR);
+    lv_obj_clear_flag(mp_turn_hold_fill,
+                      LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(mp_turn_hold_fill, LV_OBJ_FLAG_HIDDEN);
+
+    mp_turn_label = lv_label_create(mp_turn_badge);
+    lv_label_set_text(mp_turn_label, "0:00");
+    lv_obj_set_style_text_color(mp_turn_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(mp_turn_label, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_align(mp_turn_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(mp_turn_label, LV_ALIGN_TOP_MID, 0, 7);
+
+    mp_turn_round_label = lv_label_create(mp_turn_badge);
+    lv_label_set_text(mp_turn_round_label, "R1");
+    lv_obj_set_style_text_color(mp_turn_round_label, lv_color_hex(0xB8B8B8), 0);
+    lv_obj_set_style_text_font(mp_turn_round_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_align(mp_turn_round_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(mp_turn_round_label, LV_ALIGN_BOTTOM_MID, 0, -6);
+
     mp_battery_icon = add_low_battery_icon(screen_multiplayer);
+
+    mp_reminder_overlay = lv_obj_create(screen_multiplayer);
+    lv_obj_remove_style_all(mp_reminder_overlay);
+    lv_obj_set_size(mp_reminder_overlay, 360, 360);
+    lv_obj_set_pos(mp_reminder_overlay, 0, 0);
+    lv_obj_set_style_bg_color(mp_reminder_overlay, lv_color_hex(0xC62828), 0);
+    lv_obj_set_style_bg_opa(mp_reminder_overlay, LV_OPA_80, 0);
+    lv_obj_clear_flag(mp_reminder_overlay, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(mp_reminder_overlay, LV_OBJ_FLAG_HIDDEN);
+
+    mp_reminder_overlay_label = lv_label_create(mp_reminder_overlay);
+    lv_label_set_text(mp_reminder_overlay_label, "5 MIN");
+    lv_obj_set_style_text_color(mp_reminder_overlay_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(mp_reminder_overlay_label, &lv_font_montserrat_32, 0);
+    lv_obj_set_style_text_letter_space(mp_reminder_overlay_label, 2, 0);
+    lv_obj_center(mp_reminder_overlay_label);
 
     refresh_multiplayer_ui();
 }

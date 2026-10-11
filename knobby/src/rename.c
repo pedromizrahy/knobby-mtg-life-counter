@@ -91,8 +91,6 @@ static void rename_all_advance(void)
         open_rename_screen();
     } else {
         rename_all_active = false;
-        refresh_select_ui();
-        refresh_damage_ui();
         back_to_main();
     }
 }
@@ -111,14 +109,14 @@ static void apply_name_and_return(const char *name)
     }
     if (!is_default_name(name))
         mru_use_name(name);
-    refresh_multiplayer_ui();
 
+    /*
+     * The rename screen is active here. Select/Damage/gameplay refresh on
+     * entry, so repainting those hidden screens now is pure extra work.
+     */
     if (rename_all_active) {
         rename_all_advance();
     } else {
-        refresh_rename_ui();
-        refresh_select_ui();
-        refresh_damage_ui();
         open_player_menu(menu_player);
     }
 }
@@ -138,13 +136,9 @@ static void event_name_save(lv_event_t *e)
                  sizeof(player_names[menu_player]),
                  "P%d", menu_player + 1);
         net_sync_commit_names();
-        refresh_multiplayer_ui();
         if (rename_all_active) {
             rename_all_advance();
         } else {
-            refresh_rename_ui();
-            refresh_select_ui();
-            refresh_damage_ui();
             open_player_menu(menu_player);
         }
     } else {
