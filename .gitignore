@@ -79,3 +79,6 @@ sim/knobby_web.wasm
 # Machine-specific config (use config.local.sh.example as template)
 config.local.sh
 emsdk/
+
+# DIAL local compiled firmware and asset integrity report
+.dial-build/
