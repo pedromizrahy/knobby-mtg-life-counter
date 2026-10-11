@@ -38,13 +38,13 @@ static void refresh_dice_ui(void)
     if (label_type == NULL) return;
     lv_label_set_text(label_type, dice_names[selected_die]);
     if (selected_die == 0) {
-        lv_obj_remove_flag(coin_face, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(coin_face, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(label_result, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(coin_text, dice_result < 0 ? "?" :
                           dice_result == 0 ? "HEADS" : "TAILS");
     } else {
         lv_obj_add_flag(coin_face, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(label_result, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(label_result, LV_OBJ_FLAG_HIDDEN);
         if (dice_result <= 0) lv_label_set_text(label_result, "--");
         else {
             snprintf(result, sizeof(result), "%d", dice_result);
