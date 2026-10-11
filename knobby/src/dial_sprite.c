@@ -188,16 +188,16 @@ void dial_sprite_show(lv_obj_t *parent,int kind,unsigned frame,int result)
         if(value<1||value>max)value=1;
         idx=f->roll_count+(unsigned)(value-1);
     }
-    render_slot(parent,0,f,idx,kind==7?-80:0,kind==99?-44:0);
+    render_slot(parent,0,f,idx,kind==7?-86:0,kind==99?-44:0);
     if(kind==7) {
         const dial_frames_t *units_frame=source_units_for_d100();
         int units=result%10;
         unsigned second=(frame<f->roll_count)?frame:
                          f->roll_count+(unsigned)units;
-        render_slot(parent,1,units_frame,second,80,0);
-        /* A pair of 184px sprites must be reduced to avoid overlap. */
-        if(images[0]) lv_img_set_zoom(images[0],212);
-        if(images[1]) lv_img_set_zoom(images[1],212);
+        render_slot(parent,1,units_frame,second,86,0);
+        /* Larger percentile dice with a visible gap between their rendered bounds. */
+        if(images[0]) lv_img_set_zoom(images[0],225);
+        if(images[1]) lv_img_set_zoom(images[1],225);
     } else {
         if(images[0]) {
             lv_img_set_zoom(images[0],256);
