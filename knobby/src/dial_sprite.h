@@ -8,6 +8,7 @@ extern "C" {
 /* 0=coin, 1=D4, 2=D6, 3=D8, 4=D10, 5=D12,
  * 6=D20 (existing player), 7=D100, 99=intro */
 bool dial_sprite_available(int kind);
+bool dial_sprite_d6_3d_ready(void);
 void dial_sprite_show(lv_obj_t *parent, int kind, unsigned roll_frame, int result);
 void dial_sprite_hide(void);
 void dial_sprite_intro_anim(unsigned frame);
