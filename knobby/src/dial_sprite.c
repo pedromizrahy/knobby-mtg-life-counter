@@ -176,7 +176,7 @@ void dial_sprite_show(lv_obj_t *parent,int kind,unsigned frame,int result)
         if(value<1||value>max)value=1;
         idx=f->roll_count+(unsigned)(value-1);
     }
-    render_slot(parent,0,f,idx,kind==99?-0:(kind==7?-51:0),kind==99?-33:0);
+    render_slot(parent,0,f,idx,kind==99?-0:(kind==7?-51:0),kind==99?-44:0);
     if(kind==7) {
         const dial_frames_t *units_frame=source_units_for_d100();
         int units=result%10;
@@ -184,8 +184,8 @@ void dial_sprite_show(lv_obj_t *parent,int kind,unsigned frame,int result)
                          f->roll_count+(unsigned)units;
         render_slot(parent,1,units_frame,second,51,0);
         /* A pair of 184px sprites must be reduced to avoid overlap. */
-        lv_img_set_zoom(images[0],170);
-        lv_img_set_zoom(images[1],170);
+        if(images[0]) lv_img_set_zoom(images[0],170);
+        if(images[1]) lv_img_set_zoom(images[1],170);
     } else {
         if(images[0]) lv_img_set_zoom(images[0],256);
         if(images[1]) lv_obj_add_flag(images[1],LV_OBJ_FLAG_HIDDEN);
