@@ -167,8 +167,13 @@ void dial_sprite_show(lv_obj_t *parent,int kind,unsigned frame,int result)
     if(!parent||!f) return;
     unsigned idx;
     if(kind==99) idx=0;
+    else if(kind==0 && frame<f->roll_count) {
+        /* Two complete roll paths: the last moving frame matches HEADS
+         * or TAILS without an abrupt face swap on completion. */
+        idx=(result==1 ? f->roll_count : 0U)+frame;
+    }
+    else if(kind==0) idx=2U*f->roll_count+(result==1?1U:0U);
     else if(frame<f->roll_count) idx=frame;
-    else if(kind==0) idx=f->roll_count+(result==1?1U:0U);
     else {
         int max=(int)(f->total-f->roll_count);
         int value=result;
