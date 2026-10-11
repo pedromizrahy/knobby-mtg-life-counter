@@ -39,6 +39,13 @@
 #else
 #define HAVE_D10 0
 #endif
+#if __has_include("dial_d100t_frames.h") && __has_include("dial_d100u_frames.h")
+#include "dial_d100t_frames.h"
+#include "dial_d100u_frames.h"
+#define HAVE_D100 1
+#else
+#define HAVE_D100 0
+#endif
 #if __has_include("dial_d12_frames.h")
 #include "dial_d12_frames.h"
 #define HAVE_D12 1
@@ -70,7 +77,9 @@ static const dial_frames_t *source_for(int kind)
 #endif
 #if HAVE_D10
         case 4: { static const dial_frames_t f=FRAMES(dial_d10); return &f; }
-        case 7: { static const dial_frames_t f=FRAMES(dial_d10); return &f; }
+#endif
+#if HAVE_D100
+        case 7: { static const dial_frames_t f=FRAMES(dial_d100t); return &f; }
 #endif
 #if HAVE_D12
         case 5: { static const dial_frames_t f=FRAMES(dial_d12); return &f; }
@@ -83,6 +92,15 @@ static const dial_frames_t *source_for(int kind)
 }
 bool dial_sprite_available(int kind) { return source_for(kind)!=NULL; }
 
+static const dial_frames_t *source_units_for_d100(void)
+{
+#if HAVE_D100
+    static const dial_frames_t f=FRAMES(dial_d100u);
+    return &f;
+#else
+    return NULL;
+#endif
+}
 static lv_obj_t *images[2]={NULL,NULL};
 static lv_img_dsc_t descriptors[2];
 static uint8_t *pixel_buffers[2]={NULL,NULL};
@@ -154,17 +172,17 @@ void dial_sprite_show(lv_obj_t *parent,int kind,unsigned frame,int result)
     else {
         int max=(int)(f->total-f->roll_count);
         int value=result;
-        if(kind==7) value=((result-1)/10)+1;
+        if(kind==7) value=(result==100?0:result/10)+1;
         if(value<1||value>max)value=1;
         idx=f->roll_count+(unsigned)(value-1);
     }
     render_slot(parent,0,f,idx,kind==99?-0:(kind==7?-51:0),kind==99?-33:0);
     if(kind==7) {
+        const dial_frames_t *units_frame=source_units_for_d100();
         int units=result%10;
-        int u=units==0?10:units;
         unsigned second=(frame<f->roll_count)?frame:
-                         f->roll_count+(unsigned)(u-1);
-        render_slot(parent,1,f,second,51,0);
+                         f->roll_count+(unsigned)units;
+        render_slot(parent,1,units_frame,second,51,0);
         /* A pair of 184px sprites must be reduced to avoid overlap. */
         lv_img_set_zoom(images[0],170);
         lv_img_set_zoom(images[1],170);
