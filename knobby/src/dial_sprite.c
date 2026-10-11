@@ -203,10 +203,10 @@ void dial_sprite_intro_anim(unsigned frame)
 {
     if(!images[0] || !owner[0] || !dial_sprite_available(99)) return;
     unsigned t=frame>17U?17U:frame;
-    /* Gentle zoom from 92% to native resolution; ease-out quartic. */
-    unsigned remain=17U-t;
-    unsigned shrink=(20U*remain*remain)/(17U*17U);
-    lv_img_set_zoom(images[0],(uint16_t)(256U-shrink));
+    /* Keep the RGB565 coin at native scale: LVGL's per-frame image zoom
+     * magnifies pre-existing edge pixels and produces a jagged lower rim
+     * on this 360px display. Fade + vertical settle without resampling. */
+    lv_img_set_zoom(images[0],256U);
     lv_obj_set_style_img_opa(images[0],(lv_opa_t)(178U+(77U*t)/17U),0);
     lv_obj_align(images[0],LV_ALIGN_CENTER,0,-44+(int)((17U-t)*3U/17U));
 }
