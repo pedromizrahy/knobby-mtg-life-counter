@@ -1,5 +1,6 @@
 #include "dice.h"
 #include "dice_art.h"
+#include "d20_anim.h"
 #include "game.h"
 #include "esp_random.h"
 #include <stdio.h>
@@ -41,6 +42,16 @@ static void set_art(int art)
 static void set_face(int number)
 {
     char buf[16];
+    if(selected==6 && d20_anim_available()) {
+        lv_obj_add_flag(picture,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(coin_fallback,LV_OBJ_FLAG_HIDDEN);
+        if(last_result>0 && !rolling) d20_anim_show(screen_dice,40U,last_result);
+        return;
+    }
+    d20_anim_hide();
     if(selected==0) {
         lv_obj_add_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
@@ -129,6 +140,12 @@ static void animate(lv_timer_t *timer)
         visible_coin=(int)((frame*8U/ROLL_FRAMES)&1U);
         if(frame>=ROLL_FRAMES) visible_coin=target;
         set_face(-1);
+    } else if(selected==6 && d20_anim_available()) {
+        /* Play the actual pre-rendered 3D roll. The last frame is rendered
+         * for the predetermined result, so the numbered face matches. */
+        unsigned sprite_frame=(frame * 39U)/ROLL_FRAMES;
+        if(frame>=ROLL_FRAMES) sprite_frame=40U;
+        d20_anim_show(screen_dice,sprite_frame,target);
     } else {
         current=(frame>=ROLL_FRAMES)?target:random_result(sides[selected]);
         /* Keep numeral on the die, not outside it; hide it while tumbling,
@@ -175,6 +192,7 @@ void open_dice_screen(void)
     lv_img_set_angle(picture,0);
     lv_img_set_zoom(picture,256);
     lv_label_set_text(hint,"Turn dial to select  |  Tap to roll");
+    d20_anim_hide();
     refresh_dice_ui();
     load_screen_if_needed(screen_dice);
 }
