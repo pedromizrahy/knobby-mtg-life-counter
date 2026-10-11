@@ -10,6 +10,7 @@ extern "C" {
 bool dial_sprite_available(int kind);
 void dial_sprite_show(lv_obj_t *parent, int kind, unsigned roll_frame, int result);
 void dial_sprite_hide(void);
+void dial_sprite_intro_anim(unsigned frame);
 #ifdef __cplusplus
 }
 #endif
