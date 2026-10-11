@@ -11,7 +11,7 @@
 static const int sides[ITEM_COUNT]={0,4,6,8,10,12,20,100};
 static const char *names[ITEM_COUNT]={"COIN","D4","D6","D8","D10","D12","D20","D100"};
 lv_obj_t *screen_dice=NULL;
-static lv_obj_t *title=NULL,*hint=NULL,*clip=NULL,*picture=NULL,*face_number=NULL,*coin_fallback=NULL;
+static lv_obj_t *title=NULL,*hint=NULL,*clip=NULL,*picture=NULL,*picture_units=NULL,*face_number=NULL,*units_number=NULL,*coin_fallback=NULL;
 static lv_timer_t *roll_timer=NULL;
 static int selected=0,target=0,last_result=-1;
 static unsigned frame=0;
@@ -42,10 +42,44 @@ static void set_face(int number)
 {
     char buf[16];
     if(selected==0) {
+        lv_obj_add_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
         set_art(visible_coin);
         lv_label_set_text(coin_fallback,visible_coin==0?"HEADS":"TAILS");
     } else {
+        if(selected==ITEM_COUNT-1) {
+            const lv_img_dsc_t *ten=dial_art_get(5);
+            set_art(5);
+            if(ten) {
+                lv_img_set_src(picture_units,ten);
+                lv_obj_clear_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
+                lv_img_set_zoom(picture,180);
+                lv_img_set_zoom(picture_units,180);
+                lv_obj_align(picture,LV_ALIGN_CENTER,-55,0);
+                lv_obj_align(picture_units,LV_ALIGN_CENTER,55,0);
+            }
+            if(number>0) {
+                int tens=(number==100)?0:(number/10)*10;
+                snprintf(buf,sizeof(buf),"%02d",tens);
+                lv_label_set_text(face_number,buf);
+                snprintf(buf,sizeof(buf),"%d",number%10);
+                lv_label_set_text(units_number,buf);
+                lv_obj_clear_flag(face_number,LV_OBJ_FLAG_HIDDEN);
+                lv_obj_clear_flag(units_number,LV_OBJ_FLAG_HIDDEN);
+                lv_obj_align(face_number,LV_ALIGN_CENTER,-55,-1);
+                lv_obj_align(units_number,LV_ALIGN_CENTER,55,-1);
+            } else {
+                lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
+                lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
+            }
+            return;
+        }
+        lv_obj_add_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_align(face_number,LV_ALIGN_CENTER,0,-1);
+        lv_img_set_zoom(picture,256);
+        lv_obj_align(picture,LV_ALIGN_CENTER,0,0);
         set_art(selected+1);
         if(number>0) {
             snprintf(buf,sizeof(buf),"%d",number);
@@ -70,7 +104,7 @@ void dice_change_selection(int delta)
     selected=(selected+(delta>0?1:-1)+ITEM_COUNT)%ITEM_COUNT;
     last_result=-1;
     visible_coin=0;
-    lv_obj_set_width(clip,188);
+    lv_obj_set_width(clip,selected==ITEM_COUNT-1?265:188);
     lv_obj_align(clip,LV_ALIGN_CENTER,0,0);
     lv_img_set_angle(picture,0);
     lv_img_set_zoom(picture,256);
@@ -100,7 +134,9 @@ static void animate(lv_timer_t *timer)
         /* Keep numeral on the die, not outside it; hide it while tumbling,
          * then reveal the destination face near the end. */
         lv_img_set_angle(picture,(int16_t)((frame*231U)%3600U));
-        lv_img_set_zoom(picture,(uint16_t)(230U+((frame%7U)*6U)));
+        if(selected!=ITEM_COUNT-1)
+            lv_img_set_zoom(picture,(uint16_t)(230U+((frame%7U)*6U)));
+        else lv_img_set_angle(picture_units,(int16_t)((frame*193U)%3600U));
         set_face(frame>=ROLL_FRAMES-5U?target:current);
     }
     if(frame>=ROLL_FRAMES) {
@@ -172,6 +208,10 @@ void build_dice_screen(void)
     picture=lv_img_create(clip);
     lv_obj_center(picture);
     lv_obj_add_flag(picture,LV_OBJ_FLAG_EVENT_BUBBLE);
+    picture_units=lv_img_create(clip);
+    lv_obj_center(picture_units);
+    lv_obj_add_flag(picture_units,LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
 
     coin_fallback=lv_label_create(clip);
     lv_obj_set_style_text_color(coin_fallback,lv_color_white(),0);
@@ -184,6 +224,12 @@ void build_dice_screen(void)
     lv_obj_set_style_text_font(face_number,&lv_font_montserrat_32,0);
     lv_obj_align(face_number,LV_ALIGN_CENTER,0,-1);
     lv_obj_add_flag(face_number,LV_OBJ_FLAG_EVENT_BUBBLE);
+    units_number=lv_label_create(screen_dice);
+    lv_obj_set_style_text_color(units_number,lv_color_white(),0);
+    lv_obj_set_style_text_font(units_number,&lv_font_montserrat_32,0);
+    lv_obj_align(units_number,LV_ALIGN_CENTER,55,-1);
+    lv_obj_add_flag(units_number,LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
 
     hint=lv_label_create(screen_dice);
     lv_obj_set_style_text_color(hint,lv_color_hex(0x999999),0);
