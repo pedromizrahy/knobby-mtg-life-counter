@@ -6,7 +6,9 @@ $report=Join-Path $root '.dial-build\assets-build-report.json'
 $binary=Join-Path $build 'knobby.ino.bin'
 if (-not (Test-Path $binary)) { throw 'Nao ha firmware compilado neste diretório. Execute BUILD.cmd primeiro.' }
 if (-not (Test-Path $report)) { throw 'Falta o relatorio dos assets. Execute BUILD.cmd primeiro.' }
-$recorded = @(Get-Content -LiteralPath $report -Raw | ConvertFrom-Json)
+$recorded = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+# Windows PowerShell 5.1 may return the JSON array as a single pipeline object.
+# Explicitly enumerate it instead of wrapping that array inside another array.
 foreach ($item in $recorded) {
   $file = Join-Path $root ("knobby\src\" + $item.name)
   if (-not (Test-Path -LiteralPath $file)) { throw "Asset removido depois do build: $($item.name). Execute BUILD.cmd." }
