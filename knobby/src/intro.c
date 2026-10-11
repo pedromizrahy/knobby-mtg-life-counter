@@ -83,21 +83,21 @@ void build_intro_screen(void)
     lv_label_set_text(heading,"DIAL");
     lv_obj_set_style_text_font(heading,&lv_font_montserrat_32,0);
     lv_obj_set_style_text_color(heading,lv_color_hex(0xF6CF72),0);
-    lv_obj_align(heading,LV_ALIGN_BOTTOM_MID,0,-77);
+    lv_obj_align(heading,LV_ALIGN_TOP_MID,0,271);
     lv_obj_add_flag(heading,LV_OBJ_FLAG_HIDDEN);
 
     accent=lv_obj_create(screen_intro);
     lv_obj_set_size(accent,108,3);
     lv_obj_set_style_border_width(accent,0,0);
     lv_obj_set_style_bg_color(accent,lv_color_hex(0xE4AE39),0);
-    lv_obj_align(accent,LV_ALIGN_BOTTOM_MID,0,-67);
+    lv_obj_align(accent,LV_ALIGN_TOP_MID,0,311);
     lv_obj_add_flag(accent,LV_OBJ_FLAG_HIDDEN);
 
     subtitle=lv_label_create(screen_intro);
     lv_label_set_text(subtitle,"D O S   P R I M O S");
     lv_obj_set_style_text_font(subtitle,&lv_font_montserrat_14,0);
     lv_obj_set_style_text_color(subtitle,lv_color_hex(0xEFE5CE),0);
-    lv_obj_align(subtitle,LV_ALIGN_BOTTOM_MID,0,-37);
+    lv_obj_align(subtitle,LV_ALIGN_TOP_MID,0,323);
     lv_obj_add_flag(subtitle,LV_OBJ_FLAG_HIDDEN);
 }
 void knob_intro_init(void)
