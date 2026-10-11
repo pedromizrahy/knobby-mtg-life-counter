@@ -18,7 +18,7 @@ void refresh_intro_ui(void)
      * or swap to TAILS: those operations produced the black curtain. */
     lv_obj_set_width(coin_clip,280);
     lv_obj_align(coin_clip,LV_ALIGN_CENTER,0,-32);
-    const lv_img_dsc_t *heads=dial_art_get(0);
+    const lv_img_dsc_t *heads=dial_sprite_available(99) ? NULL : dial_art_get(0);
     if(dial_sprite_available(99)) {
         lv_obj_add_flag(coin_clip,LV_OBJ_FLAG_HIDDEN);
         /* Decode the full-quality static image once, not on every intro tick. */
@@ -70,7 +70,7 @@ void build_intro_screen(void)
     lv_obj_align(coin_clip,LV_ALIGN_CENTER,0,-32);
 
     coin_image=lv_img_create(coin_clip);
-    heads=dial_art_get(0);
+    heads=dial_sprite_available(99) ? NULL : dial_art_get(0);
     if(heads) {
         lv_img_set_src(coin_image,heads);
         lv_img_set_zoom(coin_image,256);
