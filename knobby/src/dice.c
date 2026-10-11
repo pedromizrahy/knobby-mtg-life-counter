@@ -48,7 +48,10 @@ static void set_face(int number)
         lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(coin_fallback,LV_OBJ_FLAG_HIDDEN);
-        if(last_result>0 && !rolling) d20_anim_show(screen_dice,40U,last_result);
+        if(!rolling) {
+            if(last_result>0) d20_anim_show(screen_dice,40U,last_result);
+            else d20_anim_show(screen_dice,0U,0);
+        }
         return;
     }
     d20_anim_hide();
