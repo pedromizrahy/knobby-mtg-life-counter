@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "description": "Assets of the Knobby dial. `locked` entries use GitHub release URLs and pinned SHA-256. Unlocked locally installed assets are verified and recorded at build time but are not cross-machine reproducible.",
+  "required": [
+    "dial_coin_frames.h",
+    "dial_intro_asset.h",
+    "dial_d4_frames.h",
+    "dial_d6_frames.h",
+    "dial_d8_frames.h",
+    "dial_d10_frames.h",
+    "dial_d12_frames.h",
+    "dice_d20_frames.h",
+    "dial_d100t_frames.h",
+    "dial_d100u_frames.h"
+  ],
+  "locked": []
+}
