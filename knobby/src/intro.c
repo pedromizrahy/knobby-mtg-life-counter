@@ -1,6 +1,7 @@
 #include "intro.h"
 #include "pregame.h"
 #include "dice_art.h"
+#include "dial_sprite.h"
 
 #define INTRO_FRAME_MS 55U
 #define INTRO_FRAMES 36U
@@ -18,7 +19,10 @@ void refresh_intro_ui(void)
     lv_obj_set_width(coin_clip,280);
     lv_obj_align(coin_clip,LV_ALIGN_CENTER,0,-32);
     const lv_img_dsc_t *heads=dial_art_get(0);
-    if(heads) {
+    if(dial_sprite_available(99)) {
+        lv_obj_add_flag(coin_clip,LV_OBJ_FLAG_HIDDEN);
+        dial_sprite_show(screen_intro,99,0U,0);
+    } else if(heads) {
         lv_img_set_src(coin_image,heads);
         lv_obj_clear_flag(coin_clip,LV_OBJ_FLAG_HIDDEN);
         /* LVGL zoom of 256 means native image quality; no repeated resample. */
