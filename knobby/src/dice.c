@@ -1,7 +1,6 @@
 #include "dice.h"
 #include "dice_art.h"
 #include "d20_anim.h"
-#include "dial_sprite.h"
 #include "game.h"
 #include "esp_random.h"
 #include <stdio.h>
@@ -44,8 +43,6 @@ static void set_face(int number)
 {
     char buf[16];
     if(selected==6 && d20_anim_available()) {
-        dial_sprite_hide();
-        lv_obj_clear_flag(clip,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(picture,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
@@ -58,15 +55,6 @@ static void set_face(int number)
         return;
     }
     d20_anim_hide();
-    if(dial_sprite_available(selected)) {
-        lv_obj_add_flag(clip,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
-        if(!rolling) dial_sprite_show(screen_dice,selected,32U,last_result<0?0:last_result);
-        return;
-    }
-    dial_sprite_hide();
-    lv_obj_clear_flag(clip,LV_OBJ_FLAG_HIDDEN);
     if(selected==0) {
         lv_obj_add_flag(picture_units,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
@@ -146,10 +134,7 @@ static void animate(lv_timer_t *timer)
         return;
     }
     frame++;
-    if(dial_sprite_available(selected)) {
-        unsigned sprite_frame=frame>=ROLL_FRAMES?32U:(frame*31U)/ROLL_FRAMES;
-        dial_sprite_show(screen_dice,selected,sprite_frame,target);
-    } else if(selected==0) {
+    if(selected==0) {
         /* Fold the visible image into an edge and swap sides between flips. */
         unsigned phase=(frame*8U)%ROLL_FRAMES;
         int edge=(int)(phase <= ROLL_FRAMES/2U ? phase : ROLL_FRAMES-phase);
