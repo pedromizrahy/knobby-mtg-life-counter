@@ -92,7 +92,7 @@ static const dial_frames_t *source_for(int kind)
 }
 bool dial_sprite_available(int kind) { return source_for(kind)!=NULL; }
 bool dial_sprite_d6_3d_ready(void) {
-#if HAVE_D6 && defined(DIAL_D6_BLENDER_V1)
+#if HAVE_D6 && (defined(DIAL_D6_BLENDER_V1) || defined(DIAL_D6_PYTHON_MESH_V1))
     return true;
 #else
     return false;
