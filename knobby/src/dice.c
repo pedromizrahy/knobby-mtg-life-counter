@@ -143,8 +143,10 @@ static void animate(lv_timer_t *timer)
         rolling=false;
         last_result=target;
         visible_coin=target;
-        lv_obj_set_width(clip,188);
+        lv_obj_set_width(clip,selected==ITEM_COUNT-1?265:188);
+        lv_obj_align(clip,LV_ALIGN_CENTER,0,0);
         lv_img_set_angle(picture,0);
+        lv_img_set_angle(picture_units,0);
         lv_img_set_zoom(picture,256);
         set_face(target);
         lv_label_set_text(hint,"Turn dial to select  |  Tap to roll");
