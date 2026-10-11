@@ -201,9 +201,10 @@ void dial_sprite_show(lv_obj_t *parent,int kind,unsigned frame,int result)
     } else {
         if(images[0]) {
             lv_img_set_zoom(images[0],256);
-            /* Animate the same final D6 mesh during its roll. */
-            lv_img_set_angle(images[0],kind==2 && frame<f->roll_count
-                ? (int16_t)((f->roll_count-frame)*170U % 3600U) : 0);
+            /* Never spin the flat D6 result sprite like a roulette wheel.
+             * Until coherent 3D tumble frames exist, keep its orientation
+             * stable throughout the roll and on the persistent result. */
+            lv_img_set_angle(images[0],0);
         }
         if(images[1]) lv_obj_add_flag(images[1],LV_OBJ_FLAG_HIDDEN);
     }
