@@ -181,18 +181,32 @@ void dial_sprite_show(lv_obj_t *parent,int kind,unsigned frame,int result)
         if(value<1||value>max)value=1;
         idx=f->roll_count+(unsigned)(value-1);
     }
-    render_slot(parent,0,f,idx,kind==99?-0:(kind==7?-51:0),kind==99?-44:0);
+    render_slot(parent,0,f,idx,kind==99?-0:(kind==7?-73:0),kind==99?-44:0);
     if(kind==7) {
         const dial_frames_t *units_frame=source_units_for_d100();
         int units=result%10;
         unsigned second=(frame<f->roll_count)?frame:
                          f->roll_count+(unsigned)units;
-        render_slot(parent,1,units_frame,second,51,0);
+        render_slot(parent,1,units_frame,second,73,0);
         /* A pair of 184px sprites must be reduced to avoid overlap. */
-        if(images[0]) lv_img_set_zoom(images[0],170);
-        if(images[1]) lv_img_set_zoom(images[1],170);
+        if(images[0]) lv_img_set_zoom(images[0],198);
+        if(images[1]) lv_img_set_zoom(images[1],198);
     } else {
         if(images[0]) lv_img_set_zoom(images[0],256);
         if(images[1]) lv_obj_add_flag(images[1],LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+/* Animate the existing full-resolution introductory image without decoding
+ * it again: only the image transform/opacity changes, no coin flip. */
+void dial_sprite_intro_anim(unsigned frame)
+{
+    if(!images[0] || !owner[0] || !dial_sprite_available(99)) return;
+    unsigned t=frame>17U?17U:frame;
+    /* Gentle zoom from 92% to native resolution; ease-out quartic. */
+    unsigned remain=17U-t;
+    unsigned shrink=(20U*remain*remain)/(17U*17U);
+    lv_img_set_zoom(images[0],(uint16_t)(256U-shrink));
+    lv_obj_set_style_img_opa(images[0],(lv_opa_t)(178U+(77U*t)/17U),0);
+    lv_obj_align(images[0],LV_ALIGN_CENTER,0,-44+(int)((17U-t)*3U/17U));
 }
