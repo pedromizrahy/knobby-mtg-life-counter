@@ -59,33 +59,33 @@ typedef struct {
     const uint32_t *offsets;
     const uint32_t *lengths;
 } dial_frames_t;
-#define FRAMES(prefix) {prefix##_WIDTH,prefix##_HEIGHT,prefix##_ROLL_COUNT,prefix##_TOTAL,prefix##_stream,prefix##_offsets,prefix##_lengths}
+#define FRAMES(prefix,UPPER) {UPPER##_WIDTH,UPPER##_HEIGHT,UPPER##_ROLL_COUNT,UPPER##_TOTAL,prefix##_stream,prefix##_offsets,prefix##_lengths}
 static const dial_frames_t *source_for(int kind)
 {
     switch(kind) {
 #if HAVE_COIN
-        case 0: { static const dial_frames_t f=FRAMES(dial_coin); return &f; }
+        case 0: { static const dial_frames_t f=FRAMES(dial_coin,DIAL_COIN); return &f; }
 #endif
 #if HAVE_D4
-        case 1: { static const dial_frames_t f=FRAMES(dial_d4); return &f; }
+        case 1: { static const dial_frames_t f=FRAMES(dial_d4,DIAL_D4); return &f; }
 #endif
 #if HAVE_D6
-        case 2: { static const dial_frames_t f=FRAMES(dial_d6); return &f; }
+        case 2: { static const dial_frames_t f=FRAMES(dial_d6,DIAL_D6); return &f; }
 #endif
 #if HAVE_D8
-        case 3: { static const dial_frames_t f=FRAMES(dial_d8); return &f; }
+        case 3: { static const dial_frames_t f=FRAMES(dial_d8,DIAL_D8); return &f; }
 #endif
 #if HAVE_D10
-        case 4: { static const dial_frames_t f=FRAMES(dial_d10); return &f; }
+        case 4: { static const dial_frames_t f=FRAMES(dial_d10,DIAL_D10); return &f; }
 #endif
 #if HAVE_D100
-        case 7: { static const dial_frames_t f=FRAMES(dial_d100t); return &f; }
+        case 7: { static const dial_frames_t f=FRAMES(dial_d100t,DIAL_D100T); return &f; }
 #endif
 #if HAVE_D12
-        case 5: { static const dial_frames_t f=FRAMES(dial_d12); return &f; }
+        case 5: { static const dial_frames_t f=FRAMES(dial_d12,DIAL_D12); return &f; }
 #endif
 #if HAVE_INTRO
-        case 99: { static const dial_frames_t f=FRAMES(dial_intro); return &f; }
+        case 99: { static const dial_frames_t f=FRAMES(dial_intro,DIAL_INTRO); return &f; }
 #endif
         default: return NULL;
     }
@@ -95,7 +95,7 @@ bool dial_sprite_available(int kind) { return source_for(kind)!=NULL; }
 static const dial_frames_t *source_units_for_d100(void)
 {
 #if HAVE_D100
-    static const dial_frames_t f=FRAMES(dial_d100u);
+    static const dial_frames_t f=FRAMES(dial_d100u,DIAL_D100U);
     return &f;
 #else
     return NULL;
