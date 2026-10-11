@@ -173,6 +173,14 @@ void dial_sprite_show(lv_obj_t *parent,int kind,unsigned frame,int result)
         idx=(result==1 ? f->roll_count : 0U)+frame;
     }
     else if(kind==0) idx=2U*f->roll_count+(result==1?1U:0U);
+    else if(kind==2) {
+        /* D6: six independent 3D tumble paths followed by six
+         * corresponding landing frames, generated from ONE Blender mesh. */
+        unsigned value=(result>=1 && result<=6)?(unsigned)result:1U;
+        idx=frame<f->roll_count
+            ? (value-1U)*f->roll_count+frame
+            : 6U*f->roll_count+(value-1U);
+    }
     else if(frame<f->roll_count) idx=frame;
     else {
         int max=(int)(f->total-f->roll_count);
