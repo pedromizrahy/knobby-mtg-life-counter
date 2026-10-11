@@ -567,6 +567,11 @@ static void handle_knob_event(knob_event_t k)
         if (k == KNOB_LEFT)       pregame_change_deck(-1);
         else if (k == KNOB_RIGHT) pregame_change_deck(+1);
     }
+    else if (lv_scr_act() == screen_dice)
+    {
+        if (k == KNOB_LEFT)       dice_change_selection(-1);
+        else if (k == KNOB_RIGHT) dice_change_selection(+1);
+    }
     else if (lv_scr_act() == screen_1p)
     {
         if (turn_life_input_blocked()) return;
