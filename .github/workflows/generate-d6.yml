@@ -31,9 +31,9 @@ jobs:
           from pathlib import Path
           p=Path('knobby/src/dial_d6_frames.h')
           data=p.read_text()
-          assert '#define DIAL_D6_PYTHON_MESH_V1 1' in data
-          assert '#define DIAL_D6_ROLL_COUNT 12' in data
-          assert '#define DIAL_D6_TOTAL 78' in data
+          assert '#define DIAL_D6_COMPACT_V2 1' in data
+          assert '#define DIAL_D6_ROLL_COUNT 8' in data
+          assert '#define DIAL_D6_TOTAL 54' in data
           assert len(data) > 100000
           print('D6 header generated:',p.stat().st_size,'bytes')
           PY
