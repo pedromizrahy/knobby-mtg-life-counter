@@ -6,7 +6,17 @@ from PIL import Image, ImageDraw, ImageFont
 from scipy.spatial.transform import Rotation,Slerp
 W=224;S=W*3;N=12;C=S/2
 OUT=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'knobby/src/dial_d6_frames.h')
-font=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',132)
+# Use the same bundled/OS-available outline font family on Linux or Windows.
+font_candidates=[
+ pathlib.Path(__file__).resolve().parent/'DejaVuSans-Bold.ttf',
+ pathlib.Path('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'),
+ pathlib.Path('C:/Windows/Fonts/arialbd.ttf'),
+ pathlib.Path('C:/Windows/Fonts/seguisb.ttf'),
+]
+font_path=next((p for p in font_candidates if p.exists()),None)
+if font_path is None:
+ raise RuntimeError('Nenhuma fonte TrueType compativel encontrada (DejaVu Sans Bold, Arial Bold ou Segoe UI Semibold).')
+font=ImageFont.truetype(str(font_path),132)
 faces=[
 ((0,0,1),[(-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)],'1'),
 ((1,0,0),[(1,-1,1),(1,-1,-1),(1,1,-1),(1,1,1)],'2'),
