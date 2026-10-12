@@ -35,3 +35,9 @@ To force a fresh rebuild: `BUILD.cmd -Clean`.
 Once a known-good set has been accepted on hardware, publish the exact headers under a versioned GitHub Release and fill `locked` in `tools/assets-manifest.json` with names, release URLs and SHA-256 checksums. Subsequent pulls will fetch any missing files and **reject mismatches**. Do not invent a release URL or checksum.
 
 The new build scripts do not replace the actual graphics, modify the V9 dice artwork, or require Blender/Python locally. Their purpose is to stop accidentally combining firmware with missing or changed graphical assets.
+
+## D6 V9 — automatic result-matched 3D generation
+
+If the local `dial_d6_frames.h` lacks `DIAL_D6_PYTHON_MESH_V1`, `BUILD.cmd` now generates a new header with six 12-frame 3D roll paths and six matching final frames using `tools/dice3d/render_d6_python.py`. The completed header is copied into `knobby/src` **before compilation**. The script uses local Python 3 (`py -3` preferred), installs numpy, scipy, Pillow and opencv-python-headless if necessary, and supports Windows fonts; Blender is not needed. The first rebuild can be noticeably slower. If Python is missing, compilation fails clearly instead of silently using the obsolete D6 header.
+
+This generation is separate from the GitHub Actions asset-publishing experiment, which has not published its header. It does not modify the other dice. Visual consistency still needs a real device check.
