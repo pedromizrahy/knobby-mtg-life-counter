@@ -75,27 +75,12 @@ static void set_face(int number)
                 else if(selected==7)
                     sprite_frame = 0U;
             }
-            if(selected==2 && !dial_sprite_d6_3d_ready()) {
-                /* Legacy D6 sprite pack: its numbered landing frames are
-                 * flat artwork, unlike the actual tumble frames. Keep a
-                 * genuine tumble frame as the persistent image instead.
-                 * Display the RNG outcome separately; never fake a face. */
-                /* Use the LAST tumble frame both while ending the roll
-                 * and while idle afterward. No rewind to frame 8. */
-                dial_sprite_show(screen_dice,selected,
-                                 preview ? 8U : 31U,
-                                 preview ? 0 : last_result);
-                if(!preview) {
-                    snprintf(buf,sizeof(buf),"D6: %d",last_result);
-                    lv_label_set_text(face_number,buf);
-                    lv_obj_align(face_number,LV_ALIGN_CENTER,0,105);
-                    lv_obj_clear_flag(face_number,LV_OBJ_FLAG_HIDDEN);
-                    lv_obj_move_foreground(face_number);
-                }
-            } else {
-                dial_sprite_show(screen_dice,selected,sprite_frame,
-                                 preview ? 0 : last_result);
-            }
+            /* The legacy D6 header has one 3D rolling sequence followed
+             * by six numbered landing sprites. It CANNOT hold roll frame 31:
+             * that frame always shows the same number (1). Preserve
+             * correct RNG display until result-matched 3D assets are loaded. */
+            dial_sprite_show(screen_dice,selected,sprite_frame,
+                             preview ? 0 : last_result);
         }
         return;
     }
@@ -185,8 +170,9 @@ static void animate(lv_timer_t *timer)
         if(selected==2 && dial_sprite_d6_3d_ready())
             sprite_frame=frame>=ROLL_FRAMES?12U:(frame*11U)/ROLL_FRAMES;
         else if(selected==2)
-            /* Legacy D6: never switch to flat landing frame 32 at finish. */
-            sprite_frame=frame>=ROLL_FRAMES?31U:(frame*31U)/ROLL_FRAMES;
+            /* Legacy D6: resolve the true rolled number using its
+             * result-specific landing frames, NOT the constant roll frame 31. */
+            sprite_frame=frame>=ROLL_FRAMES?32U:(frame*31U)/ROLL_FRAMES;
         else
             sprite_frame=frame>=ROLL_FRAMES?32U:(frame*31U)/ROLL_FRAMES;
         dial_sprite_show(screen_dice,selected,sprite_frame,target);
