@@ -4,7 +4,7 @@ import numpy as np
 import cv2
 from PIL import Image, ImageDraw, ImageFont
 from scipy.spatial.transform import Rotation,Slerp
-W=176;S=W*3;N=8;C=S/2
+W=176;S=W*3;N=18;C=S/2
 OUT=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'knobby/src/dial_d6_frames.h')
 # Use the same bundled/OS-available outline font family on Linux or Windows.
 font_candidates=[
@@ -33,10 +33,18 @@ for normal,verts,num in faces:
  if num=='5': im=im.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
  data.append((np.array(normal,float),np.array(verts,float),np.array(im.transpose(Image.Transpose.FLIP_TOP_BOTTOM))))
 def rotation(value,t):
+ # Shared start across all results and distinct result-matched landing poses.
+ # SLERP alone chooses the shortest arc, producing the nearly motionless V2.
+ # Add complete out-of-plane tumbling revolutions which finish at identity,
+ # so the last rolling frame EXACTLY equals the numbered landing image.
  n=data[value-1][0]
  final=Rotation.from_euler('xy',[24,-24],degrees=True)*Rotation.align_vectors([np.array([0,0,1])],[n])[0]
  start=Rotation.from_euler('xyz',[146,84,132],degrees=True)
- return Slerp([0,1],Rotation.concatenate([start,final]))([t*t*(3-2*t)])[0].as_matrix()
+ ease=t*t*(3-2*t)
+ base=Slerp([0,1],Rotation.concatenate([start,final]))([ease])[0]
+ remaining=1-ease
+ tumble=Rotation.from_euler('xyz',[720*remaining,360*remaining,360*remaining],degrees=True)
+ return (tumble*base).as_matrix()
 def render(value,t):
  R=rotation(value,t); canvas=np.zeros((S,S,3),np.uint8); surfaces=[]
  for normal,verts,tex in data:
@@ -49,7 +57,7 @@ def render(value,t):
   contour=np.rint(q).astype('int32');mask=np.zeros((S,S),np.uint8)
   cv2.fillConvexPoly(mask,contour,255,cv2.LINE_AA)
   k=.79+.21*max(0,np.dot(normal,np.array([-.45,-.55,.71])))
-  canvas[mask>0]=np.clip(np.array([12,85,198],float)*k,0,255).astype('uint8')
+  canvas[mask>0]=np.clip(np.array([22,60,104],float)*k,0,255).astype('uint8')
   H=cv2.getPerspectiveTransform(np.float32([[0,0],[255,0],[255,255],[0,255]]),q.astype('float32'))
   warped=cv2.warpPerspective(tex,H,(S,S),flags=cv2.INTER_CUBIC,borderMode=cv2.BORDER_CONSTANT)
   alpha=(warped[:,:,3].astype('float32')/255)*(mask.astype('float32')/255)
@@ -71,7 +79,7 @@ offsets=[];lengths=[];stream=bytearray()
 for b in streams:offsets.append(len(stream));lengths.append(len(b));stream.extend(b)
 def arr(name,values,t):
  return 'static const '+t+' '+name+'[] = {\n'+',\n'.join(','.join(map(str,values[i:i+24])) for i in range(0,len(values),24))+'\n};\n'
-h='#ifndef DIAL_D6_H\n#define DIAL_D6_H\n#include <stdint.h>\n#define DIAL_D6_PYTHON_MESH_V1 1\n#define DIAL_D6_COMPACT_V2 1\n#define DIAL_D6_WIDTH 176\n#define DIAL_D6_HEIGHT 176\n#define DIAL_D6_ROLL_COUNT 8\n#define DIAL_D6_TOTAL 54\n'
+h='#ifndef DIAL_D6_H\n#define DIAL_D6_H\n#include <stdint.h>\n#define DIAL_D6_PYTHON_MESH_V1 1\n#define DIAL_D6_TUMBLE_V3 1\n#define DIAL_D6_WIDTH 176\n#define DIAL_D6_HEIGHT 176\n#define DIAL_D6_ROLL_COUNT 18\n#define DIAL_D6_TOTAL 114\n'
 h+=arr('dial_d6_offsets',offsets,'uint32_t')+arr('dial_d6_lengths',lengths,'uint32_t')+arr('dial_d6_stream',stream,'uint8_t')+'#endif\n'
 OUT.parent.mkdir(parents=True,exist_ok=True);OUT.write_text(h)
 print('Generated',OUT,len(streams),'frames,',len(h),'header chars')
