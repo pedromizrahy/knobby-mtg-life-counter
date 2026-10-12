@@ -9,6 +9,7 @@
 #define ITEM_COUNT 8
 #define FRAME_MS 33
 #define ROLL_FRAMES 36
+#define D6_ROLL_FRAMES 20
 
 static const int sides[ITEM_COUNT]={0,4,6,8,10,12,20,100};
 static const char *names[ITEM_COUNT]={"COIN","D4","D6","D8","D10","D12","D20","D100"};
@@ -71,14 +72,10 @@ static void set_face(int number)
             unsigned sprite_frame = 32U;
             if(preview) {
                 if(selected==2)
-                    sprite_frame = dial_sprite_d6_3d_ready() ? 3U : 8U;
+                    sprite_frame = dial_sprite_d6_3d_ready() ? 0U : 8U;
                 else if(selected==7)
                     sprite_frame = 0U;
             }
-            /* The legacy D6 header has one 3D rolling sequence followed
-             * by six numbered landing sprites. It CANNOT hold roll frame 31:
-             * that frame always shows the same number (1). Preserve
-             * correct RNG display until result-matched 3D assets are loaded. */
             dial_sprite_show(screen_dice,selected,sprite_frame,
                              preview ? 0 : last_result);
         }
@@ -168,7 +165,9 @@ static void animate(lv_timer_t *timer)
     if(dial_sprite_available(selected)) {
         unsigned sprite_frame;
         if(selected==2 && dial_sprite_d6_3d_ready())
-            sprite_frame=frame>=ROLL_FRAMES?12U:(frame*11U)/ROLL_FRAMES;
+            /* Compact D6: eight coherent 3D frames and a matching stop,
+             * with shorter duration than the other dice. */
+            sprite_frame=frame>=D6_ROLL_FRAMES?8U:(frame*7U)/D6_ROLL_FRAMES;
         else if(selected==2)
             /* Legacy D6: resolve the true rolled number using its
              * result-specific landing frames, NOT the constant roll frame 31. */
@@ -201,7 +200,8 @@ static void animate(lv_timer_t *timer)
         else lv_img_set_angle(picture_units,(int16_t)((frame*193U)%3600U));
         set_face(frame>=ROLL_FRAMES-5U?target:current);
     }
-    if(frame>=ROLL_FRAMES) {
+    if(frame >= (selected==2 && dial_sprite_d6_3d_ready()
+                   ? D6_ROLL_FRAMES : ROLL_FRAMES)) {
         rolling=false;
         last_result=target;
         visible_coin=target;
