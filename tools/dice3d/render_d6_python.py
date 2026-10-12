@@ -4,7 +4,7 @@ import numpy as np
 import cv2
 from PIL import Image, ImageDraw, ImageFont
 from scipy.spatial.transform import Rotation,Slerp
-W=224;S=W*3;N=12;C=S/2
+W=176;S=W*3;N=8;C=S/2
 OUT=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'knobby/src/dial_d6_frames.h')
 # Use the same bundled/OS-available outline font family on Linux or Windows.
 font_candidates=[
@@ -42,7 +42,7 @@ def render(value,t):
  for normal,verts,tex in data:
   p=verts@R.T;nn=normal@R.T
   if nn[2]<.015:continue
-  q=np.column_stack((C+p[:,0]*S*.315,C-p[:,1]*S*.315))
+  q=np.column_stack((C+p[:,0]*S*.245,C-p[:,1]*S*.245))
   surfaces.append((p[:,2].mean(),q,nn,tex))
  surfaces.sort(key=lambda x:x[0])
  for _,q,normal,tex in surfaces:
@@ -71,7 +71,7 @@ offsets=[];lengths=[];stream=bytearray()
 for b in streams:offsets.append(len(stream));lengths.append(len(b));stream.extend(b)
 def arr(name,values,t):
  return 'static const '+t+' '+name+'[] = {\n'+',\n'.join(','.join(map(str,values[i:i+24])) for i in range(0,len(values),24))+'\n};\n'
-h='#ifndef DIAL_D6_H\n#define DIAL_D6_H\n#include <stdint.h>\n#define DIAL_D6_PYTHON_MESH_V1 1\n#define DIAL_D6_V9_3D 1\n#define DIAL_D6_WIDTH 224\n#define DIAL_D6_HEIGHT 224\n#define DIAL_D6_ROLL_COUNT 12\n#define DIAL_D6_TOTAL 78\n'
+h='#ifndef DIAL_D6_H\n#define DIAL_D6_H\n#include <stdint.h>\n#define DIAL_D6_PYTHON_MESH_V1 1\n#define DIAL_D6_COMPACT_V2 1\n#define DIAL_D6_WIDTH 176\n#define DIAL_D6_HEIGHT 176\n#define DIAL_D6_ROLL_COUNT 8\n#define DIAL_D6_TOTAL 54\n'
 h+=arr('dial_d6_offsets',offsets,'uint32_t')+arr('dial_d6_lengths',lengths,'uint32_t')+arr('dial_d6_stream',stream,'uint8_t')+'#endif\n'
 OUT.parent.mkdir(parents=True,exist_ok=True);OUT.write_text(h)
 print('Generated',OUT,len(streams),'frames,',len(h),'header chars')
