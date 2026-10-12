@@ -75,8 +75,24 @@ static void set_face(int number)
                 else if(selected==7)
                     sprite_frame = 0U;
             }
-            dial_sprite_show(screen_dice,selected,sprite_frame,
-                             preview ? 0 : last_result);
+            if(selected==2 && !dial_sprite_d6_3d_ready()) {
+                /* Legacy D6 sprite pack: its numbered landing frames are
+                 * flat artwork, unlike the actual tumble frames. Keep a
+                 * genuine tumble frame as the persistent image instead.
+                 * Display the RNG outcome separately; never fake a face. */
+                dial_sprite_show(screen_dice,selected,8U,
+                                 preview ? 0 : last_result);
+                if(!preview) {
+                    snprintf(buf,sizeof(buf),"D6: %d",last_result);
+                    lv_label_set_text(face_number,buf);
+                    lv_obj_align(face_number,LV_ALIGN_CENTER,0,105);
+                    lv_obj_clear_flag(face_number,LV_OBJ_FLAG_HIDDEN);
+                    lv_obj_move_foreground(face_number);
+                }
+            } else {
+                dial_sprite_show(screen_dice,selected,sprite_frame,
+                                 preview ? 0 : last_result);
+            }
         }
         return;
     }
