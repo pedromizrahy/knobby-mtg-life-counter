@@ -80,7 +80,10 @@ static void set_face(int number)
                  * flat artwork, unlike the actual tumble frames. Keep a
                  * genuine tumble frame as the persistent image instead.
                  * Display the RNG outcome separately; never fake a face. */
-                dial_sprite_show(screen_dice,selected,8U,
+                /* Use the LAST tumble frame both while ending the roll
+                 * and while idle afterward. No rewind to frame 8. */
+                dial_sprite_show(screen_dice,selected,
+                                 preview ? 8U : 31U,
                                  preview ? 0 : last_result);
                 if(!preview) {
                     snprintf(buf,sizeof(buf),"D6: %d",last_result);
@@ -178,7 +181,14 @@ static void animate(lv_timer_t *timer)
     }
     frame++;
     if(dial_sprite_available(selected)) {
-        unsigned sprite_frame=selected==2 && dial_sprite_d6_3d_ready() ? (frame>=ROLL_FRAMES?12U:(frame*11U)/ROLL_FRAMES) : (frame>=ROLL_FRAMES?32U:(frame*31U)/ROLL_FRAMES);
+        unsigned sprite_frame;
+        if(selected==2 && dial_sprite_d6_3d_ready())
+            sprite_frame=frame>=ROLL_FRAMES?12U:(frame*11U)/ROLL_FRAMES;
+        else if(selected==2)
+            /* Legacy D6: never switch to flat landing frame 32 at finish. */
+            sprite_frame=frame>=ROLL_FRAMES?31U:(frame*31U)/ROLL_FRAMES;
+        else
+            sprite_frame=frame>=ROLL_FRAMES?32U:(frame*31U)/ROLL_FRAMES;
         dial_sprite_show(screen_dice,selected,sprite_frame,target);
     } else if(selected==0) {
         /* Fold the visible image into an edge and swap sides between flips. */
