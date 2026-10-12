@@ -67,9 +67,12 @@ static void set_face(int number)
              * than treating result #1 (a flat facing sprite) as idle art.
              * Once rolled, preserve the actual landed result. */
             const bool preview = last_result < 0;
-            const unsigned sprite_frame = preview &&
-                (selected==7 || (selected==2 && dial_sprite_d6_3d_ready()))
-                ? 0U : 32U;
+            /* D6 idle uses an oblique 3D tumble frame, never the flat first frame.
+             * D100 keeps its working moving-frame preview. */
+            const unsigned sprite_frame = preview
+                ? (selected==7 ? 0U :
+                   (selected==2 && dial_sprite_d6_3d_ready() ? 3U : 32U))
+                : 32U;
             dial_sprite_show(screen_dice,selected,sprite_frame,
                              preview ? 0 : last_result);
         }
