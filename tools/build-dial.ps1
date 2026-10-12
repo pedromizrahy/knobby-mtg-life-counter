@@ -28,13 +28,9 @@ if (-not $d6Current) {
     if (-not $python) { throw 'Python 3 nao encontrado. Instale Python 3 com py launcher antes de compilar o D6 3D.' }
     $pythonExe = $python.Source; $pythonPrefix = @()
   }
-  $checkDeps = 'import numpy,scipy,cv2,PIL'
-  & $pythonExe @pythonPrefix -c $checkDeps 2>$null
-  if ($LASTEXITCODE -ne 0) {
-    Write-Host 'Preparando dependencias Python (primeiro uso)...'
-    & $pythonExe @pythonPrefix -m pip install numpy scipy Pillow opencv-python-headless
-    if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar dependencias do gerador D6.' }
-  }
+  Write-Host 'Conferindo dependencias do gerador Python...'
+  & $pythonExe @pythonPrefix -m pip install numpy scipy Pillow opencv-python-headless
+  if ($LASTEXITCODE -ne 0) { throw 'Falha ao preparar dependencias Python para o D6.' }
   $script = Join-Path $root 'tools\dice3d\render_d6_python.py'
   $tmp = Join-Path $assetsDir 'dial_d6_frames.h'
   & $pythonExe @pythonPrefix $script $tmp
