@@ -35,7 +35,7 @@ for normal,verts,num in faces:
 def rotation(value,t):
  n=data[value-1][0]
  final=Rotation.from_euler('xy',[24,-24],degrees=True)*Rotation.align_vectors([np.array([0,0,1])],[n])[0]
- start=Rotation.from_euler('xyz',[120+value*41,70+value*19,30+value*67],degrees=True)
+ start=Rotation.from_euler('xyz',[146,84,132],degrees=True)
  return Slerp([0,1],Rotation.concatenate([start,final]))([t*t*(3-2*t)])[0].as_matrix()
 def render(value,t):
  R=rotation(value,t); canvas=np.zeros((S,S,3),np.uint8); surfaces=[]
@@ -65,7 +65,7 @@ def pack(im):
   while run<255 and i+run<len(p) and p[i+run]==v:run+=1
   b.extend((run,v&255,v>>8));i+=run
  return b
-streams=[pack(render(v,(j+1)/N)) for v in range(1,7) for j in range(N)]
+streams=[pack(render(v,j/(N-1))) for v in range(1,7) for j in range(N)]
 streams.extend(pack(render(v,1)) for v in range(1,7))
 offsets=[];lengths=[];stream=bytearray()
 for b in streams:offsets.append(len(stream));lengths.append(len(b));stream.extend(b)
