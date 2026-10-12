@@ -9,7 +9,7 @@
 #define ITEM_COUNT 8
 #define FRAME_MS 33
 #define ROLL_FRAMES 36
-#define D6_ROLL_FRAMES 20
+#define D6_ROLL_FRAMES 26
 
 static const int sides[ITEM_COUNT]={0,4,6,8,10,12,20,100};
 static const char *names[ITEM_COUNT]={"COIN","D4","D6","D8","D10","D12","D20","D100"};
@@ -165,9 +165,9 @@ static void animate(lv_timer_t *timer)
     if(dial_sprite_available(selected)) {
         unsigned sprite_frame;
         if(selected==2 && dial_sprite_d6_3d_ready())
-            /* Compact D6: eight coherent 3D frames and a matching stop,
+            /* Compact D6: 18 coherent 3D frames and a matching stop,
              * with shorter duration than the other dice. */
-            sprite_frame=frame>=D6_ROLL_FRAMES?8U:(frame*7U)/D6_ROLL_FRAMES;
+            sprite_frame=frame>=D6_ROLL_FRAMES?18U:(frame*17U)/D6_ROLL_FRAMES;
         else if(selected==2)
             /* Legacy D6: resolve the true rolled number using its
              * result-specific landing frames, NOT the constant roll frame 31. */
