@@ -63,16 +63,18 @@ static void set_face(int number)
         lv_obj_add_flag(face_number,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(units_number,LV_OBJ_FLAG_HIDDEN);
         if(!rolling) {
-            /* Before any roll, show the first genuine tumble frame rather
-             * than treating result #1 (a flat facing sprite) as idle art.
-             * Once rolled, preserve the actual landed result. */
+            /* Always use an actual rolling frame for the D6 idle preview.
+             * Legacy 32-frame sprite headers have no 3D signature; testing
+             * only dial_sprite_d6_3d_ready() previously selected frame 32
+             * (a flat landing image) for those headers. */
             const bool preview = last_result < 0;
-            /* D6 idle uses an oblique 3D tumble frame, never the flat first frame.
-             * D100 keeps its working moving-frame preview. */
-            const unsigned sprite_frame = preview
-                ? (selected==7 ? 0U :
-                   (selected==2 && dial_sprite_d6_3d_ready() ? 3U : 32U))
-                : 32U;
+            unsigned sprite_frame = 32U;
+            if(preview) {
+                if(selected==2)
+                    sprite_frame = dial_sprite_d6_3d_ready() ? 3U : 8U;
+                else if(selected==7)
+                    sprite_frame = 0U;
+            }
             dial_sprite_show(screen_dice,selected,sprite_frame,
                              preview ? 0 : last_result);
         }
