@@ -3,6 +3,10 @@
 
 #include "types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void knob_nvs_init(void);
 void settings_save(void);
 
@@ -13,6 +17,12 @@ void nvs_set_auto_dim(int value);
 
 int nvs_get_color_mode(void);
 void nvs_set_color_mode(int value);
+/* Runtime-only override used by modes that must not change the user's saved
+   appearance preference (e.g. Play Offline always uses player colors). */
+void nvs_set_color_mode_runtime_override(int value);
+void nvs_clear_color_mode_runtime_override(void);
+void nvs_set_offline_session_active(int active);
+int nvs_is_offline_session_active(void);
 int nvs_get_deselect_timeout(void);
 void nvs_set_deselect_timeout(int value);
 int nvs_get_orientation(void);
@@ -35,6 +45,25 @@ void nvs_set_auto_eliminate(int value);
 int nvs_get_random_first(void);
 void nvs_set_random_first(int value);
 
+int nvs_get_turn_timer_enabled(void);
+void nvs_set_turn_timer_enabled(int value);
+int nvs_get_turn_show_name(void);
+void nvs_set_turn_show_name(int value);
+int nvs_get_turn_reminder_minutes(void);
+void nvs_set_turn_reminder_minutes(int value);
+int nvs_get_turn_alert_duration_seconds(void);
+void nvs_set_turn_alert_duration_seconds(int value);
+int nvs_get_turn_visual_alert(void);
+void nvs_set_turn_visual_alert(int value);
+int nvs_get_timer_face_player(void);
+void nvs_set_timer_face_player(int value);
+
+int nvs_get_cmd_marker_mode(void);
+void nvs_set_cmd_marker_mode(int value);
+
+int nvs_get_pizza_art(void);
+void nvs_set_pizza_art(int value);
+
 int nvs_get_multi_select(void);
 void nvs_set_multi_select(int value);
 
@@ -42,5 +71,9 @@ void nvs_set_multi_select(int value);
 #define NAME_LIST_LEN   16
 void nvs_get_name_list(char (*out)[NAME_LIST_LEN]);
 void nvs_set_name_list(const char (*list)[NAME_LIST_LEN]);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // _STORAGE_H

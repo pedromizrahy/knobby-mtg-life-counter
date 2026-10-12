@@ -8,6 +8,8 @@ static bool settings_dirty = false;
 static int cached_brightness = DEFAULT_BRIGHTNESS_PERCENT;
 static int cached_auto_dim = AUTO_DIM_OFF;
 static int cached_color_mode = 0;
+static int runtime_color_mode_override = -1;
+static int runtime_offline_session_active = 0;
 static int cached_deselect_timeout = 0; /* index: 0=never, 1=5s, 2=15s, 3=30s */
 static int cached_orientation = ORIENTATION_MODE_ABSOLUTE;
 static int cached_display_rotation = 0; /* physical rotation, degrees = value * 90 */
@@ -17,6 +19,14 @@ static int cached_players_to_track = 1;
 static int cached_life_total = DEFAULT_LIFE_TOTAL;
 static int cached_auto_eliminate = 1; /* 1=ON (default), 0=OFF */
 static int cached_random_first = 1; /* 1=ON (default): random first-player pick on reset */
+static int cached_turn_timer_enabled = 1; /* 1=ON: start turn tracking with a new game */
+static int cached_turn_show_name = 0; /* compact timer by default */
+static int cached_turn_reminder_minutes = 5; /* 0 disables reminder */
+static int cached_turn_alert_duration_seconds = 3;
+static int cached_turn_visual_alert = 1;
+static int cached_timer_face_player = 1;
+static int cached_cmd_marker_mode = CMD_MARKER_DOT;
+static int cached_pizza_art = 0;
 static int cached_multi_select = 0; /* 0=OFF (default), 1=ON */
 static char cached_name_list[NAME_LIST_COUNT][NAME_LIST_LEN];
 
@@ -75,6 +85,35 @@ void knob_nvs_init(void)
         nvs_get_i8(handle, "rand_first", &rf_val);
         cached_random_first = (rf_val != 0) ? 1 : 0;
 
+        int8_t tt_val = 1;
+        int8_t tn_val = 0;
+        int8_t tr_val = 5;
+        int8_t tad_val = 3;
+        int8_t tv_val = 1;
+        int8_t tf_val = 1;
+        int8_t cm_val = CMD_MARKER_DOT;
+        int8_t pa_val = 0;
+        nvs_get_i8(handle, "turn_timer", &tt_val);
+        nvs_get_i8(handle, "turn_name", &tn_val);
+        nvs_get_i8(handle, "turn_rem", &tr_val);
+        nvs_get_i8(handle, "turn_alert_s", &tad_val);
+        nvs_get_i8(handle, "turn_visual", &tv_val);
+        nvs_get_i8(handle, "timer_face", &tf_val);
+        nvs_get_i8(handle, "cmd_marker", &cm_val);
+        nvs_get_i8(handle, "pizza_art", &pa_val);
+        cached_turn_timer_enabled = (tt_val != 0) ? 1 : 0;
+        cached_turn_show_name = (tn_val != 0) ? 1 : 0;
+        cached_turn_reminder_minutes =
+            (tr_val == 0 || tr_val == 3 || tr_val == 5 || tr_val == 10 || tr_val == 15)
+                ? tr_val : 5;
+        cached_turn_alert_duration_seconds =
+            (tad_val == 3 || tad_val == 5 || tad_val == 10) ? tad_val : 3;
+        cached_turn_visual_alert = (tv_val != 0) ? 1 : 0;
+        cached_timer_face_player = (tf_val != 0) ? 1 : 0;
+        cached_cmd_marker_mode =
+            (cm_val < 0 || cm_val >= CMD_MARKER_COUNT) ? CMD_MARKER_DOT : cm_val;
+        cached_pizza_art = (pa_val != 0) ? 1 : 0;
+
         int8_t ms_val = 0;
         nvs_get_i8(handle, "multi_sel", &ms_val);
         cached_multi_select = (ms_val != 0) ? 1 : 0;
@@ -118,13 +157,36 @@ void nvs_set_auto_dim(int value)
 
 int nvs_get_color_mode(void)
 {
-    return cached_color_mode;
+    return (runtime_color_mode_override >= 0)
+        ? runtime_color_mode_override
+        : cached_color_mode;
 }
 
 void nvs_set_color_mode(int value)
 {
     cached_color_mode = (value < 0) ? COLOR_MODE_PLAYER : (value >= COLOR_MODE_COUNT) ? COLOR_MODE_PLAYER : value;
     settings_dirty = true;
+}
+
+void nvs_set_color_mode_runtime_override(int value)
+{
+    runtime_color_mode_override =
+        (value < 0 || value >= COLOR_MODE_COUNT) ? COLOR_MODE_PLAYER : value;
+}
+
+void nvs_clear_color_mode_runtime_override(void)
+{
+    runtime_color_mode_override = -1;
+}
+
+void nvs_set_offline_session_active(int active)
+{
+    runtime_offline_session_active = (active != 0) ? 1 : 0;
+}
+
+int nvs_is_offline_session_active(void)
+{
+    return runtime_offline_session_active;
 }
 
 int nvs_get_deselect_timeout(void)
@@ -232,6 +294,99 @@ void nvs_set_random_first(int value)
     settings_dirty = true;
 }
 
+// ---------- turn timer ----------
+int nvs_get_turn_timer_enabled(void)
+{
+    return cached_turn_timer_enabled;
+}
+
+void nvs_set_turn_timer_enabled(int value)
+{
+    cached_turn_timer_enabled = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
+int nvs_get_turn_show_name(void)
+{
+    return cached_turn_show_name;
+}
+
+void nvs_set_turn_show_name(int value)
+{
+    cached_turn_show_name = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
+int nvs_get_turn_reminder_minutes(void)
+{
+    return cached_turn_reminder_minutes;
+}
+
+void nvs_set_turn_reminder_minutes(int value)
+{
+    if (value != 0 && value != 3 && value != 5 && value != 10 && value != 15)
+        value = 5;
+    cached_turn_reminder_minutes = value;
+    settings_dirty = true;
+}
+
+int nvs_get_turn_alert_duration_seconds(void)
+{
+    return cached_turn_alert_duration_seconds;
+}
+
+void nvs_set_turn_alert_duration_seconds(int value)
+{
+    if (value != 3 && value != 5 && value != 10) value = 3;
+    cached_turn_alert_duration_seconds = value;
+    settings_dirty = true;
+}
+
+int nvs_get_turn_visual_alert(void)
+{
+    return cached_turn_visual_alert;
+}
+
+void nvs_set_turn_visual_alert(int value)
+{
+    cached_turn_visual_alert = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
+int nvs_get_timer_face_player(void)
+{
+    return cached_timer_face_player;
+}
+
+void nvs_set_timer_face_player(int value)
+{
+    cached_timer_face_player = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
+int nvs_get_cmd_marker_mode(void)
+{
+    return cached_cmd_marker_mode;
+}
+
+void nvs_set_cmd_marker_mode(int value)
+{
+    cached_cmd_marker_mode =
+        (value < 0 || value >= CMD_MARKER_COUNT) ? CMD_MARKER_DOT : value;
+    settings_dirty = true;
+}
+
+int nvs_get_pizza_art(void)
+{
+    return cached_pizza_art;
+}
+
+void nvs_set_pizza_art(int value)
+{
+    cached_pizza_art = (value != 0) ? 1 : 0;
+    settings_dirty = true;
+}
+
 // ---------- multi-select ----------
 int nvs_get_multi_select(void)
 {
@@ -273,6 +428,14 @@ void settings_save(void)
         nvs_set_i16(handle, "life_total", (int16_t)cached_life_total);
         nvs_set_i8(handle, "auto_elim", (int8_t)cached_auto_eliminate);
         nvs_set_i8(handle, "rand_first", (int8_t)cached_random_first);
+        nvs_set_i8(handle, "turn_timer", (int8_t)cached_turn_timer_enabled);
+        nvs_set_i8(handle, "turn_name", (int8_t)cached_turn_show_name);
+        nvs_set_i8(handle, "turn_rem", (int8_t)cached_turn_reminder_minutes);
+        nvs_set_i8(handle, "turn_alert_s", (int8_t)cached_turn_alert_duration_seconds);
+        nvs_set_i8(handle, "turn_visual", (int8_t)cached_turn_visual_alert);
+        nvs_set_i8(handle, "timer_face", (int8_t)cached_timer_face_player);
+        nvs_set_i8(handle, "cmd_marker", (int8_t)cached_cmd_marker_mode);
+        nvs_set_i8(handle, "pizza_art", (int8_t)cached_pizza_art);
         nvs_set_i8(handle, "multi_sel", (int8_t)cached_multi_select);
         nvs_set_i8(handle, "menu_face", (int8_t)cached_menu_facing);
         nvs_set_blob(handle, "name_list", cached_name_list, sizeof(cached_name_list));

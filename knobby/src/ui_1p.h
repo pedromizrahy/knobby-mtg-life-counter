@@ -14,7 +14,9 @@ void build_select_screen(void);
 void build_damage_screen(void);
 
 void refresh_main_ui(void);
+void refresh_turn_ui(void);
 void refresh_player_ui(void);
+void refresh_life_preview_ui(void);
 void refresh_select_ui(void);
 void refresh_damage_ui(void);
 
