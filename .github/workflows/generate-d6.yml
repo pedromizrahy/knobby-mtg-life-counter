@@ -1,0 +1,50 @@
+name: Generate D6 3D sprite assets
+on:
+  push:
+    branches: [feat/game-events-turn-manager]
+    paths:
+      - 'tools/dice3d/render_d6_python.py'
+      - '.github/workflows/generate-d6.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/game-events-turn-manager
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Dependencies
+        run: python -m pip install numpy scipy pillow opencv-python-headless
+      - name: Generate six matched D6 paths and final frames
+        run: python tools/dice3d/render_d6_python.py knobby/src/dial_d6_frames.h
+      - name: Validate header markers and frame count
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('knobby/src/dial_d6_frames.h')
+          data=p.read_text()
+          assert '#define DIAL_D6_PYTHON_MESH_V1 1' in data
+          assert '#define DIAL_D6_ROLL_COUNT 12' in data
+          assert '#define DIAL_D6_TOTAL 78' in data
+          assert len(data) > 100000
+          print('D6 header generated:',p.stat().st_size,'bytes')
+          PY
+      - name: Commit assets into branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f knobby/src/dial_d6_frames.h
+          if git diff --cached --quiet; then
+            echo 'Identical generated D6 assets'
+          else
+            git commit -m 'assets(d6): six matching 3D roll paths and result faces'
+            git push origin HEAD:feat/game-events-turn-manager
+          fi
