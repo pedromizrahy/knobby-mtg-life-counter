@@ -13,6 +13,38 @@ if (-not (Test-Path -LiteralPath $cli)) {
   $cli = $cmd.Source
 }
 New-Item -ItemType Directory -Force -Path $assetsDir | Out-Null
+
+# D6 must use outcome-matched 3D frames, not the legacy shared roll + flat
+# numbered landing sprites. Generate locally only if obsolete, no Blender.
+$d6Path = Join-Path $src 'dial_d6_frames.h'
+$d6Current = (Test-Path -LiteralPath $d6Path) -and
+             (Select-String -LiteralPath $d6Path -SimpleMatch '#define DIAL_D6_PYTHON_MESH_V1 1' -Quiet)
+if (-not $d6Current) {
+  Write-Host 'D6 antigo detectado. Gerando seis trajetorias 3D e seis resultados correspondentes...'
+  $python = Get-Command py -ErrorAction SilentlyContinue
+  if ($python) { $pythonExe = $python.Source; $pythonPrefix = @('-3') }
+  else {
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $python) { throw 'Python 3 nao encontrado. Instale Python 3 com py launcher antes de compilar o D6 3D.' }
+    $pythonExe = $python.Source; $pythonPrefix = @()
+  }
+  $checkDeps = 'import numpy,scipy,cv2,PIL'
+  & $pythonExe @pythonPrefix -c $checkDeps 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host 'Preparando dependencias Python (primeiro uso)...'
+    & $pythonExe @pythonPrefix -m pip install numpy scipy Pillow opencv-python-headless
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar dependencias do gerador D6.' }
+  }
+  $script = Join-Path $root 'tools\dice3d\render_d6_python.py'
+  $tmp = Join-Path $assetsDir 'dial_d6_frames.h'
+  & $pythonExe @pythonPrefix $script $tmp
+  if ($LASTEXITCODE -ne 0) { throw 'Gerador D6 3D falhou; assets antigos preservados.' }
+  if (-not (Select-String -LiteralPath $tmp -SimpleMatch '#define DIAL_D6_TOTAL 78' -Quiet)) { throw 'D6 gerado sem os 78 frames esperados.' }
+  if (-not (Select-String -LiteralPath $tmp -SimpleMatch '#define DIAL_D6_PYTHON_MESH_V1 1' -Quiet)) { throw 'D6 gerado sem assinatura Python Mesh.' }
+  Move-Item -LiteralPath $tmp -Destination $d6Path -Force
+  Write-Host 'D6 substituido pelos 78 frames 3D correspondentes ao sorteio.'
+}
+
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $required = @($manifest.required)
 $locked = @($manifest.locked)
