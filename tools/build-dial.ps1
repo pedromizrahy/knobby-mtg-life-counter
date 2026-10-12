@@ -18,7 +18,7 @@ New-Item -ItemType Directory -Force -Path $assetsDir | Out-Null
 # numbered landing sprites. Generate locally only if obsolete, no Blender.
 $d6Path = Join-Path $src 'dial_d6_frames.h'
 $d6Current = (Test-Path -LiteralPath $d6Path) -and
-             (Select-String -LiteralPath $d6Path -SimpleMatch '#define DIAL_D6_PYTHON_MESH_V1 1' -Quiet)
+             (Select-String -LiteralPath $d6Path -SimpleMatch '#define DIAL_D6_COMPACT_V2 1' -Quiet)
 if (-not $d6Current) {
   Write-Host 'D6 antigo detectado. Gerando seis trajetorias 3D e seis resultados correspondentes...'
   $python = Get-Command py -ErrorAction SilentlyContinue
@@ -35,10 +35,10 @@ if (-not $d6Current) {
   $tmp = Join-Path $assetsDir 'dial_d6_frames.h'
   & $pythonExe @pythonPrefix $script $tmp
   if ($LASTEXITCODE -ne 0) { throw 'Gerador D6 3D falhou; assets antigos preservados.' }
-  if (-not (Select-String -LiteralPath $tmp -SimpleMatch '#define DIAL_D6_TOTAL 78' -Quiet)) { throw 'D6 gerado sem os 78 frames esperados.' }
+  if (-not (Select-String -LiteralPath $tmp -SimpleMatch '#define DIAL_D6_TOTAL 54' -Quiet)) { throw 'D6 gerado sem os 54 frames esperados.' }
   if (-not (Select-String -LiteralPath $tmp -SimpleMatch '#define DIAL_D6_PYTHON_MESH_V1 1' -Quiet)) { throw 'D6 gerado sem assinatura Python Mesh.' }
   Move-Item -LiteralPath $tmp -Destination $d6Path -Force
-  Write-Host 'D6 substituido pelos 78 frames 3D correspondentes ao sorteio.'
+  Write-Host 'D6 compacto instalado: 54 frames 3D correspondentes ao sorteio.'
 }
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
