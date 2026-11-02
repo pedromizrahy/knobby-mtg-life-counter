@@ -94,6 +94,14 @@ extern "C" bool pk_store_save(uint32_t id,const pk_profile_t *p)
     char key[15];
     make_key(id,destination,key);
     bool ok=prefs.putBytes(key,&r,sizeof(r))==sizeof(r);
+    /* A reported write is not enough: verify the new slot immediately.
+       Do not alter the previous good slot on failure. */
+    if(ok) {
+        pk_record_t check;
+        ok=load_slot(prefs,id,destination,&check) &&
+           check.generation==r.generation &&
+           memcmp(&check.profile,&r.profile,sizeof(pk_profile_t))==0;
+    }
     prefs.end();
     return ok;
 }
