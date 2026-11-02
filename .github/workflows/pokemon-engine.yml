@@ -1,0 +1,22 @@
+name: Pokemon engine checks
+on:
+  push:
+    paths:
+      - 'knobby/src/pokemon_progress.*'
+      - 'tests/pokemon_progress_test.c'
+      - '.github/workflows/pokemon-engine.yml'
+  pull_request:
+    paths:
+      - 'knobby/src/pokemon_progress.*'
+      - 'tests/pokemon_progress_test.c'
+      - '.github/workflows/pokemon-engine.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile isolated Pokemon engine
+        run: cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c tests/pokemon_progress_test.c -o /tmp/pokemon_progress_test
+      - name: Run reward and collection tests
+        run: /tmp/pokemon_progress_test
