@@ -10,6 +10,8 @@ extern "C" {
  * no game path calls them until integration is explicitly enabled. */
 bool pk_store_load(uint32_t user_id, pk_profile_t *out);
 bool pk_store_save(uint32_t user_id, const pk_profile_t *profile);
+/* Explicit diagnostic only: uses a reserved test ID, never real users. */
+bool pk_store_selftest(void);
 #ifdef __cplusplus
 }
 #endif
