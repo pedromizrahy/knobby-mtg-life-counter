@@ -105,3 +105,42 @@ extern "C" bool pk_store_save(uint32_t id,const pk_profile_t *p)
     prefs.end();
     return ok;
 }
+
+/* A diagnostic the operator may invoke explicitly in a later test build.
+ * No automatic reads/writes, no use of the Magic 'knobby' namespace.
+ * Reserved ID and cleanup ensure genuine player records are untouched.
+ */
+extern "C" bool pk_store_selftest(void)
+{
+    const uint32_t diagnostic_id = 0xFFFFFFFEUL;
+    pk_profile_t original,updated,loaded;
+    bool ok=false;
+    Preferences prefs;
+    char a[15],b[15];
+    make_key(diagnostic_id,0,a);
+    make_key(diagnostic_id,1,b);
+    if (!prefs.begin(PK_NAMESPACE,false)) return false;
+    /* Refuse to overwrite any pre-existing diagnostic data. */
+    if (prefs.isKey(a) || prefs.isKey(b)) { prefs.end(); return false; }
+    prefs.end();
+
+    pk_profile_init(&original);
+    if (!pk_team_add(&original,778,false)) return false;
+    if (!pk_store_save(diagnostic_id,&original)) goto cleanup;
+    if (!pk_store_load(diagnostic_id,&loaded) ||
+        memcmp(&loaded,&original,sizeof(original))!=0) goto cleanup;
+    updated=original;
+    pk_reward_t reward;
+    if (!pk_award_game(&updated,12345U,true,&reward)) goto cleanup;
+    if (!pk_store_save(diagnostic_id,&updated)) goto cleanup;
+    if (!pk_store_load(diagnostic_id,&loaded) ||
+        memcmp(&loaded,&updated,sizeof(updated))!=0) goto cleanup;
+    ok=true;
+cleanup:
+    if (prefs.begin(PK_NAMESPACE,false)) {
+        prefs.remove(a);
+        prefs.remove(b);
+        prefs.end();
+    }
+    return ok;
+}
