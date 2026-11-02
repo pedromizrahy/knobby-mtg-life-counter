@@ -12,6 +12,7 @@
 #include "playgroup_api.h"
 #include "wifi_manager.h"
 #include "playgroup_pending.h"
+#include "pokemon_profile_store.h"
 #include "../knobby_net.h"
 
 extern "C" void knob_print_reset_diagnostics(void);
@@ -2747,6 +2748,21 @@ static void handle_command(char *line)
     const char *key_prefix = "PG KEY ";
 
     while (*line == ' ' || *line == '\t') line++;
+
+    /* Explicit opt-in. This command is ignored during active Playgroup games
+       and never touches Magic settings or a real player's Pokemon profile. */
+    if (strcmp(line, "PK SELFTEST") == 0) {
+        if (playgroup_pending_current_active() &&
+            !playgroup_pending_result_confirmed()) {
+            Serial.println("[Pokemon] SKIPPED: finish the active game first.");
+            return;
+        }
+        Serial.println("[Pokemon] Running isolated NVS round-trip selftest...");
+        bool ok = pk_store_selftest();
+        Serial.println(ok ? "[Pokemon] SELFTEST PASS" :
+                            "[Pokemon] SELFTEST FAIL");
+        return;
+    }
 
     if (strcmp(line, "PG HELP") == 0) {
         print_help();
