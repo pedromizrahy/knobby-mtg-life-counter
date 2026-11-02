@@ -15,6 +15,21 @@ int main(void) {
  for(unsigned id=1;id<=5;id++) assert(pk_team_add(&p,id,false));
  assert(!pk_team_add(&p,25,false));
  assert(p.team_count==6);
+ /* Independent records: same game can reward another player once. */
+ pk_profile_t other;
+ pk_profile_init(&other);
+ assert(pk_team_add(&other,778,false));
+ assert(pk_award_game(&other,100,true,&reward));
+ assert(!pk_award_game(&other,100,true,&reward));
+ assert(other.wins==1 && p.wins==5);
+ /* Invalid species never enter the collection or Pokédex. */
+ assert(!pk_register_discovery(&p,1026,false));
+ assert(!pk_register_discovery(&p,0,false));
+ assert(pk_dex_count(&other)==1);
+ /* Complete 10 wins to validate second milestone, no double payout. */
+ for(unsigned id=106;id<=110;id++) assert(pk_award_game(&p,id,true,&reward));
+ assert(p.wins==10 && p.balls[PK_BALL_ULTRA]==2);
+ assert(!pk_award_game(&p,110,true,&reward));
  puts("Pokemon progress tests passed");
  return 0;
 }
