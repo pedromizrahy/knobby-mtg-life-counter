@@ -114,6 +114,7 @@ extern "C" bool pk_store_selftest(void)
 {
     const uint32_t diagnostic_id = 0xFFFFFFFEUL;
     pk_profile_t original,updated,loaded;
+    pk_reward_t reward;
     bool ok=false;
     Preferences prefs;
     char a[15],b[15];
@@ -130,7 +131,6 @@ extern "C" bool pk_store_selftest(void)
     if (!pk_store_load(diagnostic_id,&loaded) ||
         memcmp(&loaded,&original,sizeof(original))!=0) goto cleanup;
     updated=original;
-    pk_reward_t reward;
     if (!pk_award_game(&updated,12345U,true,&reward)) goto cleanup;
     if (!pk_store_save(diagnostic_id,&updated)) goto cleanup;
     if (!pk_store_load(diagnostic_id,&loaded) ||
