@@ -98,4 +98,17 @@ $size = (Get-Item -LiteralPath $binary).Length
 $limit = 0xC80000
 if ($size -gt $limit) { throw "FIRMWARE EXCEDE PARTICAO: $size > $limit bytes. Nao fazer upload." }
 Write-Host ("BUILD OK: {0:N0} bytes de {1:N0} bytes ({2:N1}%)" -f $size,$limit,(100*$size/$limit))
+# Small machine-readable capacity snapshot, without modifying board partitions.
+$capacity = [ordered]@{
+  firmware_bytes = $size
+  app_partition_bytes = $limit
+  free_app_bytes = ($limit - $size)
+  app_usage_percent = [math]::Round((100.0 * $size / $limit), 2)
+  spiffs_partition_bytes = 0x360000
+  pokemon_module = 'standalone-unconnected'
+  warning = 'Free app bytes are not free PSRAM or SPIFFS. Measure those on device.'
+}
+$capacity | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $assetsDir 'pokemon-capacity.json') -Encoding UTF8
+Write-Host ("CAPACIDADE: {0:N0} bytes restantes na particao app; relatorio .dial-build/pokemon-capacity.json" -f ($limit-$size))
+
 Write-Host 'Upload separado: execute UPLOAD.cmd depois de verificar o resultado.'
