@@ -27,7 +27,6 @@ static uint32_t hash_bytes(const uint8_t *p,size_t n)
 static uint32_t record_checksum(const file_record_t *r)
 {
     /* Hash named fields, not trailing structure padding. */
-    uint32_t h=2166136261UL;
     const uint8_t *p=(const uint8_t*)r;
     size_t count=offsetof(file_record_t,checksum);
     return hash_bytes(p,count);
