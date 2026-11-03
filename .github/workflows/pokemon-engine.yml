@@ -14,6 +14,8 @@ on:
       - 'knobby/src/pokemon_file_store.*'
       - 'tests/pokemon_file_store_test.cpp'
       - 'knobby/src/pokemon_profile_migration.*'
+      - 'knobby/src/pokemon_spiffs_selftest.*'
+      - 'tests/pokemon_spiffs_selftest_test.cpp'
       - 'tests/pokemon_profile_migration_test.cpp'
       - 'tests/pokemon_mocks/SPIFFS.h'
       - 'tests/pokemon_mocks/Arduino.h'
@@ -57,3 +59,7 @@ jobs:
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_profile_store.cpp knobby/src/pokemon_file_store.cpp knobby/src/pokemon_profile_migration.cpp tests/pokemon_profile_migration_test.cpp /tmp/pk_progress.o -o /tmp/pokemon_migration_test
           /tmp/pokemon_migration_test
+      - name: Test manual SPIFFS diagnostic never alters unrelated files
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_spiffs_selftest.cpp tests/pokemon_spiffs_selftest_test.cpp -o /tmp/pokemon_spiffs_diagnostic_test
+          /tmp/pokemon_spiffs_diagnostic_test
