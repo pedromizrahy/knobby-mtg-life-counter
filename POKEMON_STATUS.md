@@ -144,6 +144,16 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - **Dados de demonstração explicitamente identificados como DEMO**, não associados a contas reais. Não cria perfil no SPIFFS/NVS, não grava XP, não concede Poké Balls e não ativa captura ou premiação. Seleção de identidade Playgroup e alimentação/cuidado/evolução continuam pendentes.
 - O acesso ao Pokémon é exposto somente no home do pré-jogo e não altera os componentes de gameplay Magic. A UI **ainda precisa de compilação Arduino CI aprovada** e teste no aparelho; testes isolados de Pokémon Engine não validam navegação/display LVGL.
 
+## Auditoria do hardware e diagnóstico microSD (2026-11-03)
+
+- Unidade real: GUITION Knobby vermelho/preto, com **cartão microSD 512 MB fisicamente identificado pelo usuário**; a revisão exata K518 ou K718 **ainda depende do resultado do probe**, pois `board_detect()` usa fallback K518 se a sondagem I2C falhar.
+- Fontes hardware: `Guition-JC/Guition`, arquivos `components/board/guition_boards/jc3636k518/board_devices.yaml` e `jc3636k718/board_devices.yaml`. No K518: SDMMC CLK=4 CMD=3 D0=5 D1=6 D2=42 D3=2. No K718: CLK=39 CMD=38 D0=40 D1=41 D2=48 D3=47. Diferem também display/touch/dial, já suportados no firmware.
+- K518 de referência: ESP32-S3R8 240 MHz, flash 16 MB, PSRAM 8 MB, tela circular 360x360 ST77916 (QSPI), touch CST816S (I2C), dial, segundo ESP32 para comunicação USB. O USB-C pode conectar chips diferentes quando invertido; não utilizá-lo para USB Mass Storage sem projeto específico.
+- Firmware atual: `knobby/partitions.csv` reserva app 12,5 MiB, SPIFFS 3,375 MiB e NVS 20 KiB. Não modificar tabela de partições para experimentar SD; preservar `BUILD.cmd`/`UPLOAD.cmd` e identidade USB/COM4.
+- Integrado **somente como diagnóstico manual**, não na inicialização nem na renderização: `PK SD STATUS`. Executa `SD_MMC.setPins()` na revisão detectada, monta microSD **1-bit** com `format_if_mount_failed=false`, imprime tipo/capacidade/ocupação e verifica existência de `/mons` e `/mons/p778.bin`, desmontando após leitura. Não formata, cria, apaga, escreve nem copia arquivos; bloqueado com Playgroup ativo. **Ainda precisa de aprovação CI e teste físico** para confirmar acesso efetivo do ESP32-S3 ao cartão.
+- TamaPoke original (socquique/TamaPoke): formato `TPK2` nos arquivos `/mons/pNNN.bin`, sprite multi-ação indexado em PSRAM. Fonte e firmware sob MIT, mas sprites PMD SpriteCollab CC BY-NC 4.0; direitos Pokémon de terceiros. Não importar sprites/arte ao repositório sem tratar licenças. A atual interface DEMO não foi substituída; resta portar o carregador/renderizador e paisagens após validar SD, capacidade de PSRAM e desempenho.
+- O cartão 512 MB é suficiente para iniciar a validação, mas não prometer conter **todas as 1025 espécies e variantes** sem medir tamanhos reais. Não solicitar nova desmontagem; cartão permanece dentro do equipamento.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
