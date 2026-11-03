@@ -68,6 +68,15 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - Ainda não validado no ESP32-S3 após esta alteração; o autoteste anterior validava a versão antiga. Testes com mock não medem desgaste/capacidade do NVS de 20 KiB nem prova de recuperação em queda real de energia.
 - **Não implementar criação automática de vários perfis** antes de avaliar a ocupação NVS, migração para SPIFFS ou política de limites sem apagar configurações já existentes.
 
+## Progresso adicional — armazenamento de múltiplos perfis (2026-11-02)
+
+- Auditoria: NVS tem apenas **0x5000 = 20 KiB** e é compartilhada com o Magic, Wi-Fi e Playgroup. A rotina de inicialização existente em `knobby/src/storage.c` contém `nvs_flash_erase()` para certos erros de inicialização: **não é seguro multiplicar grandes perfis Pokémon nessa partição**. Não alteramos essa rotina legada nesta etapa.
+- Implementado backend alternativo **isolado** `knobby/src/pokemon_file_store.h/.cpp` para salvar perfis em **SPIFFS** (`0x360000 = 3.375 MiB`), com dois arquivos por usuário, número de geração, hash de integridade e leitura da última cópia válida. Usa `SPIFFS.begin(false)` e nunca formata o armazenamento nem exclui perfis. Não tem chamadas de jogo e não substitui ainda o backend NVS.
+- Implementado teste host `tests/pokemon_file_store_test.cpp` com SPIFFS simulado: perfil novo, atualização, cópia danificada, ambas cópias danificadas, escrita interrompida e falha de montagem. Workflow atualizado para executar esses testes.
+- **Migração de perfis NVS para SPIFFS ainda NÃO implementada**, e o adaptador de recompensas `pokemon_reward_storage.cpp` continua apontando para NVS. Não criar automaticamente perfis nessa versão.
+- **Riscos ainda pendentes:** SPIFFS compartilha espaço com fila de partidas Playgroup e cache de artes; é preciso reservar espaço, controlar falha de escrita, definir política de migração verificável com rollback e testar a recuperação no ESP32-S3.
+- **NÃO usar upload nem considerar pronto para produção** enquanto os testes do último commit e o build Windows/hardware desse novo backend não forem validados.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
