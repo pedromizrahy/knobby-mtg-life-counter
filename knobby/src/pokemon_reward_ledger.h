@@ -20,6 +20,9 @@ typedef enum {
 pk_ledger_state_t pk_ledger_get(uint32_t user_id, uint32_t session_id);
 bool pk_ledger_record(uint32_t user_id, uint32_t session_id,
                       pk_ledger_state_t new_state);
+/* Returns false on invalid/corrupt storage; on success, pending_id is zero
+ * when clean, or the first unresolved PREPARED session. */
+bool pk_ledger_find_pending(uint32_t user_id, uint32_t *pending_id);
 #ifdef __cplusplus
 }
 #endif
