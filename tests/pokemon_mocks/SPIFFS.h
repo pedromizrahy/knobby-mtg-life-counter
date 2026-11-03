@@ -30,6 +30,10 @@ struct MockSPIFFS {
     bool mount_ok=true,fail_write=false;
     bool begin(bool format=false){return mount_ok && !format;}
     bool exists(const char *path){return files.count(path)!=0;}
+    bool rename(const char *from,const char *to) {
+        if(!mount_ok || !exists(from) || exists(to))return false;
+        files[to]=files.at(from);files.erase(from);return true;
+    }
     File open(const char *path,const char *mode){
         if(!mount_ok)return File();
         bool write=std::strcmp(mode,"w")==0;
