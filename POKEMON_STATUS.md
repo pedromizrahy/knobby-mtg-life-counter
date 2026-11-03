@@ -94,6 +94,15 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - A migração NVS → SPIFFS continua **manual/desligada**, sem comando serial de migração. O teste anterior `PK SELFTEST PASS` cobriu apenas a NVS, não esta implementação SPIFFS.
 - O CI principal não substitui o build Windows nem o teste de SPIFFS no dispositivo.
 
+## Progresso adicional — autoteste manual SPIFFS (2026-11-02)
+
+- **Hardware previamente aprovado:** `PK STORAGE` na COM4 retornou `total=3245681 used=1831045 free=1414636 bytes`, com `profiles=0 ledgers=0 staging=0`. A consulta foi apenas de leitura.
+- Implementado `pk_spiffs_selftest` e o comando **`PK SPIFFS SELFTEST`**. Executa somente quando solicitado via monitor serial e fora de partida Playgroup ativa.
+- O teste reserva exclusivamente `/pkt_spiffs_01.bin`, recusa sobrescrever um arquivo já existente, exige margem inicial de 256 KiB, grava, relê, substitui e relê novamente 12 bytes, depois remove só o arquivo criado pelo teste. Não formata, não percorre perfis reais, não altera a fila ou o cache. Se a remoção falhar, retorna FAIL e o próximo teste se recusa a sobrescrever o arquivo remanescente.
+- Adicionado mock de SPIFFS e teste automatizado que verifica proteção de arquivos alheios, recusa de sobrescrita, erro de gravação, erro de remoção, falta de capacidade e montagem indisponível.
+- **Ainda não foi testado fisicamente:** concluir GitHub CI, compilar Windows e fazer upload antes de executar `PK SPIFFS SELFTEST` no monitor a 115200 baud. Se `FAIL`, não repetir indiscriminadamente nem apagar arquivos manualmente.
+- A migração de perfis reais e a premiação continuam desativadas.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
