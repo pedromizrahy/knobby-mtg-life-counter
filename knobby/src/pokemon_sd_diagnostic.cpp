@@ -207,7 +207,7 @@ static bool pk_sd_cleanup_is_safe_path(const String &path,const String &root)
 {
     if(!path.startsWith(root+"/"))return false;
     if(path.indexOf("..")>=0 || path.indexOf("//")>=0 ||
-       path.indexOf('\\\\')>=0)return false;
+       path.indexOf((char)92)>=0)return false;
     return true;
 }
 
