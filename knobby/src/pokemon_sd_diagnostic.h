@@ -6,6 +6,8 @@ extern "C" {
 /* Explicit manual serial test, mounts microSD without formatting and never
  * writes, creates, renames or deletes any file. No gameplay call sites. */
 void pk_sd_status_read_only(void);
+/* Bounded directory inventory (max 100 entries, depth 2), read-only. */
+void pk_sd_list_read_only(void);
 #ifdef __cplusplus
 }
 #endif
