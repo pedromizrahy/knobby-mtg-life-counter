@@ -86,6 +86,14 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - Criados testes `pokemon_profile_migration_test.cpp` para repetição, origem intacta, divergência, corrupção, falha de escrita e falta de montagem; integrados ao workflow Pokémon.
 - **Não ativar migração no aparelho nem trocar o backend de premiação** até conferir o CI final, compilar em Windows, validar espaço SPIFFS compartilhado, teste de hardware e procedimento explícito de recuperação. O adaptador `pk_reward_apply_existing` ainda aponta para NVS e está desligado do Magic.
 
+## Progresso adicional — diagnóstico de armazenamento no hardware (2026-11-02)
+
+- Implementado comando serial **`PK STORAGE`** no parser Playgroup existente; é apenas leitura. Usa `SPIFFS.begin(false)` (nunca formata), imprime capacidade total/usada/livre e conta arquivos `pkf_*` (perfis), `pkl_*` (histórico) e `pkm_*` (migrações interrompidas).
+- Bloqueia sua execução durante uma partida Playgroup ativa ainda sem resultado confirmado. Não cria nenhum perfil, não executa migração e não concede recompensas.
+- **Próximo teste em hardware:** após aprovar CI e Windows `BUILD OK`, fazer upload da versão e enviar `PK STORAGE` pelo monitor serial em 115200 baud na COM4. Esperado `STORAGE OK`, `STORAGE FILES ...` e `STORAGE READ-ONLY`. Usar total/used/free medidos para definir margem da fila de partidas e cache de arte antes de habilitar qualquer gravação Pokémon.
+- A migração NVS → SPIFFS continua **manual/desligada**, sem comando serial de migração. O teste anterior `PK SELFTEST PASS` cobriu apenas a NVS, não esta implementação SPIFFS.
+- O CI principal não substitui o build Windows nem o teste de SPIFFS no dispositivo.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
