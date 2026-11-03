@@ -13,6 +13,10 @@ extern "C" {
 pk_store_status_t pk_file_inspect(uint32_t user_id,pk_profile_t *out);
 bool pk_file_create_starter(uint32_t user_id);
 bool pk_file_save(uint32_t user_id,const pk_profile_t *profile);
+/* Copy an existing validated NVS profile into an EMPTY SPIFFS profile.
+ * Uses a unique temporary file and rename; does not alter NVS or existing
+ * SPIFFS profiles. Explicit opt-in: NOT invoked automatically by firmware. */
+bool pk_file_import_if_missing(uint32_t user_id,const pk_profile_t *profile);
 #ifdef __cplusplus
 }
 #endif
