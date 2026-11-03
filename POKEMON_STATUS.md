@@ -41,6 +41,15 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - Necessário revisar o crescimento indefinido do journal e o espaço SPIFFS compartilhado com a fila Playgroup e cache de artes. Não habilitar prêmios até existir política de limite/recuperação, com falha segura para armazenamento cheio.
 - O teste da prévia de elegibilidade no pós-jogo continua pendente; não confundir o novo journal com validação dessa integração.
 
+## Progresso adicional — coordenador e recuperação segura (2026-11-02)
+
+- Implementado `pokemon_reward_coordinator.c/.h`: transação isolada que exige histórico durável, perfil existente e todas as operações de armazenamento injetadas por callbacks. **Não está conectado ao pós-jogo.**
+- Fluxo previsto: consultar journal, procurar pendências do usuário, carregar perfil, preparar sessão, gravar perfil, confirmar sessão. Repetição com sessão COMMITTED não dá prêmio; falha após salvar o perfil e antes de COMMITTED permite finalizar o histórico **sem aplicar EXP novamente**.
+- Caso o journal esteja PREPARED e o perfil **não** contenha a sessão no histórico recente, a situação é ambígua e o coordenador **bloqueia**, sem presumir que pode premiar novamente. Recuperação automática desse caso continua pendente de desenho mais forte (snapshot/preimage).
+- Adicionado `pk_ledger_find_pending`: detecta transações pendentes de um jogador no SPIFFS; nenhuma partida nova deve premiar esse jogador antes de resolver a pendência.
+- Criado `tests/pokemon_reward_coordinator_test.c`, com simulações de salvamento interrompido, falha no preparo, falha na confirmação, repetição e journal corrompido; incluído no workflow `pokemon-engine.yml`.
+- **Ainda falta** conectar o coordenador ao armazenamento real via adaptador, estabelecer inicialização explícita do primeiro Pokémon, testar múltiplos perfis no hardware e resolver capacidade NVS, política de ocupação SPIFFS e recuperação de estado ambíguo. Os resultados dos testes simulados não validam queda real de energia nem atomicidade da NVS.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
