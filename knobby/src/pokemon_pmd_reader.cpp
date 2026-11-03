@@ -148,22 +148,35 @@ extern "C" void pk_pmd_put_mimikyu(unsigned long input_size,
         Serial.println("[Pokemon] PMD PUT ERR: cannot create staging file.");
         SD_MMC.end();return;
     }
-    uint8_t buf[1024];
+    uint8_t buf[256];
     uint32_t crc=0xFFFFFFFFUL,remaining=size;
+    const char *failure="none";
     Serial.println("PMD_READY");
+    Serial.flush(); /* Ensure host sees readiness before binary data begins. */
     while(remaining) {
         const size_t want=remaining>sizeof(buf)?sizeof(buf):remaining;
         size_t got=0;
         const uint32_t start=millis();
-        while(got<want && millis()-start<10000UL) {
-            if(Serial.available()>0) {
+        while(got<want && millis()-start<20000UL) {
+            const int available=Serial.available();
+            if(available>0) {
                 const int b=Serial.read();
                 if(b>=0)buf[got++]=(uint8_t)b;
             } else delay(1);
         }
-        if(got!=want)break;
-        if(size==remaining && (want<4 || memcmp(buf,"TPK2",4)!=0))break;
-        if(out.write(buf,got)!=got)break;
+        if(got!=want) {
+            failure="serial_timeout";
+            Serial.printf("[Pokemon] PMD PUT DIAG timeout got=%u want=%u remaining=%lu\\n",
+                          (unsigned)got,(unsigned)want,(unsigned long)remaining);
+            break;
+        }
+        if(size==remaining && (want<4 || memcmp(buf,"TPK2",4)!=0)) {
+            failure="invalid_first_packet";
+            Serial.printf("[Pokemon] PMD PUT DIAG first_bytes=%02x %02x %02x %02x (expected 54 50 4b 32)\\n",
+                buf[0],buf[1],buf[2],buf[3]);
+            break;
+        }
+        if(out.write(buf,got)!=got) {failure="sd_write_failed";break;}
         crc=pk_pmd_crc_step(crc,buf,got);
         remaining-=got;
         Serial.println("#");
@@ -174,6 +187,8 @@ extern "C" void pk_pmd_put_mimikyu(unsigned long input_size,
     if(remaining==0 && crc==expected && !SD_MMC.exists(dest)) {
         ok=SD_MMC.rename(part,dest);
     }
+    if(!ok && remaining==0 && crc!=expected)failure="crc_mismatch";
+    if(!ok && remaining==0 && crc==expected)failure="rename_failed";
     if(!ok)SD_MMC.remove(part);
     SD_MMC.end();
     if(ok)Serial.printf("[Pokemon] PMD PUT DONE size=%lu crc32=%08lx\n",
