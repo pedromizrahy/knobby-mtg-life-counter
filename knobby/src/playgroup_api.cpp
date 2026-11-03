@@ -2753,6 +2753,56 @@ static void handle_command(char *line)
        and never touches Magic settings or a real player's Pokemon profile. */
     /* Read-only inspection of the confirmed Playgroup winner and identities.
        Does not create profiles or distribute rewards. */
+    /* Read-only filesystem inspection: no format, migration, profile
+       creation, reward, or deletion. Safe outside a game. */
+    if (strcmp(line, "PK STORAGE") == 0) {
+        if (playgroup_pending_current_active() &&
+            !playgroup_pending_result_confirmed()) {
+            Serial.println("[Pokemon] STORAGE: finish the active game first.");
+            return;
+        }
+        if (!SPIFFS.begin(false)) {
+            Serial.println("[Pokemon] STORAGE ERROR: SPIFFS mount failed (no format attempted).");
+            return;
+        }
+        const size_t total = SPIFFS.totalBytes();
+        const size_t used = SPIFFS.usedBytes();
+        if (total == 0 || used > total) {
+            Serial.println("[Pokemon] STORAGE ERROR: invalid SPIFFS capacity readings.");
+            return;
+        }
+        unsigned profile_files=0, ledger_files=0, staging_files=0;
+        File root=SPIFFS.open("/");
+        if (!root || !root.isDirectory()) {
+            Serial.println("[Pokemon] STORAGE ERROR: cannot list SPIFFS directory.");
+            return;
+        }
+        File entry=root.openNextFile();
+        while (entry) {
+            if (!entry.isDirectory()) {
+                const char *name=entry.name();
+                if (name && name[0]=='/') ++name;
+                if (name) {
+                    if (strncmp(name,"pkf_",4)==0) ++profile_files;
+                    else if (strncmp(name,"pkl_",4)==0) ++ledger_files;
+                    else if (strncmp(name,"pkm_",4)==0) ++staging_files;
+                }
+            }
+            entry.close();
+            entry=root.openNextFile();
+        }
+        root.close();
+        Serial.printf("[Pokemon] STORAGE OK total=%lu used=%lu free=%lu bytes\\n",
+                      (unsigned long)total,(unsigned long)used,
+                      (unsigned long)(total-used));
+        Serial.printf("[Pokemon] STORAGE FILES profiles=%u ledgers=%u staging=%u\\n",
+                      profile_files,ledger_files,staging_files);
+        if (staging_files)
+            Serial.println("[Pokemon] STORAGE WARNING: interrupted migration staging exists; no automatic cleanup.");
+        Serial.println("[Pokemon] STORAGE READ-ONLY: no data was changed.");
+        return;
+    }
+
     if (strcmp(line, "PK STATUS") == 0) {
         pg_pokemon_reward_context_t context;
         if (!playgroup_pending_get_pokemon_reward_context(&context)) {
