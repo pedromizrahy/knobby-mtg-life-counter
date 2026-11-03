@@ -258,6 +258,25 @@ static void event_infinite_confirm(lv_event_t *event)
         win_conditions[wincon_index].api_token,
         infinite_index != 0);
 
+    /* Pokémon phase 2: eligibility preview only. This block does NOT
+       grant XP, create profiles, write NVS or alter the game result. */
+    {
+        pg_pokemon_reward_context_t pk_context;
+        if (playgroup_pending_get_pokemon_reward_context(&pk_context)) {
+            printf("[Pokemon] Reward preview: session=%lu players=%u winner_seat=%u (NOT APPLIED)\n",
+                   (unsigned long)pk_context.session_id,
+                   (unsigned)pk_context.player_count,
+                   (unsigned)(pk_context.winner_index+1U));
+            for (unsigned i=0;i<pk_context.player_count;i++) {
+                printf("[Pokemon] Eligible user=%lu seat=%u win=%u (NOT APPLIED)\n",
+                       (unsigned long)pk_context.user_ids[i],i+1U,
+                       (unsigned)(i==pk_context.winner_index));
+            }
+        } else {
+            printf("[Pokemon] Reward preview skipped: incomplete identity or unconfirmed session.\n");
+        }
+    }
+
     questionnaire_open = false;
     questionnaire_dismissed = false;
     questionnaire_dismissed_at = 0;
