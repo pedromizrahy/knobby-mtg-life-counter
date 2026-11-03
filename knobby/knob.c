@@ -16,6 +16,7 @@
 #include "src/ui_damage_resolver.h"
 #include "src/pregame.h"
 #include "src/postgame.h"
+#include "src/pokemon_ui.h"
 
 // ---------- swipe state ----------
 static lv_obj_t *previous_screen = NULL;
@@ -367,6 +368,8 @@ static void handle_back_navigation(lv_obj_t *screen)
         else if (previous_screen == screen_1p)
             refresh_main_ui();
         lv_scr_load(previous_screen);
+    } else if (pokemon_ui_handle_back(screen)) {
+        /* Dedicated Extras -> Pokemon -> home back stack. */
     } else if (screen == screen_tools_menu) {
         lv_scr_load(screen_quad_menu);
     } else if (settings_handle_back(screen)) {
@@ -485,6 +488,7 @@ void knob_gui(void)
 
     build_intro_screen();
     build_pregame_screens();
+    pokemon_ui_build();
     build_postgame_screens();
     lv_scr_load(screen_intro);
     lv_refr_now(NULL);
@@ -546,6 +550,11 @@ static void handle_knob_event(knob_event_t k)
     {
         if (k == KNOB_LEFT)       postgame_change_selection(-1);
         else if (k == KNOB_RIGHT) postgame_change_selection(+1);
+    }
+    else if (lv_scr_act() == screen_pokemon_companion)
+    {
+        if (k == KNOB_LEFT)       pokemon_ui_knob_page(-1);
+        else if (k == KNOB_RIGHT) pokemon_ui_knob_page(+1);
     }
     else if (lv_scr_act() == screen_pregame_players)
     {
