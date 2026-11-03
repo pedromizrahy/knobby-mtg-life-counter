@@ -154,6 +154,16 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - TamaPoke original (socquique/TamaPoke): formato `TPK2` nos arquivos `/mons/pNNN.bin`, sprite multi-ação indexado em PSRAM. Fonte e firmware sob MIT, mas sprites PMD SpriteCollab CC BY-NC 4.0; direitos Pokémon de terceiros. Não importar sprites/arte ao repositório sem tratar licenças. A atual interface DEMO não foi substituída; resta portar o carregador/renderizador e paisagens após validar SD, capacidade de PSRAM e desempenho.
 - O cartão 512 MB é suficiente para iniciar a validação, mas não prometer conter **todas as 1025 espécies e variantes** sem medir tamanhos reais. Não solicitar nova desmontagem; cartão permanece dentro do equipamento.
 
+## Hardware real: microSD montado e leitura concluída (2026-11-03)
+
+- **Confirmado no ESP32-S3 real, `PK SD STATUS`:** `board=JC3636K518 CLK=4 CMD=3 D0=5 (1-bit)`.
+- **SD montado em modo leitura, sem formatar:** `type=SDSC capacity=503316480 total=499105792 used=432902144 bytes`.
+- **Arquivos TamaPoke não encontrados:** `mons_dir=NO mimikyu_tpk2=NO`. O comando encerrou com `unmounted; no files modified`.
+- O cartão apresenta ~413 MiB utilizados e ~63 MiB disponíveis (66.203.648 bytes), cerca de 86,7% da área utilizável ocupada. Origem dos dados desconhecida.
+- **Não formatar, sobrescrever, apagar nem copiar assets para o cartão antes de identificar os arquivos existentes e realizar backup.**
+- O DIAL voltou a ligar após falha temporária na remontagem, e o firmware executou o teste SD; causa da falha anterior não está diagnosticada.
+- Próximo passo: inventário limitado e estritamente de leitura dos diretórios/arquivos para identificar o uso do espaço e planejar sprites e paisagens.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
