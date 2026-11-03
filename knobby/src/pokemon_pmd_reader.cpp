@@ -166,13 +166,13 @@ extern "C" void pk_pmd_put_mimikyu(unsigned long input_size,
         }
         if(got!=want) {
             failure="serial_timeout";
-            Serial.printf("[Pokemon] PMD PUT DIAG timeout got=%u want=%u remaining=%lu\\n",
+            Serial.printf("[Pokemon] PMD PUT DIAG timeout got=%u want=%u remaining=%lu\n",
                           (unsigned)got,(unsigned)want,(unsigned long)remaining);
             break;
         }
         if(size==remaining && (want<4 || memcmp(buf,"TPK2",4)!=0)) {
             failure="invalid_first_packet";
-            Serial.printf("[Pokemon] PMD PUT DIAG first_bytes=%02x %02x %02x %02x (expected 54 50 4b 32)\\n",
+            Serial.printf("[Pokemon] PMD PUT DIAG first_bytes=%02x %02x %02x %02x (expected 54 50 4b 32)\n",
                 buf[0],buf[1],buf[2],buf[3]);
             break;
         }
@@ -193,6 +193,6 @@ extern "C" void pk_pmd_put_mimikyu(unsigned long input_size,
     SD_MMC.end();
     if(ok)Serial.printf("[Pokemon] PMD PUT DONE size=%lu crc32=%08lx\n",
                         (unsigned long)size,(unsigned long)crc);
-    else Serial.printf("[Pokemon] PMD PUT ERR remaining=%lu crc32=%08lx expected=%08lx; staging removed\n",
-                       (unsigned long)remaining,(unsigned long)crc,(unsigned long)expected);
+    else Serial.printf("[Pokemon] PMD PUT ERR reason=%s remaining=%lu crc32=%08lx expected=%08lx; staging removed\n",
+                       failure,(unsigned long)remaining,(unsigned long)crc,(unsigned long)expected);
 }
