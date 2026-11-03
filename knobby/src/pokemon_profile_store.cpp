@@ -64,6 +64,66 @@ static bool latest(Preferences &prefs,uint32_t id,pk_record_t *out,
     } else { *out=a;*slot=0; }
     return true;
 }
+/* Distinguish an unused slot from a damaged one before any new write.
+ * Preferences.begin(read-only) can fail for a namespace not yet created;
+ * opening read-write does NOT write any keys, but can create the namespace.
+ * No profile data may be initialized unless both slots are actually absent.
+ */
+static pk_store_status_t inspect_open(Preferences &prefs,uint32_t id,
+                                     pk_record_t *latest_record,
+                                     unsigned *latest_slot)
+{
+    char a[15],b[15];
+    make_key(id,0,a);
+    make_key(id,1,b);
+    bool a_exists=prefs.isKey(a);
+    bool b_exists=prefs.isKey(b);
+    if(!a_exists && !b_exists) return PK_STORE_MISSING;
+    if(latest(prefs,id,latest_record,latest_slot)) return PK_STORE_VALID;
+    return PK_STORE_CORRUPT;
+}
+extern "C" pk_store_status_t pk_store_inspect(uint32_t id,pk_profile_t *out)
+{
+    if(!id || id==0xFFFFFFFEUL) return PK_STORE_ERROR;
+    Preferences prefs;
+    if(!prefs.begin(PK_NAMESPACE,false)) return PK_STORE_ERROR;
+    pk_record_t record;
+    unsigned slot=0;
+    pk_store_status_t status=inspect_open(prefs,id,&record,&slot);
+    prefs.end();
+    if(status==PK_STORE_VALID && out) *out=record.profile;
+    return status;
+}
+extern "C" bool pk_store_create_starter(uint32_t id)
+{
+    if(!id || id==0xFFFFFFFEUL) return false;
+    pk_profile_t starter;
+    pk_profile_init(&starter);
+    if(!pk_team_add(&starter,778,false)) return false;
+    Preferences prefs;
+    if(!prefs.begin(PK_NAMESPACE,false)) return false;
+    pk_record_t old;
+    unsigned slot=0;
+    pk_store_status_t status=inspect_open(prefs,id,&old,&slot);
+    if(status!=PK_STORE_MISSING) { prefs.end();return false; }
+    pk_record_t record={};
+    record.magic=PK_STORE_MAGIC;
+    record.user_id=id;
+    record.generation=1;
+    record.profile=starter;
+    record.checksum=checksum_bytes(&record,sizeof(record)-sizeof(record.checksum));
+    char key[15];
+    make_key(id,0,key);
+    bool ok=prefs.putBytes(key,&record,sizeof(record))==sizeof(record);
+    if(ok) {
+        pk_record_t check;
+        ok=load_slot(prefs,id,0,&check) &&
+           memcmp(&check.profile,&starter,sizeof(starter))==0;
+    }
+    prefs.end();
+    return ok;
+}
+
 extern "C" bool pk_store_load(uint32_t id, pk_profile_t *out)
 {
     if (!id || !out) return false;
@@ -83,12 +143,15 @@ extern "C" bool pk_store_save(uint32_t id,const pk_profile_t *p)
     if (!prefs.begin(PK_NAMESPACE,false)) return false;
     pk_record_t last;
     unsigned slot=1;
-    bool exists=latest(prefs,id,&last,&slot);
-    unsigned destination=exists?(1U-slot):0U;
+    pk_store_status_t status=inspect_open(prefs,id,&last,&slot);
+    /* Existing profile updates only. New profiles require explicit creation.
+       Any damaged-but-present data must NEVER be treated as a blank profile. */
+    if(status!=PK_STORE_VALID) { prefs.end();return false; }
+    unsigned destination=1U-slot;
     pk_record_t r={};
     r.magic=PK_STORE_MAGIC;
     r.user_id=id;
-    r.generation=exists?last.generation+1U:1U;
+    r.generation=last.generation+1U;
     r.profile=*p;
     r.checksum=checksum_bytes(&r,sizeof(r)-sizeof(r.checksum));
     char key[15];
@@ -127,7 +190,19 @@ extern "C" bool pk_store_selftest(void)
 
     pk_profile_init(&original);
     if (!pk_team_add(&original,778,false)) return false;
-    if (!pk_store_save(diagnostic_id,&original)) goto cleanup;
+    /* Reserved diagnostic ID bypasses public creation; isolated first-slot write. */
+    {
+        pk_record_t seed={};
+        seed.magic=PK_STORE_MAGIC;
+        seed.user_id=diagnostic_id;
+        seed.generation=1;
+        seed.profile=original;
+        seed.checksum=checksum_bytes(&seed,sizeof(seed)-sizeof(seed.checksum));
+        if(!prefs.begin(PK_NAMESPACE,false)) goto cleanup;
+        bool saved=prefs.putBytes(a,&seed,sizeof(seed))==sizeof(seed);
+        prefs.end();
+        if(!saved) goto cleanup;
+    }
     if (!pk_store_load(diagnostic_id,&loaded) ||
         memcmp(&loaded,&original,sizeof(original))!=0) goto cleanup;
     updated=original;
