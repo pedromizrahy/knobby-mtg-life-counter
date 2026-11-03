@@ -71,8 +71,9 @@ def main():
         device.write(cmd.encode("ascii"))
         device.flush()
         await_line(device, "PMD_READY")
-        for i in range(0, len(blob), 1024):
-            device.write(blob[i:i + 1024])
+        time.sleep(0.2)  # Let USB CDC finish the text-to-binary transition.
+        for i in range(0, len(blob), 256):
+            device.write(blob[i:i + 256])
             device.flush()
             await_line(device, "#")
         end = device.readline().decode("utf-8", errors="replace").strip()
