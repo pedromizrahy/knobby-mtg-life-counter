@@ -464,11 +464,43 @@ static void event_home_settings(lv_event_t *e)
     open_device_settings_from_home();
 }
 
-static void event_home_extras(lv_event_t *e)
+static void event_home_pokemon(lv_event_t *e)
 {
     (void)e;
-    /* Only the pregame home exposes Extras: no active match state changes. */
-    pokemon_ui_open_extras();
+    /* Pokémon is independent from a Magic match and only opens at home. */
+    pokemon_ui_open_companion();
+}
+
+/* Small pixel-art Poké Ball drawn entirely with LVGL squares: no image
+ * dependencies or changes to the Dice/Magic sprite assets. */
+static void pregame_pokeball_icon(lv_obj_t *parent)
+{
+    static const char pattern[8][9] = {
+        "00111100",
+        "01222210",
+        "12222221",
+        "11144111",
+        "14411441",
+        "13333331",
+        "01333310",
+        "00111100"
+    };
+    static const uint32_t colors[] = {
+        0,0x101521,0xE94C55,0xF6F4ED,0xBCC8D5
+    };
+    unsigned y,x;
+    for(y=0;y<8;y++)for(x=0;x<8;x++) {
+        unsigned index=(unsigned)(pattern[y][x]-'0');
+        if(index==0)continue;
+        lv_obj_t *pixel=lv_obj_create(parent);
+        lv_obj_remove_style_all(pixel);
+        lv_obj_set_size(pixel,3,3);
+        lv_obj_set_style_radius(pixel,0,0);
+        lv_obj_set_style_bg_opa(pixel,LV_OPA_COVER,0);
+        lv_obj_set_style_bg_color(pixel,lv_color_hex(colors[index]),0);
+        lv_obj_set_pos(pixel,7+(lv_coord_t)x*3,5+(lv_coord_t)y*3);
+        lv_obj_clear_flag(pixel,LV_OBJ_FLAG_CLICKABLE|LV_OBJ_FLAG_SCROLLABLE);
+    }
 }
 
 static void event_local_play(lv_event_t *e)
@@ -2209,22 +2241,24 @@ void build_pregame_screens(void)
             lv_obj_set_style_text_font(settings_icon, &lv_font_montserrat_16, 0);
             lv_obj_center(settings_icon);
 
-            /* Dedicated Extras entry; existing Wi-Fi and Settings remain. */
-            lv_obj_t *extras_btn = lv_btn_create(screen_pregame_home);
-            lv_obj_remove_style_all(extras_btn);
-            lv_obj_set_size(extras_btn, 112, 34);
-            lv_obj_set_style_radius(extras_btn, 17, 0);
-            lv_obj_set_style_bg_color(extras_btn, lv_color_hex(0x253147), 0);
-            lv_obj_set_style_bg_opa(extras_btn, LV_OPA_COVER, 0);
-            lv_obj_set_style_border_width(extras_btn, 1, 0);
-            lv_obj_set_style_border_color(extras_btn, lv_color_hex(0x6F809A), 0);
-            lv_obj_align(extras_btn, LV_ALIGN_CENTER, 0, 103);
-            lv_obj_add_event_cb(extras_btn, event_home_extras, LV_EVENT_CLICKED, NULL);
-            lv_obj_t *extras_label = lv_label_create(extras_btn);
-            lv_label_set_text(extras_label, "EXTRAS");
-            lv_obj_set_style_text_font(extras_label, &lv_font_montserrat_14, 0);
-            lv_obj_set_style_text_color(extras_label, lv_color_white(), 0);
-            lv_obj_center(extras_label);
+            /* Standalone Pokémon button with pixel-art Poké Ball. Existing
+             * Local Play, Multiplayer, Wi-Fi and Settings stay available. */
+            lv_obj_t *pokemon_btn = lv_btn_create(screen_pregame_home);
+            lv_obj_remove_style_all(pokemon_btn);
+            lv_obj_set_size(pokemon_btn, 112, 34);
+            lv_obj_set_style_radius(pokemon_btn, 17, 0);
+            lv_obj_set_style_bg_color(pokemon_btn, lv_color_hex(0x253147), 0);
+            lv_obj_set_style_bg_opa(pokemon_btn, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(pokemon_btn, 1, 0);
+            lv_obj_set_style_border_color(pokemon_btn, lv_color_hex(0x6F809A), 0);
+            lv_obj_align(pokemon_btn, LV_ALIGN_CENTER, 0, 103);
+            lv_obj_add_event_cb(pokemon_btn, event_home_pokemon, LV_EVENT_CLICKED, NULL);
+            pregame_pokeball_icon(pokemon_btn);
+            lv_obj_t *pokemon_label = lv_label_create(pokemon_btn);
+            lv_label_set_text(pokemon_label, "POKEMON");
+            lv_obj_set_style_text_font(pokemon_label, &lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_color(pokemon_label, lv_color_white(), 0);
+            lv_obj_align(pokemon_label, LV_ALIGN_RIGHT_MID, -5, 0);
         }
 
         pending_map_button = pregame_button(
