@@ -42,7 +42,7 @@ static lv_obj_t *pokemon_button(lv_obj_t *parent,const char *caption,
     lv_obj_set_style_border_width(btn,1,0);
     lv_obj_set_style_border_color(btn,lv_color_hex(0x475B79),0);
     lv_obj_align(btn,LV_ALIGN_TOP_MID,x,y);
-    lv_obj_add_event_cb(btn,callback,LV_EVENT_CLICKED,NULL);
+    if(callback)lv_obj_add_event_cb(btn,callback,LV_EVENT_CLICKED,NULL);
     lv_obj_t *label=lv_label_create(btn);
     lv_label_set_text(label,caption);
     lv_obj_set_style_text_color(label,lv_color_white(),0);
@@ -206,11 +206,8 @@ void pokemon_ui_build(void)
     pokemon_label(screen_pokemon_companion,"NO PLAYER LINKED  |  DEMO",52,
                   &lv_font_montserrat_14,0xDAAD7B);
     pokemon_mimikyu_preview(screen_pokemon_companion);
-    demo_title=pokemon_label(screen_pokemon_companion,"MIMIKYU  #778",113,
+    demo_title=pokemon_label(screen_pokemon_companion,"MIMIKYU  #778",258,
                              &lv_font_montserrat_22,0xF8F1E2);
-    /* Text is shown BELOW the mascot on the first page, within stage
-       on secondary pages, but no user profile is loaded or modified. */
-    lv_obj_align(demo_title,LV_ALIGN_TOP_MID,0,75);
     demo_line1=pokemon_label(screen_pokemon_companion,"",265,
                              &lv_font_montserrat_16,0xD2DCEC);
     demo_line2=pokemon_label(screen_pokemon_companion,"",291,
@@ -221,9 +218,9 @@ void pokemon_ui_build(void)
                            &lv_font_montserrat_14,0xC9A36F);
 
     lv_obj_t *prev=pokemon_button(screen_pokemon_companion,"<",41,36,
-                                   -133,205,pokemon_page_cb);
+                                   -133,205,NULL);
     lv_obj_t *next=pokemon_button(screen_pokemon_companion,">",41,36,
-                                   133,205,pokemon_page_cb);
+                                   133,205,NULL);
     lv_obj_t *back=pokemon_button(screen_pokemon_companion,"BACK",72,32,
                                    -128,18,pokemon_back_cb);
     (void)back;
