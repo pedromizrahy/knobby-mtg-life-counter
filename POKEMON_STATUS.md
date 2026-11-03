@@ -77,6 +77,15 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - **Riscos ainda pendentes:** SPIFFS compartilha espaço com fila de partidas Playgroup e cache de artes; é preciso reservar espaço, controlar falha de escrita, definir política de migração verificável com rollback e testar a recuperação no ESP32-S3.
 - **NÃO usar upload nem considerar pronto para produção** enquanto os testes do último commit e o build Windows/hardware desse novo backend não forem validados.
 
+## Progresso adicional — migração explícita NVS → SPIFFS (2026-11-02)
+
+- Implementados `pk_file_import_if_missing` e `pk_profile_migrate_to_spiffs`: migração **exclusivamente manual/opt-in**, não chamada pelo boot, pós-jogo ou sincronização.
+- A origem NVS é somente lida e **nunca apagada**. Para perfil NVS válido e SPIFFS vazio, grava arquivo temporário `/pkm_<user_id>.tmp`, verifica checksum e conteúdo, renomeia para slot A e confere byte a byte o perfil de destino. Não existe exclusão automática de perfis.
+- Perfis já iguais em NVS/SPIFFS retornam `PK_MIGRATE_ALREADY`; dados divergentes ou corrompidos retornam **conflito sem sobrescrita**; origem NVS ausente com arquivo válido retorna `PK_MIGRATE_FILE_ONLY`.
+- Falha/interrupção que deixa arquivo `.tmp` bloqueia nova tentativa (fail closed), preservando os dados para recuperação manual. O programa ainda **não** possui comando de resolução de staging nem procedimento de reparo em hardware.
+- Criados testes `pokemon_profile_migration_test.cpp` para repetição, origem intacta, divergência, corrupção, falha de escrita e falta de montagem; integrados ao workflow Pokémon.
+- **Não ativar migração no aparelho nem trocar o backend de premiação** até conferir o CI final, compilar em Windows, validar espaço SPIFFS compartilhado, teste de hardware e procedimento explícito de recuperação. O adaptador `pk_reward_apply_existing` ainda aponta para NVS e está desligado do Magic.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
