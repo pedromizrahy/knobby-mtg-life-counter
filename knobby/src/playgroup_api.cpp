@@ -16,6 +16,7 @@
 #include "pokemon_spiffs_selftest.h"
 #include "pokemon_file_store.h"
 #include "pokemon_sd_diagnostic.h"
+#include "pokemon_pmd_reader.h"
 #include "../knobby_net.h"
 
 extern "C" void knob_print_reset_diagnostics(void);
@@ -2777,6 +2778,15 @@ static void handle_command(char *line)
                 "[Pokemon] REBOOT VERIFY PASS: both persisted slots matched; diagnostic files cleaned." :
                 "[Pokemon] REBOOT VERIFY FAIL: do not repeat PREP or delete files.");
         }
+        return;
+    }
+
+    if (strcmp(line, "PK PMD CHECK") == 0) {
+        if (playgroup_pending_current_active()) {
+            Serial.println("[Pokemon] PMD CHECK SKIPPED: exit active Playgroup game first.");
+            return;
+        }
+        pk_pmd_check_mimikyu_read_only();
         return;
     }
 
