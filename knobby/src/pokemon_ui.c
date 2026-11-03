@@ -6,7 +6,6 @@
  * UI values below are explicitly labelled demo, not actual player rewards.
  * All Magic gameplay screens and knob life controls stay unchanged.
  */
-lv_obj_t *screen_pokemon_extras = NULL;
 lv_obj_t *screen_pokemon_companion = NULL;
 
 static lv_obj_t *demo_body = NULL;
@@ -55,12 +54,6 @@ static void pokemon_back_cb(lv_event_t *e)
 {
     (void)e;
     pokemon_ui_handle_back(lv_scr_act());
-}
-
-static void pokemon_open_cb(lv_event_t *e)
-{
-    (void)e;
-    pokemon_ui_open_companion();
 }
 
 static void pokemon_page_cb(lv_event_t *e)
@@ -163,10 +156,6 @@ void pokemon_ui_knob_page(int direction)
     pokemon_refresh();
 }
 
-void pokemon_ui_open_extras(void)
-{
-    if(screen_pokemon_extras)lv_scr_load(screen_pokemon_extras);
-}
 void pokemon_ui_open_companion(void)
 {
     demo_page=0;
@@ -176,53 +165,37 @@ void pokemon_ui_open_companion(void)
 bool pokemon_ui_handle_back(lv_obj_t *screen)
 {
     if(screen==screen_pokemon_companion) {
-        lv_scr_load(screen_pokemon_extras);
-        return true;
-    }
-    if(screen==screen_pokemon_extras) {
         extern lv_obj_t *screen_pregame_home;
-        lv_scr_load(screen_pregame_home);
+        if(screen_pregame_home)lv_scr_load(screen_pregame_home);
         return true;
     }
     return false;
 }
 void pokemon_ui_build(void)
 {
-    screen_pokemon_extras=pokemon_screen();
-    pokemon_label(screen_pokemon_extras,"EXTRAS",44,
-                  &lv_font_montserrat_22,0xF6DFA9);
-    pokemon_label(screen_pokemon_extras,"Outside Magic matches",85,
-                  &lv_font_montserrat_14,0x8E9FB8);
-    pokemon_button(screen_pokemon_extras,"POKEMON",222,68,0,139,
-                   pokemon_open_cb);
-    pokemon_label(screen_pokemon_extras,"Companion preview | read only",222,
-                  &lv_font_montserrat_14,0xAAB6CA);
-    pokemon_button(screen_pokemon_extras,"BACK",128,40,0,285,
-                   pokemon_back_cb);
-
     screen_pokemon_companion=pokemon_screen();
     pokemon_label(screen_pokemon_companion,"POKEMON COMPANION",24,
                   &lv_font_montserrat_16,0xF6DFA9);
     pokemon_label(screen_pokemon_companion,"NO PLAYER LINKED  |  DEMO",52,
                   &lv_font_montserrat_14,0xDAAD7B);
     pokemon_mimikyu_preview(screen_pokemon_companion);
-    demo_title=pokemon_label(screen_pokemon_companion,"MIMIKYU  #778",258,
+    demo_title=pokemon_label(screen_pokemon_companion,"MIMIKYU  #778",260,
                              &lv_font_montserrat_22,0xF8F1E2);
-    demo_line1=pokemon_label(screen_pokemon_companion,"",265,
+    demo_line1=pokemon_label(screen_pokemon_companion,"",283,
                              &lv_font_montserrat_16,0xD2DCEC);
-    demo_line2=pokemon_label(screen_pokemon_companion,"",291,
+    demo_line2=pokemon_label(screen_pokemon_companion,"",307,
                              &lv_font_montserrat_14,0x99AFC9);
-    demo_hint=pokemon_label(screen_pokemon_companion,"",317,
+    demo_hint=pokemon_label(screen_pokemon_companion,"",334,
                             &lv_font_montserrat_14,0x8794A9);
-    demo_tab=pokemon_label(screen_pokemon_companion,"",234,
+    demo_tab=pokemon_label(screen_pokemon_companion,"",240,
                            &lv_font_montserrat_14,0xC9A36F);
 
     lv_obj_t *prev=pokemon_button(screen_pokemon_companion,"<",41,36,
-                                   -133,205,NULL);
+                                   -130,203,NULL);
     lv_obj_t *next=pokemon_button(screen_pokemon_companion,">",41,36,
-                                   133,205,NULL);
+                                   130,203,NULL);
     lv_obj_t *back=pokemon_button(screen_pokemon_companion,"BACK",72,32,
-                                   -128,18,pokemon_back_cb);
+                                   -126,8,pokemon_back_cb);
     (void)back;
     lv_obj_add_event_cb(prev,pokemon_page_cb,LV_EVENT_CLICKED,(void *)(intptr_t)-1);
     lv_obj_add_event_cb(next,pokemon_page_cb,LV_EVENT_CLICKED,(void *)(intptr_t)1);
