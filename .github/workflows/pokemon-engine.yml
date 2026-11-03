@@ -13,6 +13,8 @@ on:
       - 'knobby/src/pokemon_profile_store.*'
       - 'knobby/src/pokemon_file_store.*'
       - 'tests/pokemon_file_store_test.cpp'
+      - 'knobby/src/pokemon_profile_migration.*'
+      - 'tests/pokemon_profile_migration_test.cpp'
       - 'tests/pokemon_mocks/SPIFFS.h'
       - 'tests/pokemon_mocks/Arduino.h'
       - '.github/workflows/pokemon-engine.yml'
@@ -51,3 +53,7 @@ jobs:
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_file_store.cpp tests/pokemon_file_store_test.cpp /tmp/pk_progress.o -o /tmp/pokemon_file_store_test
           /tmp/pokemon_file_store_test
+      - name: Test explicit, non-destructive NVS to SPIFFS migration
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_profile_store.cpp knobby/src/pokemon_file_store.cpp knobby/src/pokemon_profile_migration.cpp tests/pokemon_profile_migration_test.cpp /tmp/pk_progress.o -o /tmp/pokemon_migration_test
+          /tmp/pokemon_migration_test
