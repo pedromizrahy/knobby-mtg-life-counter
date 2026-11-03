@@ -120,3 +120,39 @@ extern "C" bool pk_ledger_record(uint32_t user_id,uint32_t session_id,
     /* Verify durable read-back; ambiguous writes fail closed on next read. */
     return ok && scan(user_id,session_id)==new_state;
 }
+
+/* Conservative pending scan: validate the complete file first; for each
+ * PREPARED record check its latest state. It allocates no heap memory.
+ * The two-pass scan is deliberately isolated from the main Magic loop
+ * until transactional reward delivery is enabled and performance tested. */
+extern "C" bool pk_ledger_find_pending(uint32_t user_id,uint32_t *pending_id)
+{
+    if(!user_id || !pending_id || !SPIFFS.begin(false)) return false;
+    *pending_id=0;
+    if(scan(user_id,0)==PK_LEDGER_ERROR) return false;
+    char path[24];
+    path_for(user_id,path,sizeof(path));
+    if(!SPIFFS.exists(path)) return true;
+    File file=SPIFFS.open(path,FILE_READ);
+    if(!file) return false;
+    uint8_t entry[PK_LEDGER_RECORD_BYTES];
+    while(file.available()) {
+        if(file.read(entry,sizeof(entry))!=(int)sizeof(entry)) {
+            file.close();return false;
+        }
+        uint32_t session=0;
+        pk_ledger_state_t state=PK_LEDGER_ERROR;
+        if(!decode(entry,&session,&state)) {
+            file.close();return false;
+        }
+        if(state==PK_LEDGER_PREPARED) {
+            pk_ledger_state_t current=scan(user_id,session);
+            if(current==PK_LEDGER_ERROR) { file.close();return false; }
+            if(current==PK_LEDGER_PREPARED) {
+                *pending_id=session;
+                file.close();return true;
+            }
+        }
+    }
+    file.close();return true;
+}
