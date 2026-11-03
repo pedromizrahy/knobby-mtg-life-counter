@@ -164,6 +164,13 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - O DIAL voltou a ligar após falha temporária na remontagem, e o firmware executou o teste SD; causa da falha anterior não está diagnosticada.
 - Próximo passo: inventário limitado e estritamente de leitura dos diretórios/arquivos para identificar o uso do espaço e planejar sprites e paisagens.
 
+## Diagnóstico de conteúdo SD — PK SD LIST (2026-11-03)
+
+- Implementado comando serial `PK SD LIST`, executado **manualmente** fora de partidas Playgroup ativas. Usa os pinos SDMMC confirmados para K518/K718 em 1 bit e `SD_MMC.begin("/sdcard", true, false)` para impedir formatação automática.
+- Lista diretórios e nomes/tamanhos de arquivos com limites de **100 entradas** e **2 níveis de subpastas**, informa `total/used/free` e marca `TRUNCATED` caso o inventário seja incompleto. Não lê o conteúdo dos arquivos, não grava, não cria, não apaga e desmonta a mídia após a consulta.
+- Objetivo: identificar a origem dos ~413 MiB ocupados antes de qualquer importação de sprites/paisagens TamaPoke. Listagem limitada **não prova inventário completo** e tamanhos de arquivos podem diferir do espaço alocado em FAT.
+- Aguardando aprovação do CI e validação no DIAL real. Em caso de erro de montagem, **não formatar nem substituir o cartão**.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
