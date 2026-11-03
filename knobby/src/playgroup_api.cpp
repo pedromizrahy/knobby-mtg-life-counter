@@ -2751,6 +2751,26 @@ static void handle_command(char *line)
 
     /* Explicit opt-in. This command is ignored during active Playgroup games
        and never touches Magic settings or a real player's Pokemon profile. */
+    /* Read-only inspection of the confirmed Playgroup winner and identities.
+       Does not create profiles or distribute rewards. */
+    if (strcmp(line, "PK STATUS") == 0) {
+        pg_pokemon_reward_context_t context;
+        if (!playgroup_pending_get_pokemon_reward_context(&context)) {
+            Serial.println("[Pokemon] STATUS: not eligible (missing confirmed saved game or mapped players).");
+        } else {
+            Serial.printf("[Pokemon] STATUS: session=%lu players=%u winner_seat=%u (PREVIEW ONLY)\n",
+                          (unsigned long)context.session_id,
+                          (unsigned)context.player_count,
+                          (unsigned)(context.winner_index + 1));
+            for (unsigned i=0; i<context.player_count; ++i) {
+                Serial.printf("[Pokemon] seat=%u user=%lu winner=%u\n",
+                              i + 1,(unsigned long)context.user_ids[i],
+                              (unsigned)(i==context.winner_index));
+            }
+        }
+        return;
+    }
+
     if (strcmp(line, "PK SELFTEST") == 0) {
         if (playgroup_pending_current_active() &&
             !playgroup_pending_result_confirmed()) {
