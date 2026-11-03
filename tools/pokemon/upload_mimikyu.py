@@ -67,7 +67,7 @@ def main():
     with serial.Serial(args.port, 115200, timeout=1, write_timeout=10) as device:
         time.sleep(1.5)
         device.reset_input_buffer()
-        cmd = f"PK PMD PUT 778 {len(blob)} {crc:08x}\\n"
+        cmd = f"PK PMD PUT 778 {len(blob)} {crc:08x}\n"
         device.write(cmd.encode("ascii"))
         device.flush()
         await_line(device, "PMD_READY")
