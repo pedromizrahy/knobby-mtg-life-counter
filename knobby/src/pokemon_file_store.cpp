@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <SPIFFS.h>
 #include <stdio.h>
+#include <stddef.h>
 #include <string.h>
 
 /* Separate file backend. No global hooks or NVS writes.
