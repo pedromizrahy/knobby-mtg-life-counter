@@ -12,8 +12,10 @@
  */
 static const uint32_t MAGIC=0x32464B50UL; /* PKF2 */
 static const uint32_t DIAGNOSTIC_ID=0xFFFFFFFDUL;
+static const uint32_t REBOOT_DIAGNOSTIC_ID=0xFFFFFFFCUL;
 static bool reserved_id(uint32_t id) {
-    return id==DIAGNOSTIC_ID || id==0xFFFFFFFEUL;
+    return id==DIAGNOSTIC_ID || id==REBOOT_DIAGNOSTIC_ID ||
+           id==0xFFFFFFFEUL;
 }
 typedef struct {
     uint32_t magic;
@@ -251,4 +253,77 @@ cleanup:
     if(created_b && SPIFFS.exists(b) && !SPIFFS.remove(b))ok=false;
     if(created_a && SPIFFS.exists(a) && !SPIFFS.remove(a))ok=false;
     return ok;
+}
+
+/* Persistent reboot test using a second reserved ID, physically separate
+ * from the same-session corruption test and every real Playgroup user.
+ * No NVS writes. There is intentionally NO automatic boot-time action.
+ * PREP must be explicitly followed by a reboot and then VERIFY.
+ */
+static bool reboot_expected(file_record_t *a,file_record_t *b)
+{
+    *a={};*b={};
+    a->magic=MAGIC;
+    a->user_id=REBOOT_DIAGNOSTIC_ID;
+    a->generation=1;
+    pk_profile_init(&a->profile);
+    if(!pk_team_add(&a->profile,778,false))return false;
+    a->checksum=record_checksum(a);
+    *b=*a;
+    b->generation=2;
+    pk_reward_t award={};
+    if(!pk_award_game(&b->profile,0xD1A10002UL,true,&award) ||
+       award.xp_awarded!=75 || award.new_pokeballs!=1)return false;
+    b->checksum=record_checksum(b);
+    return true;
+}
+extern "C" bool pk_file_reboot_prep(void)
+{
+    if(!SPIFFS.begin(false))return false;
+    const size_t total=SPIFFS.totalBytes(),used=SPIFFS.usedBytes();
+    if(!total || used>total || total-used<256U*1024U)return false;
+    char a[24],b[24];
+    path_for(REBOOT_DIAGNOSTIC_ID,0,a);
+    path_for(REBOOT_DIAGNOSTIC_ID,1,b);
+    /* A prior interrupted PREP must never be reset or overwritten. */
+    if(SPIFFS.exists(a) || SPIFFS.exists(b))return false;
+    file_record_t initial={},updated={},loaded={};
+    if(!reboot_expected(&initial,&updated))return false;
+    /* On any write failure leave the diagnostic paths untouched for
+     * inspection; no cleanup of partially written data is attempted. */
+    if(!write_slot(REBOOT_DIAGNOSTIC_ID,0,&initial))return false;
+    if(!write_slot(REBOOT_DIAGNOSTIC_ID,1,&updated))return false;
+    unsigned selected=0;
+    return read_slot(REBOOT_DIAGNOSTIC_ID,0,&loaded) &&
+           loaded.generation==1 &&
+           memcmp(&loaded.profile,&initial.profile,sizeof(pk_profile_t))==0 &&
+           inspect(REBOOT_DIAGNOSTIC_ID,&loaded,&selected)==PK_STORE_VALID &&
+           selected==1 &&
+           memcmp(&loaded.profile,&updated.profile,sizeof(pk_profile_t))==0;
+}
+extern "C" bool pk_file_reboot_verify(void)
+{
+    if(!SPIFFS.begin(false))return false;
+    char a[24],b[24];
+    path_for(REBOOT_DIAGNOSTIC_ID,0,a);
+    path_for(REBOOT_DIAGNOSTIC_ID,1,b);
+    if(!SPIFFS.exists(a) || !SPIFFS.exists(b))return false;
+    file_record_t initial={},updated={},loaded_a={},loaded_b={},latest={};
+    if(!reboot_expected(&initial,&updated))return false;
+    unsigned selected=0;
+    /* Check the full serialized profile and generation in BOTH slots.
+     * Unexpected bytes or corrupted data: FAIL without deleting either. */
+    if(!read_slot(REBOOT_DIAGNOSTIC_ID,0,&loaded_a) ||
+       !read_slot(REBOOT_DIAGNOSTIC_ID,1,&loaded_b) ||
+       loaded_a.generation!=initial.generation ||
+       loaded_b.generation!=updated.generation ||
+       memcmp(&loaded_a.profile,&initial.profile,sizeof(pk_profile_t))!=0 ||
+       memcmp(&loaded_b.profile,&updated.profile,sizeof(pk_profile_t))!=0 ||
+       inspect(REBOOT_DIAGNOSTIC_ID,&latest,&selected)!=PK_STORE_VALID ||
+       selected!=1)return false;
+    /* After successful readback remove ONLY the two reserved files.
+     * A failed deletion yields FAIL; further PREP refuses existing residue. */
+    bool clean_b=SPIFFS.remove(b);
+    bool clean_a=SPIFFS.remove(a);
+    return clean_a && clean_b;
 }
