@@ -16,6 +16,12 @@ bool pk_file_save(uint32_t user_id,const pk_profile_t *profile);
 /* Explicit hardware-only diagnostic: reserved isolated profile, verifies
  * alternating copies and recovery, cleans only files it creates. */
 bool pk_file_profile_selftest(void);
+/* Two-stage manual power-cycle test using a DIFFERENT reserved ID.
+ * PREP writes two verified slots, VERIFY confirms their expected bytes and
+ * cleans them. Reboot the dial between commands; firmware does not reboot
+ * the device automatically or touch real players. */
+bool pk_file_reboot_prep(void);
+bool pk_file_reboot_verify(void);
 /* Copy an existing validated NVS profile into an EMPTY SPIFFS profile.
  * Uses a unique temporary file and rename; does not alter NVS or existing
  * SPIFFS profiles. Explicit opt-in: NOT invoked automatically by firmware. */
