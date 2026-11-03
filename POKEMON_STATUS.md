@@ -32,9 +32,18 @@ Nenhum novo build ou upload é necessário para este teste: o usuário já insta
 
 Se o usuário não puder realizar a partida de teste, avançar somente com mudanças independentes da execução do hardware e marcar a validação como pendente. Nunca afirmar que o pós-jogo está validado sem logs correspondentes.
 
+## Progresso adicional — registro durável de recompensas (2026-11-02)
+
+- Implementados `knobby/src/pokemon_reward_ledger.h` e `.cpp`: journal **append-only** por Playgroup User ID em SPIFFS, com registros de 16 bytes, checksum e estados `PREPARED` / `COMMITTED`. Não usa a partição NVS.
+- A leitura valida **todo o journal**, falhando de modo conservador se houver um registro incompleto, corrompido ou uma transição inválida. O método não formata SPIFFS.
+- **Ainda não integrado ao pós-jogo e ainda não testado no hardware.** Recompensas continuam DESATIVADAS. Criar um journal sozinho NÃO torna segura a premiação; faltam a lógica transacional e a recuperação após queda de energia.
+- Protocolo exigido antes de ativar: (1) verificar resultado confirmado durável e identidades válidas; (2) reconciliar qualquer `PREPARED` pendente do jogador; (3) escrever `PREPARED`; (4) atualizar perfil e conferir salvamento; (5) escrever `COMMITTED`; (6) em reinicialização, usar o ID ainda no histórico recente do perfil para determinar se o `PREPARED` já foi aplicado; **não** processar mais 32 jogos enquanto um `PREPARED` estiver pendente. Testar interrupções em cada fase antes de ativar.
+- Necessário revisar o crescimento indefinido do journal e o espaço SPIFFS compartilhado com a fila Playgroup e cache de artes. Não habilitar prêmios até existir política de limite/recuperação, com falha segura para armazenamento cheio.
+- O teste da prévia de elegibilidade no pós-jogo continua pendente; não confundir o novo journal com validação dessa integração.
+
 ## Bloqueadores para recompensas reais
 
-- A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para garantir idempotência vitalícia após 32 partidas. Projetar um registro durável de partidas premiadas antes de ligar recompensas.
+- A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
 - A partição NVS tem **20 KiB** e os perfis usam registros duplicados. Avaliar capacidade e estratégia de armazenamento antes de adicionar múltiplos jogadores; evitar qualquer operação que possa levar à limpeza total do NVS.
 - A identidade offline pode ser resolvida posteriormente; a premiação precisa respeitar o vínculo final com cada Playgroup user ID.
 - A premiação deve ocorrer **depois da confirmação e gravação durável** do resultado, com recuperação após reinicialização, sem duplicação e sem impacto no resultado Magic.
