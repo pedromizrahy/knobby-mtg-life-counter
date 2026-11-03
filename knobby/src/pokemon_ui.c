@@ -44,7 +44,8 @@ static lv_obj_t *text_label(lv_obj_t *parent, const char *value, int y,
     lv_obj_set_style_text_font(obj,font,0);
     lv_obj_set_style_text_color(obj,lv_color_hex(color),0);
     lv_obj_set_style_text_align(obj,LV_TEXT_ALIGN_CENTER,0);
-    lv_obj_set_width(obj,292);
+    int parent_w=lv_obj_get_width(parent);
+    lv_obj_set_width(obj,parent_w>20?parent_w-12:292);
     lv_obj_align(obj,LV_ALIGN_TOP_MID,0,y);
     return obj;
 }
@@ -136,7 +137,7 @@ static void idle_tick(lv_timer_t *timer)
     mimikyu_frame=(mimikyu_frame+1U)%pk_tpk2_idle_frame_count();
     lv_img_set_src(mimikyu_image,pk_tpk2_idle_frame(mimikyu_frame));
     lv_img_set_zoom(mimikyu_image,768); /* 3x: 32x48 Idle -> 96x144 */
-    lv_obj_align(mimikyu_image,LV_ALIGN_TOP_MID,0,115);
+    lv_obj_align(mimikyu_image,LV_ALIGN_CENTER,0,-7);
     lv_timer_set_period(mimikyu_timer,pk_tpk2_idle_duration_ms(mimikyu_frame));
 }
 void pokemon_ui_knob_page(int direction)
@@ -153,7 +154,7 @@ void pokemon_ui_open_companion(void)
     if(ready) {
         lv_img_set_src(mimikyu_image,pk_tpk2_idle_frame(0));
         lv_img_set_zoom(mimikyu_image,768);
-        lv_obj_align(mimikyu_image,LV_ALIGN_TOP_MID,0,115);
+        lv_obj_align(mimikyu_image,LV_ALIGN_CENTER,0,-7);
         lv_timer_set_period(mimikyu_timer,pk_tpk2_idle_duration_ms(0));
         lv_timer_reset(mimikyu_timer);
         lv_timer_resume(mimikyu_timer);
@@ -192,7 +193,7 @@ void pokemon_ui_build(void)
                            &lv_font_montserrat_14,0x173B37);
 
     mimikyu_image=lv_img_create(screen_pokemon_companion);
-    lv_obj_align(mimikyu_image,LV_ALIGN_TOP_MID,0,115);
+    lv_obj_align(mimikyu_image,LV_ALIGN_CENTER,0,-7);
     mimikyu_status=text_label(screen_pokemon_companion,"Sprite unavailable",165,
                               &lv_font_montserrat_14,0xF6F4DC);
 
