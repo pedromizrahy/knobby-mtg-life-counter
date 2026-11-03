@@ -171,6 +171,14 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - Objetivo: identificar a origem dos ~413 MiB ocupados antes de qualquer importação de sprites/paisagens TamaPoke. Listagem limitada **não prova inventário completo** e tamanhos de arquivos podem diferir do espaço alocado em FAT.
 - Aguardando aprovação do CI e validação no DIAL real. Em caso de erro de montagem, **não formatar nem substituir o cartão**.
 
+## Limpeza opt-in de demos do microSD (2026-11-03)
+
+- **Comandos novos** `PK SD CLEAN PREVIEW` (apenas diagnóstico; não escreve) e `PK SD CLEAN CONFIRM` (apaga de forma irreversível arquivos/diretórios das pastas permitidas).
+- **Allowlist exata**: `/clockbg`, `/weather`, `/aida64`, `/night7`, `/pic`, `/txt`, `/mjpeg`. Preserva `/fonts`, `/mons`, `/scenes`, `/audio`, `/assets` e qualquer outra pasta, inclusive pastas não inventariadas.
+- Ambos só são disparados manualmente pelo monitor serial, fora de uma partida Playgroup ativa. Nenhuma exclusão ocorre no boot. Proibida formatação automática. Caminhos dos filhos são verificados contra a raiz permitida; limites de 2000 entradas e 6 níveis; logs por pasta, erros e espaço ocupado antes/depois.
+- **ATENÇÃO**: o usuário autorizou apagar os recursos de demonstração; porém nenhum comando pode remover os dados fisicamente até o usuário gravar novo firmware no DIAL e executar `PK SD CLEAN CONFIRM`. É recomendado backup externo antes de confirmar. Na prévia, conferir se houve `TRUNCATED` ou erros. Não presumir que o cartão já foi limpo.
+- O inventário inicial revelou subpastas adicionais ainda não enumeradas após 100 entradas; permitir apenas os sete diretórios de demonstração mencionados, não fazer limpeza genérica de raiz.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
