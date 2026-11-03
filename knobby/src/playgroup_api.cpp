@@ -2792,10 +2792,10 @@ static void handle_command(char *line)
             entry=root.openNextFile();
         }
         root.close();
-        Serial.printf("[Pokemon] STORAGE OK total=%lu used=%lu free=%lu bytes\\n",
+        Serial.printf("[Pokemon] STORAGE OK total=%lu used=%lu free=%lu bytes\n",
                       (unsigned long)total,(unsigned long)used,
                       (unsigned long)(total-used));
-        Serial.printf("[Pokemon] STORAGE FILES profiles=%u ledgers=%u staging=%u\\n",
+        Serial.printf("[Pokemon] STORAGE FILES profiles=%u ledgers=%u staging=%u\n",
                       profile_files,ledger_files,staging_files);
         if (staging_files)
             Serial.println("[Pokemon] STORAGE WARNING: interrupted migration staging exists; no automatic cleanup.");
