@@ -2757,6 +2757,28 @@ static void handle_command(char *line)
        Does not create profiles or distribute rewards. */
     /* Read-only filesystem inspection: no format, migration, profile
        creation, reward, or deletion. Safe outside a game. */
+    if (strcmp(line, "PK REBOOT PREP") == 0 ||
+        strcmp(line, "PK REBOOT VERIFY") == 0) {
+        if (playgroup_pending_current_active()) {
+            Serial.println("[Pokemon] REBOOT TEST SKIPPED: exit the active Playgroup game.");
+            return;
+        }
+        if (strcmp(line, "PK REBOOT PREP") == 0) {
+            Serial.println("[Pokemon] REBOOT PREP: writing reserved profile slots (no real players).");
+            const bool ok=pk_file_reboot_prep();
+            Serial.println(ok ?
+                "[Pokemon] REBOOT PREP PASS: restart the dial, then run PK REBOOT VERIFY." :
+                "[Pokemon] REBOOT PREP FAIL: do not retry or delete diagnostic files.");
+        } else {
+            Serial.println("[Pokemon] REBOOT VERIFY: checking both persistent reserved slots.");
+            const bool ok=pk_file_reboot_verify();
+            Serial.println(ok ?
+                "[Pokemon] REBOOT VERIFY PASS: both persisted slots matched; diagnostic files cleaned." :
+                "[Pokemon] REBOOT VERIFY FAIL: do not repeat PREP or delete files.");
+        }
+        return;
+    }
+
     if (strcmp(line, "PK PROFILE SELFTEST") == 0) {
         if (playgroup_pending_current_active()) {
             Serial.println("[Pokemon] PROFILE SELFTEST SKIPPED: exit the active Playgroup game first.");
