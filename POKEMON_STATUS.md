@@ -58,6 +58,16 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - **Limite de segurança:** teste de adaptador com mocks não garante durabilidade física, capacidade da NVS, recuperação de NVS parcialmente gravada ou reinicialização da placa. Ainda é preciso implementar inicialização segura e testar no ESP32-S3 antes de ativar recompensas.
 - A prévia do pós-jogo já está instalada no DIAL, mas falta o teste de identificação com partida Playgroup de exemplo.
 
+## Progresso adicional — criação segura de perfil inicial (2026-11-02)
+
+- `pk_store_inspect` diferencia explicitamente perfil `MISSING`, `VALID`, `CORRUPT` e `ERROR`; uma falha ao ler os dois slots NVS não se confunde mais com perfil ainda não criado.
+- `pk_store_create_starter` exige os dois slots vazios e cria explicitamente o primeiro Pokémon, Mimikyu #778, por User ID do Playgroup.gg. **Ainda não é chamado automaticamente pelo pós-jogo.**
+- `pk_store_save` agora atualiza exclusivamente perfis válidos: não cria perfis implicitamente e **recusa sobrescrever dois slots corrompidos**.
+- `PK SELFTEST` continua usando apenas o ID de diagnóstico reservado e mantém o cenário de salvar/ler/atualizar/limpar.
+- Adicionados mock de `Preferences` e testes de slots corruptos, criação duplicada, falha de escrita e diagnóstico, no workflow `pokemon-engine.yml`.
+- Ainda não validado no ESP32-S3 após esta alteração; o autoteste anterior validava a versão antiga. Testes com mock não medem desgaste/capacidade do NVS de 20 KiB nem prova de recuperação em queda real de energia.
+- **Não implementar criação automática de vários perfis** antes de avaliar a ocupação NVS, migração para SPIFFS ou política de limites sem apagar configurações já existentes.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
