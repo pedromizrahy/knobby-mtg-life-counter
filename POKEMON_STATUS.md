@@ -112,6 +112,14 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - Exige no início ao menos **256 KiB de espaço livre** no SPIFFS, não formata o armazenamento. Mock de SPIFFS testa repetição, dados de terceiros intactos, arquivo preexistente, falha de escrita e falha de limpeza.
 - **Pendente teste físico:** aguardar CI, compilar Windows, fazer upload e executar `PK PROFILE SELFTEST` no monitor serial COM4/115200. Não afirmar PASS em hardware até receber resultado. Sem mudança de gameplay ou ativação de recompensas.
 
+## Validação em hardware — perfil completo SPIFFS (2026-11-03)
+
+- **Confirmado no DIAL ESP32-S3, via monitor serial COM4:** `PK PROFILE SELFTEST` produziu `[Pokemon] PROFILE SELFTEST PASS`. O teste exercita criação de Mimikyu #778 no ID diagnóstico, premiação simulada local (+75 XP e +1 Poké Ball), duas gerações dos registros SPIFFS, recuperação diante de corrupção do slot B de diagnóstico e limpeza de ambos os slots.
+- **Confirmado no GitHub:** no commit `913690fd7566969310b5f2c5ef3e506221d5ae61`, os workflows `Pokemon engine checks` e `CI` concluíram com sucesso. O upload e teste físico foram relatados pelo usuário.
+- O log também continha `[Diag] Reset reason: UNKNOWN (11)` antes do comando; origem não diagnosticada. Sem evidência neste log de falha do teste nem motivo para afirmar causa.
+- Ainda **não testados no hardware**: perfis reais multiusuário, persistência após reinício completo, migração NVS→SPIFFS, journal de recompensas/recuperação de transação e vinculação pós-jogo. O adaptador de premiação continua sem ativação.
+- Próximo passo: verificar persistência após reinício e limites de armazenamento sem remover, alterar ou migrar dados reais; depois consolidar procedimento seguro para perfis reais.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
