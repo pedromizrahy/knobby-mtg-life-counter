@@ -179,6 +179,15 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - **ATENÇÃO**: o usuário autorizou apagar os recursos de demonstração; porém nenhum comando pode remover os dados fisicamente até o usuário gravar novo firmware no DIAL e executar `PK SD CLEAN CONFIRM`. É recomendado backup externo antes de confirmar. Na prévia, conferir se houve `TRUNCATED` ou erros. Não presumir que o cartão já foi limpo.
 - O inventário inicial revelou subpastas adicionais ainda não enumeradas após 100 entradas; permitir apenas os sete diretórios de demonstração mencionados, não fazer limpeza genérica de raiz.
 
+## Integração real dos assets TamaPoke/PMD — fase de transporte e validação (2026-11-03)
+
+- O fonte `socquique/TamaPoke/sdmon.cpp` define contêiner TPK2: `TPK2`, contagem de ações (u8), paleta RGB565 (u16 LE), ações com id/w/h/nFrames, tempos u16 e pixels indexados (`0xFF` transparente). O script oficial `tools/pack_pmd.py normal 778` gera `tools/sdcard/mons/p778.bin` diretamente a partir de SpriteCollab; o arquivo 778 **não aparece no pacote pré-gerado de 303 entradas**, mas a árvore de sprite do SpriteCollab possui a espécie 0778. Não presumir que o packer já foi executado com sucesso.
+- Novo comando **`PK PMD CHECK`**: leitura somente do `/mons/p778.bin`, verifica assinatura, paleta, ações e limites do arquivo, desconecta SD ao terminar. Ele retorna `MISSING` enquanto a imagem não for enviada; o comando não desenha o Pokémon nem instala recursos.
+- Novo comando **`PK PMD PUT 778 <bytes> <crc32-hex>`**: somente fora de partidas Playgroup; transfere binário via USB serial em chunks de até 1024 bytes, ACK `#` por chunk, confirma CRC32 e assinatura, escreve primeiro em `/mons/p778.part` e renomeia somente com transferência completa. **Nunca sobrescreve `/mons/p778.bin` existente.** Não cria arquivo se falhar montagem, e não formata.
+- Script Windows `tools/pokemon/upload_mimikyu.py --port COM4 --file <path/p778.bin>` usa pyserial; fechar Arduino serial monitor para liberar COM. Script valida estrutura básica no PC antes de mandar e aguarda resposta `PMD_READY`, ACKs, `PMD PUT DONE`. O caminho `/mons` só é criado após comando explícito; somente o arquivo de staging `p778.part` pode ser removido em uma tentativa repetida.
+- Direitos: código TamaPoke MIT, arte SpriteCollab geralmente CC BY-NC 4.0 com créditos individuais; não incorporar binários de terceiros diretamente no repositório sem verificar as atribuições/licença. Projetado para gerar localmente para uso pessoal.
+- **Ainda não há renderização gráfica real do TPK2 na tela**; isto é a fundação de transporte/validação, etapa posterior será decoder de frames e integração LVGL. Nenhum layout demo foi substituído nesta fase.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
