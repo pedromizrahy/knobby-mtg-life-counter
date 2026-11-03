@@ -137,6 +137,13 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - Os testes físicos de capacidade, arquivo temporário, perfil completo e persistência pós-reinício estão concluídos. Estes resultados **não validam ainda** migração de jogador real, premiação pós-jogo, histórico antirrepetição ao longo da vida, recuperação transacional em queda de energia durante escrita, nem desempenho/limites multiusuário.
 - Próxima etapa: validação opt-in do journal e da coordenação de recompensas com identidade reservada, sem ligação automática ao Magic, e proteção contra duplicação após interrupção.
 
+## Interface inicial do Pokémon — acesso direto pelo home (2026-11-03)
+
+- **Pedido confirmado:** Pokémon é um modo separado, **fora da partida** e acessível **diretamente da tela inicial** junto a `LOCAL PLAY` e `MULTIPLAYER`, por botão compacto de **Poké Bola pixelada** (desenhada em LVGL, sem assets de terceiros). Não passa por Extras, não substitui Dice, Event Log, Mana Pool, Table Sync, Wi-Fi nem Settings.
+- Implementado `knobby/src/pokemon_ui.c/.h`, com telas LVGL em 360×360. Tela inicial Pokémon apresenta prévia visual de Mimikyu #778 usando formas LVGL próprias (placeholder, **ainda não é sprite oficial**), e três páginas de demonstração: companion/nível/XP, Poké Balls e Pokédex. Usa toque em setas e rotação do dial para páginas; botão BACK e gesto de retorno levam ao home.
+- **Dados de demonstração explicitamente identificados como DEMO**, não associados a contas reais. Não cria perfil no SPIFFS/NVS, não grava XP, não concede Poké Balls e não ativa captura ou premiação. Seleção de identidade Playgroup e alimentação/cuidado/evolução continuam pendentes.
+- O acesso ao Pokémon é exposto somente no home do pré-jogo e não altera os componentes de gameplay Magic. A UI **ainda precisa de compilação Arduino CI aprovada** e teste no aparelho; testes isolados de Pokémon Engine não validam navegação/display LVGL.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
