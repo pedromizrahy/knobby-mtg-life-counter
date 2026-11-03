@@ -129,6 +129,14 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - Testes simulados integrados ao teste de armazenamento cobrem gravação entre chamadas, arquivos preexistentes, corrupção e escrita interrompida. **Ainda pendente validação no DIAL físico** e aprovação do último CI.
 - Em caso de FAIL, não repetir PREP, não formatar nem excluir manualmente arquivos de diagnóstico: investigar primeiro. Recompensas reais e migração automática continuam desativadas.
 
+## Validação em hardware — persistência após reinicialização (2026-11-03)
+
+- **Confirmado no DIAL real:** `PK REBOOT PREP` retornou `[Pokemon] REBOOT PREP PASS: restart the dial, then run PK REBOOT VERIFY.`.
+- Após reinício físico do DIAL, **confirmado no monitor serial:** `PK REBOOT VERIFY` retornou `[Pokemon] REBOOT VERIFY PASS: both persisted slots matched; diagnostic files cleaned.`.
+- A verificação releu os **dois registros** SPIFFS reservados do perfil Mimikyu #778, com gerações e dados esperados (slot atualizado com vitória simulada, +75 XP e +1 Poké Ball), e concluiu a limpeza dos arquivos de diagnóstico. A confirmação de reinício físico é reportada pelo operador; o próprio comando não atesta o power cycle.
+- Os testes físicos de capacidade, arquivo temporário, perfil completo e persistência pós-reinício estão concluídos. Estes resultados **não validam ainda** migração de jogador real, premiação pós-jogo, histórico antirrepetição ao longo da vida, recuperação transacional em queda de energia durante escrita, nem desempenho/limites multiusuário.
+- Próxima etapa: validação opt-in do journal e da coordenação de recompensas com identidade reservada, sem ligação automática ao Magic, e proteção contra duplicação após interrupção.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
