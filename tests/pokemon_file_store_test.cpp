@@ -74,5 +74,36 @@ int main() {
     SPIFFS.files.erase("/pkf_fffffffda.bin");
     SPIFFS.files.erase("/pkf_fffffffdb.bin");
     assert(SPIFFS.files==others);
+    /* Multi-command reboot persistence: two durable profile slots remain
+       until an independently invoked VERIFY, across simulated restart. */
+    assert(pk_file_reboot_prep());
+    assert(SPIFFS.exists("/pkf_fffffffca.bin"));
+    assert(SPIFFS.exists("/pkf_fffffffcb.bin"));
+    auto persisted=SPIFFS.files;
+    assert(!pk_file_reboot_prep());
+    assert(SPIFFS.files==persisted);
+    /* In the mock, constructing another call with the same persisted
+       filesystem simulates the new process after reboot. */
+    assert(pk_file_reboot_verify());
+    assert(SPIFFS.files==others);
+    assert(!pk_file_reboot_verify());
+    /* Corruption never triggers automatic deletion. */
+    assert(pk_file_reboot_prep());
+    SPIFFS.files["/pkf_fffffffcb.bin"][0]^=0xff;
+    auto damaged=SPIFFS.files;
+    assert(!pk_file_reboot_verify());
+    assert(SPIFFS.files==damaged);
+    assert(!pk_file_reboot_prep());
+    SPIFFS.files.erase("/pkf_fffffffca.bin");
+    SPIFFS.files.erase("/pkf_fffffffcb.bin");
+    assert(SPIFFS.files==others);
+    SPIFFS.fail_write=true;
+    assert(!pk_file_reboot_prep());
+    SPIFFS.fail_write=false;
+    /* Failed write can leave an incomplete slot; no retry allowed. */
+    assert(!pk_file_reboot_prep());
+    SPIFFS.files.erase("/pkf_fffffffca.bin");
+    SPIFFS.files.erase("/pkf_fffffffcb.bin");
+    assert(SPIFFS.files==others);
     std::puts("Pokemon SPIFFS dual-slot tests passed");
 }
