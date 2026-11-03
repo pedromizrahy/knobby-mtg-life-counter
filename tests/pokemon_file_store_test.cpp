@@ -40,5 +40,39 @@ int main() {
     SPIFFS.mount_ok=false;
     assert(pk_file_inspect(54,&p)==PK_STORE_ERROR);
     assert(!pk_file_create_starter(54));
+    /* Reserved diagnostic profile: live-format, alternating copies,
+       simulated corruption recovery, and cleanup without touching others. */
+    SPIFFS.mount_ok=true;
+    const auto others=SPIFFS.files;
+    assert(pk_file_profile_selftest());
+    assert(SPIFFS.files==others);
+    assert(pk_file_profile_selftest());
+    assert(SPIFFS.files==others);
+    /* Both public APIs refuse reserved diagnostic IDs. */
+    pk_profile_t reserved={};
+    assert(pk_file_inspect(0xFFFFFFFDUL,&reserved)==PK_STORE_ERROR);
+    assert(!pk_file_create_starter(0xFFFFFFFDUL));
+    assert(!pk_file_save(0xFFFFFFFDUL,&reserved));
+    /* An interrupted diagnostic must never overwrite or erase its residue. */
+    SPIFFS.files["/pkf_fffffffda.bin"]={0x22};
+    auto before=SPIFFS.files;
+    assert(!pk_file_profile_selftest());
+    assert(SPIFFS.files==before);
+    SPIFFS.files.erase("/pkf_fffffffda.bin");
+    SPIFFS.fail_write=true;
+    assert(!pk_file_profile_selftest());
+    SPIFFS.fail_write=false;
+    assert(SPIFFS.files==others);
+    SPIFFS.fail_remove=true;
+    assert(!pk_file_profile_selftest());
+    SPIFFS.fail_remove=false;
+    assert(SPIFFS.exists("/pkf_fffffffda.bin") ||
+           SPIFFS.exists("/pkf_fffffffdb.bin"));
+    before=SPIFFS.files;
+    assert(!pk_file_profile_selftest());
+    assert(SPIFFS.files==before);
+    SPIFFS.files.erase("/pkf_fffffffda.bin");
+    SPIFFS.files.erase("/pkf_fffffffdb.bin");
+    assert(SPIFFS.files==others);
     std::puts("Pokemon SPIFFS dual-slot tests passed");
 }
