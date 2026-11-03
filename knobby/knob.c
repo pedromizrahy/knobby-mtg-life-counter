@@ -369,7 +369,7 @@ static void handle_back_navigation(lv_obj_t *screen)
             refresh_main_ui();
         lv_scr_load(previous_screen);
     } else if (pokemon_ui_handle_back(screen)) {
-        /* Dedicated Extras -> Pokemon -> home back stack. */
+        /* Standalone Pokemon screen returns directly to pregame home. */
     } else if (screen == screen_tools_menu) {
         lv_scr_load(screen_quad_menu);
     } else if (settings_handle_back(screen)) {
