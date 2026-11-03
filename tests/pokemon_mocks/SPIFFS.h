@@ -27,8 +27,16 @@ private:
 };
 struct MockSPIFFS {
     std::map<std::string,std::vector<uint8_t>> files;
-    bool mount_ok=true,fail_write=false;
+    bool mount_ok=true,fail_write=false,fail_remove=false;
+    size_t capacity=3245681U;
     bool begin(bool format=false){return mount_ok && !format;}
+    size_t totalBytes() const {return capacity;}
+    size_t usedBytes() const {
+        size_t n=0;for(const auto &item:files)n+=item.second.size();return n;
+    }
+    bool remove(const char *path) {
+        return mount_ok && !fail_remove && files.erase(path)>0;
+    }
     bool exists(const char *path){return files.count(path)!=0;}
     bool rename(const char *from,const char *to) {
         if(!mount_ok || !exists(from) || exists(to))return false;
