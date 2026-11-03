@@ -2781,6 +2781,18 @@ static void handle_command(char *line)
         return;
     }
 
+    unsigned long pmd_size=0,pmd_crc=0;
+    char pmd_extra=0;
+    if (sscanf(line,"PK PMD PUT 778 %lu %lx %c",
+               &pmd_size,&pmd_crc,&pmd_extra)==2) {
+        if (playgroup_pending_current_active()) {
+            Serial.println("[Pokemon] PMD PUT SKIPPED: exit active Playgroup game first.");
+            return;
+        }
+        pk_pmd_put_mimikyu(pmd_size,pmd_crc);
+        return;
+    }
+
     if (strcmp(line, "PK PMD CHECK") == 0) {
         if (playgroup_pending_current_active()) {
             Serial.println("[Pokemon] PMD CHECK SKIPPED: exit active Playgroup game first.");
