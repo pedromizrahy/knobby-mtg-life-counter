@@ -121,3 +121,56 @@ extern "C" bool pk_file_save(uint32_t id,const pk_profile_t *profile)
     record.checksum=record_checksum(&record);
     return write_slot(id,1U-slot,&record);
 }
+
+/* Explicit import from an already-validated NVS profile.
+ * Writes only a private staging path; never truncates either profile slot.
+ * If power is lost with a staging file present, fail closed on retry:
+ * manual diagnosis is safer than silently discarding possible data.
+ */
+extern "C" bool pk_file_import_if_missing(uint32_t id,const pk_profile_t *profile)
+{
+    if(!id || id==0xFFFFFFFEUL || !profile ||
+       !profile_valid(profile) || !SPIFFS.begin(false)) return false;
+
+    file_record_t existing={};
+    unsigned slot=0;
+    if(inspect(id,&existing,&slot)!=PK_STORE_MISSING) return false;
+
+    char destination[24];
+    path_for(id,0,destination);
+    char staging[24];
+    snprintf(staging,sizeof(staging),"/pkm_%08lx.tmp",(unsigned long)id);
+    if(SPIFFS.exists(staging) || SPIFFS.exists(destination)) return false;
+
+    file_record_t record={};
+    record.magic=MAGIC;record.user_id=id;record.generation=1;
+    record.profile=*profile;
+    record.checksum=record_checksum(&record);
+
+    File f=SPIFFS.open(staging,FILE_WRITE);
+    if(!f) return false;
+    const size_t written=f.write((const uint8_t*)&record,sizeof(record));
+    f.flush();
+    f.close();
+    /* Never delete a partial staging file without a deliberate recovery
+     * procedure: it records that a migration attempt was interrupted. */
+    if(written!=sizeof(record)) return false;
+
+    File verify=SPIFFS.open(staging,FILE_READ);
+    if(!verify) return false;
+    file_record_t copy={};
+    bool valid=verify.size()==sizeof(copy) &&
+               verify.read((uint8_t*)&copy,sizeof(copy))==(int)sizeof(copy);
+    verify.close();
+    if(!valid || copy.magic!=MAGIC || copy.user_id!=id ||
+       copy.checksum!=record_checksum(&copy) ||
+       memcmp(&copy.profile,profile,sizeof(*profile))!=0)
+        return false;
+
+    /* No other writer may operate on this user while migrating. */
+    if(SPIFFS.exists(destination) || !SPIFFS.rename(staging,destination))
+        return false;
+    pk_profile_t recovered={};
+    return pk_file_inspect(id,&recovered)==PK_STORE_VALID &&
+           memcmp(&recovered,profile,sizeof(*profile))==0;
+}
