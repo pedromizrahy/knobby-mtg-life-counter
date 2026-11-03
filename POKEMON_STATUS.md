@@ -103,6 +103,15 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - **Ainda não foi testado fisicamente:** concluir GitHub CI, compilar Windows e fazer upload antes de executar `PK SPIFFS SELFTEST` no monitor a 115200 baud. Se `FAIL`, não repetir indiscriminadamente nem apagar arquivos manualmente.
 - A migração de perfis reais e a premiação continuam desativadas.
 
+## Progresso adicional — autoteste de perfil completo no SPIFFS (2026-11-03)
+
+- **Hardware aprovado anteriormente:** `PK SPIFFS SELFTEST PASS` retornado pelo usuário no DIAL real. O teste verificou escrita/leitura/atualização/limpeza de um arquivo temporário, **não** a estrutura completa de perfil.
+- Implementado comando explícito `PK PROFILE SELFTEST` e rotina `pk_file_profile_selftest`, **somente fora de partida Playgroup ativa**. Não altera perfis reais, NVS ou o journal de recompensas; não distribui recompensas no jogo.
+- O teste usa exclusivamente ID diagnóstico reservado `0xFFFFFFFD` (bloqueado nas APIs públicas de perfis SPIFFS), com os arquivos `/pkf_fffffffda.bin` e `/pkf_fffffffdb.bin`. Recusa executar caso qualquer dos dois já exista, inclusive se sobrou de interrupção anterior.
+- Valida criação de Mimikyu #778, leitura do slot A, cálculo local de 75 XP + 1 Poké Ball de vitória, escrita do slot B com geração 2, leitura de B como última versão, corrupção deliberada **somente do próprio slot B de diagnóstico**, fallback para A, restauração do slot B e verificação final. Limpa somente arquivos criados pela própria execução; caso não consiga remover, retorna FAIL e uma nova tentativa é bloqueada até diagnóstico manual.
+- Exige no início ao menos **256 KiB de espaço livre** no SPIFFS, não formata o armazenamento. Mock de SPIFFS testa repetição, dados de terceiros intactos, arquivo preexistente, falha de escrita e falha de limpeza.
+- **Pendente teste físico:** aguardar CI, compilar Windows, fazer upload e executar `PK PROFILE SELFTEST` no monitor serial COM4/115200. Não afirmar PASS em hardware até receber resultado. Sem mudança de gameplay ou ativação de recompensas.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
