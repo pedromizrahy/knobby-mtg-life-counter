@@ -1,6 +1,7 @@
 #ifndef POKEMON_REWARD_LEDGER_H
 #define POKEMON_REWARD_LEDGER_H
 #include <stdint.h>
+#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
