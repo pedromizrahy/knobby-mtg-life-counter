@@ -109,6 +109,34 @@ bool playgroup_pending_current_active(void)
     return current_active;
 }
 
+/* Pokemon preview only. Fail closed for guests, unmapped seats, invalid IDs
+ * and mismatched winners. The external user ID must fit the current 32-bit
+ * Pokemon profile key; extending that key requires a data migration first. */
+bool playgroup_pending_get_pokemon_reward_context(pg_pokemon_reward_context_t *out)
+{
+    if (out == NULL || !current_active || !current_result_confirmed ||
+        current_identity_pending || current_session_id == 0 ||
+        current_seed.player_count < 2 ||
+        current_seed.player_count > MAX_DISPLAY_PLAYERS ||
+        current_result_winner < 0 ||
+        current_result_winner >= current_seed.player_count)
+        return false;
+
+    pg_pokemon_reward_context_t context = {};
+    context.session_id = current_session_id;
+    context.player_count = current_seed.player_count;
+    context.winner_index = (uint8_t)current_result_winner;
+    for (int i=0; i<context.player_count; ++i) {
+        long id = current_seed.players[i].user_id;
+        if (id <= 0 || (uint64_t)id > UINT32_MAX) return false;
+        for (int j=0; j<i; ++j)
+            if (context.user_ids[j] == (uint32_t)id) return false;
+        context.user_ids[i] = (uint32_t)id;
+    }
+    *out = context;
+    return true;
+}
+
 bool playgroup_pending_result_confirmed(void)
 {
     return current_result_confirmed;
