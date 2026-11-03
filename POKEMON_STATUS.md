@@ -50,6 +50,14 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - Criado `tests/pokemon_reward_coordinator_test.c`, com simulações de salvamento interrompido, falha no preparo, falha na confirmação, repetição e journal corrompido; incluído no workflow `pokemon-engine.yml`.
 - **Ainda falta** conectar o coordenador ao armazenamento real via adaptador, estabelecer inicialização explícita do primeiro Pokémon, testar múltiplos perfis no hardware e resolver capacidade NVS, política de ocupação SPIFFS e recuperação de estado ambíguo. Os resultados dos testes simulados não validam queda real de energia nem atomicidade da NVS.
 
+## Progresso adicional — adaptador NVS/SPIFFS sem ativação (2026-11-02)
+
+- Implementado `pokemon_reward_storage.h/.cpp`, que conecta callbacks do coordenador à gravação de perfis NVS e ao histórico SPIFFS. A função `pk_reward_apply_existing` **não tem chamadas no pós-jogo**, portanto ainda não concede EXP a ninguém.
+- `pk_reward_apply_existing` só funciona com perfil já existente e exige que o chamador valide previamente resultado confirmado e gravado e identidades vinculadas. Não inicializa Pokémon, não altera configuração Magic e não sincroniza nada.
+- Adicionado teste `tests/pokemon_reward_storage_test.cpp` e execução no workflow `pokemon-engine.yml`, verificando a ligação com armazenamentos simulados, repetição, falha na confirmação e recuperação.
+- **Limite de segurança:** teste de adaptador com mocks não garante durabilidade física, capacidade da NVS, recuperação de NVS parcialmente gravada ou reinicialização da placa. Ainda é preciso implementar inicialização segura e testar no ESP32-S3 antes de ativar recompensas.
+- A prévia do pós-jogo já está instalada no DIAL, mas falta o teste de identificação com partida Playgroup de exemplo.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
