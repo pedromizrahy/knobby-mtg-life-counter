@@ -115,7 +115,7 @@ bool playgroup_pending_current_active(void)
 bool playgroup_pending_get_pokemon_reward_context(pg_pokemon_reward_context_t *out)
 {
     if (out == NULL || !current_active || !current_result_confirmed ||
-        current_identity_pending || current_session_id == 0 ||
+        !current_snapshot_saved || current_identity_pending || current_session_id == 0 ||
         current_seed.player_count < 2 ||
         current_seed.player_count > MAX_DISPLAY_PLAYERS ||
         current_result_winner < 0 ||
