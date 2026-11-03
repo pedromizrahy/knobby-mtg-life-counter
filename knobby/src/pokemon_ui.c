@@ -1,4 +1,5 @@
 #include "pokemon_ui.h"
+#include "pokemon_tpk2_renderer.h"
 #include <stdio.h>
 
 /* Phase-one read-only prototype. Intentionally does NOT read user profiles
@@ -15,6 +16,10 @@ static lv_obj_t *demo_line2 = NULL;
 static lv_obj_t *demo_hint = NULL;
 static lv_obj_t *demo_tab = NULL;
 static unsigned demo_page = 0;
+static lv_obj_t *mimikyu_image = NULL;
+static lv_obj_t *mimikyu_status = NULL;
+static lv_timer_t *mimikyu_timer = NULL;
+static unsigned mimikyu_frame = 0;
 
 static lv_obj_t *pokemon_label(lv_obj_t *parent,const char *text,
                                 int y,const lv_font_t *font,uint32_t color)
@@ -73,28 +78,11 @@ static lv_obj_t *pokemon_screen(void)
     return screen;
 }
 
-static lv_obj_t *mascot_shape(lv_obj_t *parent,int width,int height,
-                              int x,int y,int radius,uint32_t color)
-{
-    lv_obj_t *obj=lv_obj_create(parent);
-    lv_obj_set_size(obj,width,height);
-    lv_obj_set_style_radius(obj,radius,0);
-    lv_obj_set_style_bg_color(obj,lv_color_hex(color),0);
-    lv_obj_set_style_bg_opa(obj,LV_OPA_COVER,0);
-    lv_obj_set_style_border_width(obj,0,0);
-    lv_obj_set_style_shadow_width(obj,0,0);
-    lv_obj_set_style_pad_all(obj,0,0);
-    lv_obj_clear_flag(obj,LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_align(obj,LV_ALIGN_TOP_MID,x,y);
-    return obj;
-}
-
+/* Sprite pixels come solely from /mons/p778.bin; no placeholder art. */
 static void pokemon_mimikyu_preview(lv_obj_t *parent)
 {
-    /* Simple LVGL-only mascot placeholder until licensed/local sprite
-     * assets are integrated. Do not claim this is an official sprite. */
     lv_obj_t *stage=lv_obj_create(parent);
-    lv_obj_set_size(stage,224,176);
+    lv_obj_set_size(stage,224,156);
     lv_obj_set_style_radius(stage,18,0);
     lv_obj_set_style_bg_color(stage,lv_color_hex(0x172239),0);
     lv_obj_set_style_border_width(stage,1,0);
@@ -103,15 +91,24 @@ static void pokemon_mimikyu_preview(lv_obj_t *parent)
     lv_obj_clear_flag(stage,LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(stage,LV_ALIGN_TOP_MID,0,83);
     demo_body=stage;
+    mimikyu_image=lv_img_create(stage);
+    lv_obj_center(mimikyu_image);
+    mimikyu_status=lv_label_create(stage);
+    lv_label_set_text(mimikyu_status,"Sprite not loaded");
+    lv_obj_set_style_text_color(mimikyu_status,lv_color_hex(0xD2DCEC),0);
+    lv_obj_set_style_text_font(mimikyu_status,&lv_font_montserrat_14,0);
+    lv_obj_center(mimikyu_status);
+}
 
-    mascot_shape(stage,23,79,-49,11,10,0xE4D7B4);
-    mascot_shape(stage,23,79,49,11,10,0xE4D7B4);
-    mascot_shape(stage,130,107,0,55,52,0xE4D7B4);
-    mascot_shape(stage,17,18,-27,89,9,0x22202D);
-    mascot_shape(stage,17,18,27,89,9,0x22202D);
-    mascot_shape(stage,30,4,0,124,3,0x7F686D);
-    mascot_shape(stage,10,6,-40,120,3,0xC19A97);
-    mascot_shape(stage,10,6,40,120,3,0xC19A97);
+static void pokemon_idle_tick(lv_timer_t *timer)
+{
+    (void)timer;
+    if(lv_scr_act()!=screen_pokemon_companion || demo_page!=0 ||
+       !mimikyu_image || pk_tpk2_idle_frame_count()==0)return;
+    mimikyu_frame=(mimikyu_frame+1U)%pk_tpk2_idle_frame_count();
+    lv_img_set_src(mimikyu_image,pk_tpk2_idle_frame(mimikyu_frame));
+    lv_obj_center(mimikyu_image);
+    lv_timer_set_period(mimikyu_timer,pk_tpk2_idle_duration_ms(mimikyu_frame));
 }
 
 static void pokemon_refresh(void)
@@ -159,6 +156,27 @@ void pokemon_ui_knob_page(int direction)
 void pokemon_ui_open_companion(void)
 {
     demo_page=0;
+    /* The SD is touched only on explicit companion entry, never during Magic. */
+    bool ready=pk_tpk2_idle_load();
+    if(mimikyu_image && mimikyu_status) {
+        if(ready) {
+            mimikyu_frame=0;
+            lv_img_set_src(mimikyu_image,pk_tpk2_idle_frame(0));
+            lv_obj_center(mimikyu_image);
+            lv_obj_clear_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(mimikyu_status,LV_OBJ_FLAG_HIDDEN);
+            if(mimikyu_timer) {
+                lv_timer_set_period(mimikyu_timer,pk_tpk2_idle_duration_ms(0));
+                lv_timer_reset(mimikyu_timer);
+                lv_timer_resume(mimikyu_timer);
+            }
+        } else {
+            lv_obj_add_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(mimikyu_status,"Mimikyu sprite unavailable");
+            lv_obj_clear_flag(mimikyu_status,LV_OBJ_FLAG_HIDDEN);
+            if(mimikyu_timer)lv_timer_pause(mimikyu_timer);
+        }
+    }
     pokemon_refresh();
     if(screen_pokemon_companion)lv_scr_load(screen_pokemon_companion);
 }
@@ -166,6 +184,7 @@ bool pokemon_ui_handle_back(lv_obj_t *screen)
 {
     if(screen==screen_pokemon_companion) {
         extern lv_obj_t *screen_pregame_home;
+        if(mimikyu_timer)lv_timer_pause(mimikyu_timer);
         if(screen_pregame_home)lv_scr_load(screen_pregame_home);
         return true;
     }
@@ -179,6 +198,8 @@ void pokemon_ui_build(void)
     pokemon_label(screen_pokemon_companion,"NO PLAYER LINKED  |  DEMO",52,
                   &lv_font_montserrat_14,0xDAAD7B);
     pokemon_mimikyu_preview(screen_pokemon_companion);
+    mimikyu_timer=lv_timer_create(pokemon_idle_tick,200,NULL);
+    lv_timer_pause(mimikyu_timer);
     demo_title=pokemon_label(screen_pokemon_companion,"MIMIKYU  #778",260,
                              &lv_font_montserrat_22,0xF8F1E2);
     demo_line1=pokemon_label(screen_pokemon_companion,"",283,
