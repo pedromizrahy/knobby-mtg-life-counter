@@ -2780,6 +2780,15 @@ static void handle_command(char *line)
         return;
     }
 
+    if (strcmp(line, "PK SD LIST") == 0) {
+        if (playgroup_pending_current_active()) {
+            Serial.println("[Pokemon] SD LIST SKIPPED: exit the active Playgroup game first.");
+            return;
+        }
+        pk_sd_list_read_only();
+        return;
+    }
+
     if (strcmp(line, "PK SD STATUS") == 0) {
         if (playgroup_pending_current_active()) {
             Serial.println("[Pokemon] SD CHECK SKIPPED: exit the active Playgroup game first.");
