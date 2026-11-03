@@ -120,6 +120,15 @@ Se o usuário não puder realizar a partida de teste, avançar somente com mudan
 - Ainda **não testados no hardware**: perfis reais multiusuário, persistência após reinício completo, migração NVS→SPIFFS, journal de recompensas/recuperação de transação e vinculação pós-jogo. O adaptador de premiação continua sem ativação.
 - Próximo passo: verificar persistência após reinício e limites de armazenamento sem remover, alterar ou migrar dados reais; depois consolidar procedimento seguro para perfis reais.
 
+## Progresso adicional — teste de persistência após reinício (2026-11-03)
+
+- O teste anterior `PK PROFILE SELFTEST PASS` foi confirmado **no DIAL real**, mas verificava operações na mesma sessão; não prova sobrevivência a um desligamento/reinicialização.
+- Implementadas duas ações seriais **manuais**: `PK REBOOT PREP` e `PK REBOOT VERIFY`. PREP cria dois registros SPIFFS válidos do perfil de Mimikyu #778 em ID reservado **0xFFFFFFFC**, com slot A inicial e slot B contendo uma vitória simulada (+75 XP e +1 Poké Ball). VERIFY, executado **depois de reiniciar o DIAL manualmente**, relê ambos, confere perfil e gerações, verifica o slot mais recente e remove apenas esses dois arquivos após validação integral.
+- Ambos os comandos são recusados durante jogo Playgroup ativo, não tocam em dados NVS, jogadores reais, fila, cache ou journal e nunca formatam o SPIFFS. O comando PREP recusa dados diagnósticos preexistentes; VERIFY com dados ilegíveis falha sem apagar nada.
+- O reboot não é executado pelo firmware; é preciso fechar o monitor serial, reiniciar a placa e reabrir o monitor antes do VERIFY. O programa **não consegue atestar sozinho** que houve reinício entre os dois comandos.
+- Testes simulados integrados ao teste de armazenamento cobrem gravação entre chamadas, arquivos preexistentes, corrupção e escrita interrompida. **Ainda pendente validação no DIAL físico** e aprovação do último CI.
+- Em caso de FAIL, não repetir PREP, não formatar nem excluir manualmente arquivos de diagnóstico: investigar primeiro. Recompensas reais e migração automática continuam desativadas.
+
 ## Bloqueadores para recompensas reais
 
 - A proteção antirrepetição atual do motor é um buffer rotativo com **32 IDs recentes**, insuficiente para idempotência vitalícia por si só. Um journal persistente foi acrescentado, mas **a coordenação transacional e a recuperação ainda precisam ser implementadas e testadas** antes de ligar recompensas.
