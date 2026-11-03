@@ -11,6 +11,10 @@
  * backend never calls SPIFFS.begin(true), remove() or format().
  */
 static const uint32_t MAGIC=0x32464B50UL; /* PKF2 */
+static const uint32_t DIAGNOSTIC_ID=0xFFFFFFFDUL;
+static bool reserved_id(uint32_t id) {
+    return id==DIAGNOSTIC_ID || id==0xFFFFFFFEUL;
+}
 typedef struct {
     uint32_t magic;
     uint32_t user_id;
@@ -89,7 +93,7 @@ static bool write_slot(uint32_t id,unsigned slot,const file_record_t *rec)
 }
 extern "C" pk_store_status_t pk_file_inspect(uint32_t id,pk_profile_t *out)
 {
-    if(!id || id==0xFFFFFFFEUL || !SPIFFS.begin(false))
+    if(!id || reserved_id(id) || !SPIFFS.begin(false))
         return PK_STORE_ERROR;
     file_record_t record={};unsigned slot=0;
     pk_store_status_t status=inspect(id,&record,&slot);
@@ -98,7 +102,7 @@ extern "C" pk_store_status_t pk_file_inspect(uint32_t id,pk_profile_t *out)
 }
 extern "C" bool pk_file_create_starter(uint32_t id)
 {
-    if(!id || id==0xFFFFFFFEUL || !SPIFFS.begin(false))return false;
+    if(!id || reserved_id(id) || !SPIFFS.begin(false))return false;
     file_record_t existing={};unsigned slot=0;
     if(inspect(id,&existing,&slot)!=PK_STORE_MISSING)return false;
     file_record_t record={};
@@ -110,7 +114,7 @@ extern "C" bool pk_file_create_starter(uint32_t id)
 }
 extern "C" bool pk_file_save(uint32_t id,const pk_profile_t *profile)
 {
-    if(!id || id==0xFFFFFFFEUL || !profile ||
+    if(!id || reserved_id(id) || !profile ||
        !profile_valid(profile) || !SPIFFS.begin(false))return false;
     file_record_t old={};unsigned slot=0;
     if(inspect(id,&old,&slot)!=PK_STORE_VALID)return false;
@@ -129,7 +133,7 @@ extern "C" bool pk_file_save(uint32_t id,const pk_profile_t *profile)
  */
 extern "C" bool pk_file_import_if_missing(uint32_t id,const pk_profile_t *profile)
 {
-    if(!id || id==0xFFFFFFFEUL || !profile ||
+    if(!id || reserved_id(id) || !profile ||
        !profile_valid(profile) || !SPIFFS.begin(false)) return false;
 
     file_record_t existing={};
@@ -173,4 +177,78 @@ extern "C" bool pk_file_import_if_missing(uint32_t id,const pk_profile_t *profil
     pk_profile_t recovered={};
     return pk_file_inspect(id,&recovered)==PK_STORE_VALID &&
            memcmp(&recovered,profile,sizeof(*profile))==0;
+}
+
+/* Deliberately uses a reserved ID, never a Playgroup user ID. Public
+ * profile APIs reject this ID; only this explicit diagnostic uses it.
+ * Refuses to touch pre-existing files even if created by an interrupted
+ * diagnostic. Never modifies NVS or any non-diagnostic SPIFFS path. */
+extern "C" bool pk_file_profile_selftest(void)
+{
+    const uint32_t id=DIAGNOSTIC_ID;
+    if(!SPIFFS.begin(false))return false;
+    char a[24],b[24];
+    path_for(id,0,a);path_for(id,1,b);
+    if(SPIFFS.exists(a) || SPIFFS.exists(b))return false;
+    const size_t total=SPIFFS.totalBytes(),used=SPIFFS.usedBytes();
+    if(!total || used>total || total-used<256U*1024U)return false;
+
+    file_record_t first={},next={},loaded={};
+    unsigned current=0;
+    bool created_a=false,created_b=false,ok=false;
+    pk_reward_t reward={};
+    first.magic=MAGIC;first.user_id=id;first.generation=1;
+    pk_profile_init(&first.profile);
+    if(!pk_team_add(&first.profile,778,false))return false;
+    first.checksum=record_checksum(&first);
+
+    /* Mark the path as ours before writing; cleanup is limited to files
+     * created during THIS invocation and only if they still exist. */
+    created_a=true;
+    if(!write_slot(id,0,&first))goto cleanup;
+    if(inspect(id,&loaded,&current)!=PK_STORE_VALID || current!=0 ||
+       memcmp(&loaded.profile,&first.profile,sizeof(pk_profile_t))!=0)
+        goto cleanup;
+
+    next=first;
+    next.generation=2;
+    if(!pk_award_game(&next.profile,0xD1A10001UL,true,&reward) ||
+       reward.xp_awarded!=75 || reward.new_pokeballs!=1 ||
+       next.profile.team[0].xp!=75 ||
+       next.profile.balls[PK_BALL_POKE]!=1)
+        goto cleanup;
+    next.checksum=record_checksum(&next);
+    created_b=true;
+    if(!write_slot(id,1,&next))goto cleanup;
+    if(inspect(id,&loaded,&current)!=PK_STORE_VALID || current!=1 ||
+       memcmp(&loaded.profile,&next.profile,sizeof(pk_profile_t))!=0)
+        goto cleanup;
+
+    /* Damage ONLY our own diagnostic B file to verify fallback to A.
+     * Intentionally do not mutate any real profile or ledger file. */
+    {
+        File f=SPIFFS.open(b,FILE_WRITE);
+        if(!f)goto cleanup;
+        const uint8_t invalid=0;
+        size_t n=f.write(&invalid,1);
+        f.flush();
+        f.close();
+        if(n!=1)goto cleanup;
+    }
+    if(inspect(id,&loaded,&current)!=PK_STORE_VALID || current!=0 ||
+       memcmp(&loaded.profile,&first.profile,sizeof(pk_profile_t))!=0)
+        goto cleanup;
+
+    /* Rebuild B with the updated snapshot and verify latest generation. */
+    if(!write_slot(id,1,&next))goto cleanup;
+    if(inspect(id,&loaded,&current)!=PK_STORE_VALID || current!=1 ||
+       memcmp(&loaded.profile,&next.profile,sizeof(pk_profile_t))!=0)
+        goto cleanup;
+    ok=true;
+cleanup:
+    /* Never clean up pre-existing diagnostic files. A failed deletion
+     * yields FAIL and the next invocation refuses to overwrite residue. */
+    if(created_b && SPIFFS.exists(b) && !SPIFFS.remove(b))ok=false;
+    if(created_a && SPIFFS.exists(a) && !SPIFFS.remove(a))ok=false;
+    return ok;
 }
