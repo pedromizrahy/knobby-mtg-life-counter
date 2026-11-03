@@ -89,3 +89,95 @@ extern "C" void pk_pmd_check_mimikyu_read_only(void)
     SD_MMC.end();
     Serial.println("[Pokemon] PMD CHECK COMPLETE: card unmounted; no files modified.");
 }
+
+
+/* Optional USB transfer, only /mons/p778.bin, never overwrites another file.
+ * Sender provides size and CRC32 and waits for a '#' after every 1024 bytes.
+ * Stage in /mons/p778.part, then rename only after successful verification.
+ */
+static uint32_t pk_pmd_crc_step(uint32_t crc,const uint8_t *data,size_t n)
+{
+    for(size_t i=0;i<n;++i) {
+        crc^=data[i];
+        for(unsigned j=0;j<8;++j)
+            crc=(crc>>1)^(0xEDB88320UL & (0U-(crc&1U)));
+    }
+    return crc;
+}
+
+extern "C" void pk_pmd_put_mimikyu(unsigned long input_size,
+                                   unsigned long input_crc)
+{
+    const uint32_t size=(uint32_t)input_size;
+    const uint32_t expected=(uint32_t)input_crc;
+    if(size<7 || size>3UL*1024UL*1024UL || !board) {
+        Serial.println("[Pokemon] PMD PUT ERR: invalid size or board.");
+        return;
+    }
+    int clk=-1,cmd=-1,d0=-1;
+    if(board==&board_k518) {clk=4;cmd=3;d0=5;}
+    else if(board==&board_k718) {clk=39;cmd=38;d0=40;}
+    else {
+        Serial.println("[Pokemon] PMD PUT ERR: unsupported board.");
+        return;
+    }
+    if(!SD_MMC.setPins(clk,cmd,d0) ||
+       !SD_MMC.begin("/sdcard",true,false)) {
+        Serial.println("[Pokemon] PMD PUT ERR: SD mount failed; no format.");
+        return;
+    }
+    const char *dest="/mons/p778.bin";
+    const char *part="/mons/p778.part";
+    bool ok=false;
+    if(SD_MMC.cardType()==CARD_NONE || SD_MMC.exists(dest)) {
+        Serial.println("[Pokemon] PMD PUT ERR: SD missing or destination already exists.");
+        SD_MMC.end();return;
+    }
+    if(!SD_MMC.exists("/mons") && !SD_MMC.mkdir("/mons")) {
+        Serial.println("[Pokemon] PMD PUT ERR: cannot create /mons.");
+        SD_MMC.end();return;
+    }
+    /* .part is exclusively owned by this command. Remove stale incomplete
+     * transfers, but never touch the destination or other files. */
+    if(SD_MMC.exists(part) && !SD_MMC.remove(part)) {
+        Serial.println("[Pokemon] PMD PUT ERR: stale .part cannot be removed.");
+        SD_MMC.end();return;
+    }
+    File out=SD_MMC.open(part,FILE_WRITE);
+    if(!out) {
+        Serial.println("[Pokemon] PMD PUT ERR: cannot create staging file.");
+        SD_MMC.end();return;
+    }
+    uint8_t buf[1024];
+    uint32_t crc=0xFFFFFFFFUL,remaining=size;
+    Serial.println("PMD_READY");
+    while(remaining) {
+        const size_t want=remaining>sizeof(buf)?sizeof(buf):remaining;
+        size_t got=0;
+        const uint32_t start=millis();
+        while(got<want && millis()-start<10000UL) {
+            if(Serial.available()>0) {
+                const int b=Serial.read();
+                if(b>=0)buf[got++]=(uint8_t)b;
+            } else delay(1);
+        }
+        if(got!=want)break;
+        if(size==remaining && (want<4 || memcmp(buf,"TPK2",4)!=0))break;
+        if(out.write(buf,got)!=got)break;
+        crc=pk_pmd_crc_step(crc,buf,got);
+        remaining-=got;
+        Serial.println("#");
+    }
+    out.flush();
+    out.close();
+    crc^=0xFFFFFFFFUL;
+    if(remaining==0 && crc==expected && !SD_MMC.exists(dest)) {
+        ok=SD_MMC.rename(part,dest);
+    }
+    if(!ok)SD_MMC.remove(part);
+    SD_MMC.end();
+    if(ok)Serial.printf("[Pokemon] PMD PUT DONE size=%lu crc32=%08lx\n",
+                        (unsigned long)size,(unsigned long)crc);
+    else Serial.printf("[Pokemon] PMD PUT ERR remaining=%lu crc32=%08lx expected=%08lx; staging removed\n",
+                       (unsigned long)remaining,(unsigned long)crc,(unsigned long)expected);
+}
