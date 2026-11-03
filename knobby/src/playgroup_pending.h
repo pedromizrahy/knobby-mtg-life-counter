@@ -35,6 +35,16 @@ typedef struct {
     char player_names[MAX_DISPLAY_PLAYERS][16];
 } pg_pending_identity_info_t;
 
+/* Read-only reward context; valid only after a confirmed result and complete,
+ * distinct player identities. No storage writes, network calls or rewards. */
+typedef struct {
+    uint32_t session_id;
+    uint8_t player_count;
+    uint8_t winner_index;
+    uint32_t user_ids[MAX_DISPLAY_PLAYERS];
+} pg_pokemon_reward_context_t;
+bool playgroup_pending_get_pokemon_reward_context(pg_pokemon_reward_context_t *out);
+
 /* Start tracking a Playgroup-backed game after the game state has been reset. */
 void playgroup_pending_begin_game(const pg_pending_seed_t *seed);
 
