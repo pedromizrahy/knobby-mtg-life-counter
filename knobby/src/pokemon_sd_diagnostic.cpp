@@ -161,3 +161,189 @@ extern "C" void pk_sd_list_read_only(void)
     SD_MMC.end();
     Serial.println("[Pokemon] SD LIST READ-ONLY: unmounted, nothing changed.");
 }
+
+
+/* Cleanup is opt-in and constrained to seven known demonstration folders.
+ * No root-wide erase, no formatting, no touch of fonts/mons/scenes/audio/assets.
+ * PREVIEW never writes; CONFIRM performs irreversible removals on the SD.
+ */
+static const char *const pk_demo_folders[]={
+    "/clockbg","/weather","/aida64","/night7","/pic","/txt","/mjpeg"
+};
+static const size_t PK_DEMO_FOLDER_COUNT=
+    sizeof(pk_demo_folders)/sizeof(pk_demo_folders[0]);
+static const unsigned PK_SD_CLEAN_MAX_ENTRIES=2000;
+static const unsigned PK_SD_CLEAN_MAX_DEPTH=6;
+
+static bool pk_sd_cleanup_mount()
+{
+    if(!board) {
+        Serial.println("[Pokemon] SD CLEAN FAIL: board not detected.");
+        return false;
+    }
+    int clk=-1,cmd=-1,d0=-1;
+    if(board==&board_k518) {
+        clk=4;cmd=3;d0=5;
+    } else if(board==&board_k718) {
+        clk=39;cmd=38;d0=40;
+    } else {
+        Serial.println("[Pokemon] SD CLEAN FAIL: unsupported board.");
+        return false;
+    }
+    if(!SD_MMC.setPins(clk,cmd,d0) ||
+       !SD_MMC.begin("/sdcard",true,false)) {
+        Serial.println("[Pokemon] SD CLEAN FAIL: mount failed; card NOT formatted.");
+        return false;
+    }
+    if(SD_MMC.cardType()==CARD_NONE) {
+        Serial.println("[Pokemon] SD CLEAN FAIL: card missing.");
+        SD_MMC.end();
+        return false;
+    }
+    return true;
+}
+
+static bool pk_sd_cleanup_is_safe_path(const String &path,const String &root)
+{
+    if(!path.startsWith(root+"/"))return false;
+    if(path.indexOf("..")>=0 || path.indexOf("//")>=0 ||
+       path.indexOf('\\\\')>=0)return false;
+    return true;
+}
+
+struct PkSdCleanupStats {
+    unsigned files=0;
+    unsigned directories=0;
+    unsigned errors=0;
+    unsigned entries=0;
+    unsigned long long file_bytes=0;
+    bool truncated=false;
+};
+
+/* Traverse with a fixed operation cap and reject all paths outside the exact
+ * selected root. This is NOT a general-purpose recursive delete routine. */
+static void pk_sd_cleanup_walk(const String &dir_path,const String &root,
+                               unsigned depth,bool erase,PkSdCleanupStats &stats)
+{
+    if(depth>PK_SD_CLEAN_MAX_DEPTH || stats.entries>=PK_SD_CLEAN_MAX_ENTRIES) {
+        stats.truncated=true;
+        return;
+    }
+    File dir=SD_MMC.open(dir_path.c_str(),FILE_READ);
+    if(!dir || !dir.isDirectory()) {
+        ++stats.errors;
+        if(dir)dir.close();
+        return;
+    }
+    File item=dir.openNextFile();
+    while(item) {
+        if(stats.entries>=PK_SD_CLEAN_MAX_ENTRIES) {
+            stats.truncated=true;
+            item.close();
+            break;
+        }
+        const String name=String(item.name());
+        String child;
+        if(name.startsWith("/"))child=name;
+        else child=dir_path+"/"+name;
+        const bool is_dir=item.isDirectory();
+        const unsigned long long bytes=(unsigned long long)item.size();
+        item.close();
+        if(!pk_sd_cleanup_is_safe_path(child,root)) {
+            ++stats.errors;
+            Serial.printf("[Pokemon] SD CLEAN BLOCKED unexpected path %s\\n",child.c_str());
+            break;
+        }
+        ++stats.entries;
+        if(is_dir) {
+            pk_sd_cleanup_walk(child,root,depth+1,erase,stats);
+            if(erase && !stats.truncated) {
+                if(SD_MMC.rmdir(child.c_str()))++stats.directories;
+                else {
+                    ++stats.errors;
+                    Serial.printf("[Pokemon] SD CLEAN FAIL rmdir %s\\n",child.c_str());
+                }
+            } else if(!erase) ++stats.directories;
+        } else {
+            if(erase) {
+                if(SD_MMC.remove(child.c_str())) {
+                    ++stats.files;
+                    stats.file_bytes+=bytes;
+                } else {
+                    ++stats.errors;
+                    Serial.printf("[Pokemon] SD CLEAN FAIL remove %s\\n",child.c_str());
+                }
+            } else {
+                ++stats.files;
+                stats.file_bytes+=bytes;
+            }
+        }
+        if(stats.truncated)break;
+        item=dir.openNextFile();
+    }
+    dir.close();
+}
+
+/* Each folder is shown individually. Only exact allowlisted roots are erased.
+ * Preview cannot imply deletion has occurred. */
+static void pk_sd_cleanup_run(bool erase)
+{
+    Serial.println(erase ?
+        "[Pokemon] SD CLEAN CONFIRM: deleting allowlisted factory demo folders." :
+        "[Pokemon] SD CLEAN PREVIEW: no files will be changed.");
+    Serial.println("[Pokemon] SD CLEAN PRESERVE: /fonts, /mons, /scenes, /audio, /assets, and all other roots.");
+    if(erase)
+        Serial.println("[Pokemon] SD CLEAN WARNING: irreversible without external backup.");
+    if(!pk_sd_cleanup_mount())return;
+
+    const unsigned long long used_before=(unsigned long long)SD_MMC.usedBytes();
+    PkSdCleanupStats total;
+    for(size_t i=0;i<PK_DEMO_FOLDER_COUNT;++i) {
+        const String root=pk_demo_folders[i];
+        if(!SD_MMC.exists(root.c_str())) {
+            Serial.printf("[Pokemon] SD CLEAN SKIP %s (absent)\\n",root.c_str());
+            continue;
+        }
+        PkSdCleanupStats s;
+        pk_sd_cleanup_walk(root,root,0,erase,s);
+        if(erase && !s.truncated) {
+            if(!SD_MMC.rmdir(root.c_str())) {
+                ++s.errors;
+                Serial.printf("[Pokemon] SD CLEAN FAIL root %s not empty or inaccessible\\n",root.c_str());
+            } else ++s.directories;
+        }
+        total.files+=s.files;
+        total.directories+=s.directories;
+        total.errors+=s.errors;
+        total.entries+=s.entries;
+        total.file_bytes+=s.file_bytes;
+        total.truncated=total.truncated||s.truncated;
+        Serial.printf("[Pokemon] SD CLEAN %s %s files=%u dirs=%u file_bytes=%llu errors=%u%s\\n",
+            erase?"RESULT":"PREVIEW",root.c_str(),s.files,s.directories,
+            s.file_bytes,s.errors,s.truncated?" TRUNCATED":"");
+        if(s.truncated) {
+            Serial.println("[Pokemon] SD CLEAN LIMIT reached: remaining folders NOT processed.");
+            break;
+        }
+    }
+    const unsigned long long used_after=(unsigned long long)SD_MMC.usedBytes();
+    Serial.printf("[Pokemon] SD CLEAN %s files=%u dirs=%u file_bytes=%llu errors=%u%s\\n",
+        erase?"COMPLETE":"PREVIEW COMPLETE",
+        total.files,total.directories,total.file_bytes,total.errors,
+        total.truncated?" TRUNCATED (incomplete)":"");
+    Serial.printf("[Pokemon] SD CLEAN USED before=%llu after=%llu bytes\\n",used_before,used_after);
+    SD_MMC.end();
+    Serial.println(erase ?
+        "[Pokemon] SD CLEAN unmounted. Review errors and run PK SD STATUS." :
+        "[Pokemon] SD CLEAN preview unmounted; no files modified.");
+}
+
+extern "C" void pk_sd_cleanup_preview(void)
+{
+    pk_sd_cleanup_run(false);
+}
+
+extern "C" void pk_sd_cleanup_confirm(void)
+{
+    pk_sd_cleanup_run(true);
+}
