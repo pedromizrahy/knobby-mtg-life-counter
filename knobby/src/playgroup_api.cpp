@@ -2780,6 +2780,24 @@ static void handle_command(char *line)
         return;
     }
 
+    if (strcmp(line, "PK SD CLEAN PREVIEW") == 0) {
+        if (playgroup_pending_current_active()) {
+            Serial.println("[Pokemon] SD CLEAN SKIPPED: exit active Playgroup game first.");
+            return;
+        }
+        pk_sd_cleanup_preview();
+        return;
+    }
+
+    if (strcmp(line, "PK SD CLEAN CONFIRM") == 0) {
+        if (playgroup_pending_current_active()) {
+            Serial.println("[Pokemon] SD CLEAN SKIPPED: exit active Playgroup game first.");
+            return;
+        }
+        pk_sd_cleanup_confirm();
+        return;
+    }
+
     if (strcmp(line, "PK SD LIST") == 0) {
         if (playgroup_pending_current_active()) {
             Serial.println("[Pokemon] SD LIST SKIPPED: exit the active Playgroup game first.");
