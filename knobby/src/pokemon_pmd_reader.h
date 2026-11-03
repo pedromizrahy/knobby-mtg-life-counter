@@ -9,6 +9,8 @@ extern "C" {
  * No file modifications, no implicit formatting, no Magic gameplay use.
  */
 void pk_pmd_check_mimikyu_read_only(void);
+/* Explicit staged serial transfer. Existing Mimikyu asset is never overwritten. */
+void pk_pmd_put_mimikyu(unsigned long size, unsigned long expected_crc);
 #ifdef __cplusplus
 }
 #endif
