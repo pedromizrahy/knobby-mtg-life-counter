@@ -14,6 +14,7 @@
 #include "playgroup_pending.h"
 #include "pokemon_profile_store.h"
 #include "pokemon_spiffs_selftest.h"
+#include "pokemon_file_store.h"
 #include "../knobby_net.h"
 
 extern "C" void knob_print_reset_diagnostics(void);
@@ -2756,6 +2757,18 @@ static void handle_command(char *line)
        Does not create profiles or distribute rewards. */
     /* Read-only filesystem inspection: no format, migration, profile
        creation, reward, or deletion. Safe outside a game. */
+    if (strcmp(line, "PK PROFILE SELFTEST") == 0) {
+        if (playgroup_pending_current_active()) {
+            Serial.println("[Pokemon] PROFILE SELFTEST SKIPPED: exit the active Playgroup game first.");
+            return;
+        }
+        Serial.println("[Pokemon] PROFILE SELFTEST: reserved diagnostic ID, no real players or rewards touched.");
+        bool ok=pk_file_profile_selftest();
+        Serial.println(ok ? "[Pokemon] PROFILE SELFTEST PASS" :
+                            "[Pokemon] PROFILE SELFTEST FAIL (check reserved files / free space).");
+        return;
+    }
+
     if (strcmp(line, "PK SPIFFS SELFTEST") == 0) {
         if (playgroup_pending_current_active()) {
             Serial.println("[Pokemon] SPIFFS SELFTEST SKIPPED: exit the active Playgroup game first.");
