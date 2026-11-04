@@ -15,7 +15,7 @@
 
 ## 2. Identidade visual / tela de inicialização DIAL DOS PRIMOS
 
-Feedback: **a arte da moeda e a tipografia da intro atual estão ruins**. Redesenhar ambos, preservando o nome exato **DIAL DOS PRIMOS**.
+Feedback: **a arte da moeda e a tipografia da intro atual estão ruins**. Redesenhar a identidade completa; **nome e símbolo também podem mudar**, desde que a nova proposta seja validada antes de editar o firmware.
 
 Diagnóstico no firmware atual (`knobby/src/intro.c`):
 - Fundo preto, moeda central de até 280 px, label "DIAL DOS" em Montserrat 32, texto "P R I M O S" em Montserrat 14, linha dourada; intro ~36 frames x 55 ms.
@@ -23,8 +23,8 @@ Diagnóstico no firmware atual (`knobby/src/intro.c`):
 - Há histórico de borda branca/pixelada inferior, tela preta/arte degradada e problema com flip. Evitar reintroduzir esses defeitos.
 
 Direção proposta para validação visual:
-- Criar uma **identidade única**: símbolo/moeda de alto contraste, material dourado controlado, linhas e silhueta legíveis na tela redonda 360×360.
-- Redesenhar lettering de "DIAL DOS PRIMOS" como uma peça tipográfica única e hierarquizada, em vez de texto genérico quebrado em Montserrat com espaçamento artificial; garantir acentos e leitura no hardware.
+- Criar uma **identidade única**: símbolo original (não precisa ser moeda), nome opcionalmente novo, linhas e silhueta legíveis na tela redonda 360×360.
+- Explorar novas opções de nome e lettering, evitando texto genérico quebrado em Montserrat com espaçamento artificial; garantir leitura no hardware.
 - Duas ou três propostas **visuais completas**, comparadas em tamanho real (360 px) antes de substituir assets.
 - Preferir intro estática de alta qualidade com movimento sutil, sem flip obrigatório, sem aumento por interpolação e sem bordas de asset.
 - Garantir consistência de composição, safe-area circular, anti-aliasing/rgb565 e budget de RAM/flash.
@@ -32,10 +32,10 @@ Direção proposta para validação visual:
 
 ## Prioridade e sequência
 
-1. **Concluir teste físico do firmware atual:** garantir sprite Mimikyu visível, animando e cenários/botões utilizáveis.
-2. Criar/validar opções de **nova logo e lettering da intro**, sem alterar firmware em uso.
-3. Implementar badges dos tipos Pokémon com maior fidelidade visual.
-4. Investigar dados reais do Playgroup.gg e estrutura de ranking por grupo/Favorite Deck.
-5. Implementar conquistas/coroa conforme dados válidos.
+1. **Sprite Mimikyu: visibilidade confirmada pelo usuário após o upload de dbde848.** Ajuste fino de posição (um pouco mais abaixo) fica para outra rodada; não regredir o decodificador RGB565+alpha.
+2. **Próxima frente: Pokébolas / captura.** O modelo já contém inventário Poke/Great/Ultra/Master, EXP, níveis e Pokédex em `pokemon_progress.h`, mas a UI segue como preview e as recompensas reais de pós-jogo não estão habilitadas. Desenhar experiência de abrir/capturar/consultar inventário sem premiar jogadores ficticiamente.
+3. Validar fluxo do pós-jogo com usuário Playgroup mapeado e resultado durável. Somente ativar concessão de Pokébolas após revisar transações, recuperação de energia, persistência e deduplicação.
+4. **Achievements e leaderboard:** investigar endpoints e eventos reais Playgroup.gg; implementar rankings por grupo e Favorite Deck antes de mostrar métricas reais; medalhas/coroa como fase posterior.
+5. **Visual:** badges de tipos com acabamento fiel à Pokédex; baixar alguns pixels o sprite em teste futuro; criar/validar propostas de **nova marca, nome e intro**, sem alterar firmware durante teste atual.
 
-**Registrado como ideias**, não funcionalidades concluídas.
+**Nota de estado:** sprite visível no hardware; Pokébolas, achievements, leaderboard e Favorite Deck **ainda pendentes** de integração real. Este arquivo apenas documenta a fila, sem habilitar recompensas nem alterar a interface.
