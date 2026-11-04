@@ -1,5 +1,8 @@
 #include "pokemon_biomes.h"
 #include <Arduino.h>
+#include "../board_detect.h"
+#include <FS.h>
+#include <SD_MMC.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -192,6 +195,62 @@ void haunted() {
         rect(x,y,4,2,0x94A5AA);
     }
 }
+
+/* Optional licensed/custom scenery on microSD:
+ * /scenes/pokemon/{meadow,forest,sea,volcano,cave,haunted}.pkbg.
+ * Exact format: PKBG + little-endian 180,180 + 32400 RGB565 little-endian pixels.
+ * Convert each pixel via lv_color_make to respect LV_COLOR_16_SWAP.
+ * Never create, delete or write an SD file. */
+static const char *const scene_paths[PK_BIOME_COUNT]={
+    "/scenes/pokemon/meadow.pkbg",
+    "/scenes/pokemon/forest.pkbg",
+    "/scenes/pokemon/sea.pkbg",
+    "/scenes/pokemon/volcano.pkbg",
+    "/scenes/pokemon/cave.pkbg",
+    "/scenes/pokemon/haunted.pkbg"
+};
+bool load_external_scene(unsigned biome) {
+    int clk=-1,cmd=-1,d0=-1;
+    if(board==&board_k518) {clk=4;cmd=3;d0=5;}
+    else if(board==&board_k718) {clk=39;cmd=38;d0=40;}
+    else return false;
+    if(!SD_MMC.setPins(clk,cmd,d0) ||
+       !SD_MMC.begin("/sdcard",true,false)) return false;
+    bool ok=false;
+    const char *path=scene_paths[biome];
+    if(SD_MMC.cardType()!=CARD_NONE && SD_MMC.exists(path)) {
+        File file=SD_MMC.open(path,FILE_READ);
+        if(file && !file.isDirectory() && file.size()==8UL+W*H*2UL) {
+            uint8_t header[8];
+            if(file.read(header,sizeof(header))==sizeof(header) &&
+               memcmp(header,"PKBG",4)==0 &&
+               header[4]==(W&255) && header[5]==(W>>8) &&
+               header[6]==(H&255) && header[7]==(H>>8)) {
+                ok=true;
+                /* Read at most one scanline at a time; no large stack buffer. */
+                uint8_t scanline[W*2];
+                for(int y=0;y<H && ok;++y) {
+                    if(file.read(scanline,sizeof(scanline))!=sizeof(scanline)) {
+                        ok=false;
+                        break;
+                    }
+                    for(int x=0;x<W;++x) {
+                        uint16_t rgb=(uint16_t)scanline[x*2] |
+                                     ((uint16_t)scanline[x*2+1]<<8);
+                        uint8_t r=(uint8_t)((((rgb>>11)&31)*255+15)/31);
+                        uint8_t g=(uint8_t)((((rgb>>5)&63)*255+31)/63);
+                        uint8_t b=(uint8_t)(((rgb&31)*255+15)/31);
+                        canvas[y*W+x]=lv_color_make(r,g,b);
+                    }
+                }
+            }
+        }
+        if(file)file.close();
+    }
+    SD_MMC.end();
+    if(ok)Serial.printf("[Pokemon] BIOME external asset id=%u (read-only)\\n",biome);
+    return ok;
+}
 } // namespace
 
 extern "C" void pk_biome_release(void) {
@@ -207,7 +266,8 @@ extern "C" bool pk_biome_render(unsigned biome) {
         return false;
     }
     seed=0x778F00D;
-    switch(biome) {
+    bool external=load_external_scene(biome);
+    if(!external) switch(biome) {
         case PK_BIOME_MEADOW: meadow();break;
         case PK_BIOME_FOREST: forest();break;
         case PK_BIOME_SEA: sea();break;
