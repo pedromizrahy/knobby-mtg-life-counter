@@ -1,5 +1,6 @@
 #include "pokemon_ui.h"
 #include "pokemon_tpk2_renderer.h"
+#include "pokemon_biomes.h"
 #include <stdio.h>
 #include <stdint.h>
 
@@ -9,10 +10,7 @@
  * All controls operate outside Magic gameplay screens. */
 lv_obj_t *screen_pokemon_companion = NULL;
 
-static lv_obj_t *scene = NULL;
-static lv_obj_t *terrain_back = NULL;
-static lv_obj_t *terrain_front = NULL;
-static lv_obj_t *sky_accent = NULL;
+static lv_obj_t *biome_background = NULL;
 static lv_obj_t *mimikyu_image = NULL;
 static lv_obj_t *mimikyu_status = NULL;
 static lv_obj_t *theme_label = NULL;
@@ -24,18 +22,10 @@ static unsigned mimikyu_frame = 0;
 static unsigned companion_page = 0;
 static unsigned scene_theme = 0;
 
-/* Theme is session-local for now; do not touch user NVS or Magic settings. */
-typedef struct {
-    const char *name;
-    uint32_t sky, far, near, accent, text, panel;
-} scene_palette_t;
-static const scene_palette_t kScenes[] = {
-    {"MEADOW", 0x9BD6E9, 0x77B98A, 0x398C65, 0xFFF0B3, 0x173B37, 0xEAF6E5},
-    {"FOREST", 0x396B69, 0x37664F, 0x214A3B, 0xC7E4A3, 0xF6F4DC, 0x1D4036},
-    {"MOONLIT",0x222E59, 0x373C70, 0x29294D, 0xE8DDA8, 0xF4F0E5, 0x242A49},
+/* Biome selection is session-local; no NVS or gameplay-state writes. */
+static const char *const kSceneNames[PK_BIOME_COUNT]={
+    "MEADOW","FOREST","SEA","VOLCANO","CAVE","HAUNTED"
 };
-#define SCENE_COUNT (sizeof(kScenes)/sizeof(kScenes[0]))
-
 static lv_obj_t *text_label(lv_obj_t *parent, const char *value, int y,
                              const lv_font_t *font, uint32_t color)
 {
@@ -83,15 +73,15 @@ static lv_obj_t *soft_button(lv_obj_t *parent,const char *caption,
 }
 static void update_theme(void)
 {
-    const scene_palette_t *pal=&kScenes[scene_theme];
-    lv_obj_set_style_bg_color(scene,lv_color_hex(pal->sky),0);
-    lv_obj_set_style_bg_color(terrain_back,lv_color_hex(pal->far),0);
-    lv_obj_set_style_bg_color(terrain_front,lv_color_hex(pal->near),0);
-    lv_obj_set_style_bg_color(sky_accent,lv_color_hex(pal->accent),0);
-    lv_label_set_text(theme_label,pal->name);
-    lv_obj_set_style_text_color(theme_label,lv_color_hex(pal->text),0);
-    lv_obj_set_style_bg_color(info_panel,lv_color_hex(pal->panel),0);
-    lv_obj_set_style_bg_color(stats_panel,lv_color_hex(pal->panel),0);
+    if(pk_biome_render(scene_theme)) {
+        /* The image descriptor is reused for each scene; invalidate LVGL
+         * cached decode before swapping the underlying pixels. */
+        lv_img_cache_invalidate_src(pk_biome_image());
+        lv_img_set_src(biome_background,pk_biome_image());
+        lv_img_set_zoom(biome_background,512); /* 180px pixel art -> 360px */
+        lv_obj_center(biome_background);
+    }
+    lv_label_set_text(theme_label,kSceneNames[scene_theme]);
 }
 static void update_page(void)
 {
@@ -126,7 +116,7 @@ static void on_page(lv_event_t *event)
 static void on_theme(lv_event_t *event)
 {
     (void)event;
-    scene_theme=(scene_theme+1U)%SCENE_COUNT;
+    scene_theme=(scene_theme+1U)%PK_BIOME_COUNT;
     update_theme();
 }
 static void idle_tick(lv_timer_t *timer)
@@ -179,11 +169,10 @@ void pokemon_ui_build(void)
     lv_obj_clear_flag(screen_pokemon_companion,LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(screen_pokemon_companion,LV_SCROLLBAR_MODE_OFF);
 
-    scene=scene_shape(screen_pokemon_companion,360,360,0,0,0);
-    terrain_back=scene_shape(scene,420,160,-30,195,80);
-    terrain_front=scene_shape(scene,420,140,-30,258,75);
-    sky_accent=scene_shape(scene,34,34,268,69,17);
-    lv_obj_set_style_bg_opa(scene,LV_OPA_COVER,0);
+    /* Backdrop is a full-screen original pixel-art bitmap drawn at x2. */
+    biome_background=lv_img_create(screen_pokemon_companion);
+    lv_obj_clear_flag(biome_background,LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(biome_background,LV_ALIGN_CENTER,0,0);
 
     page_label=text_label(screen_pokemon_companion,"COMPANION",24,
                           &lv_font_montserrat_16,0x183F39);
