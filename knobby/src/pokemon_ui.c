@@ -130,7 +130,6 @@ static void idle_tick(lv_timer_t *timer)
        !mimikyu_image || pk_tpk2_idle_frame_count()==0) return;
     mimikyu_frame=(mimikyu_frame+1U)%pk_tpk2_idle_frame_count();
     lv_img_set_src(mimikyu_image,pk_tpk2_idle_frame(mimikyu_frame));
-    lv_img_set_zoom(mimikyu_image,768); /* 3x: 32x48 Idle -> 96x144 */
     lv_obj_align(mimikyu_image,LV_ALIGN_CENTER,0,-7);
     lv_timer_set_period(mimikyu_timer,pk_tpk2_idle_duration_ms(mimikyu_frame));
 }
@@ -150,7 +149,6 @@ void pokemon_ui_open_companion(void)
     if(ready) {
         lv_obj_clear_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
         lv_img_set_src(mimikyu_image,pk_tpk2_idle_frame(0));
-        lv_img_set_zoom(mimikyu_image,768);
         lv_obj_align(mimikyu_image,LV_ALIGN_CENTER,0,-7);
         lv_timer_set_period(mimikyu_timer,pk_tpk2_idle_duration_ms(0));
         lv_timer_reset(mimikyu_timer);
@@ -199,8 +197,10 @@ void pokemon_ui_build(void)
 
     mimikyu_image=lv_img_create(screen_pokemon_companion);
     lv_obj_align(mimikyu_image,LV_ALIGN_CENTER,0,-7);
-    mimikyu_status=text_label(screen_pokemon_companion,"Sprite unavailable",165,
-                              &lv_font_montserrat_14,0xF6F4DC);
+    mimikyu_status=text_label(screen_pokemon_companion,"SPRITE LOAD FAILED - CHECK SD",165,
+                              &lv_font_montserrat_14,0xFFFFFF);
+    lv_obj_set_style_bg_color(mimikyu_status,lv_color_hex(0x48252C),0);
+    lv_obj_set_style_bg_opa(mimikyu_status,LV_OPA_90,0);
 
     info_panel=scene_shape(screen_pokemon_companion,232,39,64,236,17);
     lv_obj_set_style_bg_opa(info_panel,LV_OPA_90,0);
