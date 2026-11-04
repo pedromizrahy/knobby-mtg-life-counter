@@ -15,6 +15,7 @@ static lv_obj_t *mimikyu_image = NULL;
 static lv_obj_t *mimikyu_status = NULL;
 static lv_obj_t *theme_label = NULL;
 static lv_obj_t *page_label = NULL;
+static lv_obj_t *header_plate = NULL;
 static lv_obj_t *info_panel = NULL;
 static lv_obj_t *stats_panel = NULL;
 static lv_timer_t *mimikyu_timer = NULL;
@@ -55,9 +56,9 @@ static lv_obj_t *soft_button(lv_obj_t *parent,const char *caption,
                               int width,int x,lv_event_cb_t callback)
 {
     lv_obj_t *btn=lv_btn_create(parent);
-    lv_obj_set_size(btn,width,38);
-    lv_obj_align(btn,LV_ALIGN_TOP_MID,x,296);
-    lv_obj_set_style_radius(btn,19,0);
+    lv_obj_set_size(btn,width,32);
+    lv_obj_align(btn,LV_ALIGN_TOP_MID,x,278);
+    lv_obj_set_style_radius(btn,16,0);
     lv_obj_set_style_bg_color(btn,lv_color_hex(0xF6F1DE),0);
     lv_obj_set_style_bg_opa(btn,LV_OPA_90,0);
     lv_obj_set_style_border_color(btn,lv_color_hex(0x59716A),0);
@@ -74,12 +75,16 @@ static lv_obj_t *soft_button(lv_obj_t *parent,const char *caption,
 static void update_theme(void)
 {
     if(pk_biome_render(scene_theme)) {
+        lv_obj_clear_flag(biome_background,LV_OBJ_FLAG_HIDDEN);
         /* The image descriptor is reused for each scene; invalidate LVGL
          * cached decode before swapping the underlying pixels. */
         lv_img_cache_invalidate_src(pk_biome_image());
         lv_img_set_src(biome_background,pk_biome_image());
         lv_img_set_zoom(biome_background,512); /* 180px pixel art -> 360px */
         lv_obj_center(biome_background);
+    } else {
+        lv_obj_add_flag(biome_background,LV_OBJ_FLAG_HIDDEN);
+        Serial.println("[Pokemon] BIOME: disabled to protect sprite memory");
     }
     lv_label_set_text(theme_label,kSceneNames[scene_theme]);
 }
@@ -139,16 +144,24 @@ void pokemon_ui_knob_page(int direction)
 void pokemon_ui_open_companion(void)
 {
     companion_page=0;
+    /* Load the actual sprite BEFORE allocating the backdrop. */
     bool ready=pk_tpk2_idle_load();
+    Serial.printf("[Pokemon] COMPANION sprite=%s frames=%u\\n",
+                  ready?"READY":"FAILED",pk_tpk2_idle_frame_count());
+    update_theme();
     mimikyu_frame=0;
     if(ready) {
+        lv_obj_clear_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
         lv_img_set_src(mimikyu_image,pk_tpk2_idle_frame(0));
         lv_img_set_zoom(mimikyu_image,768);
         lv_obj_align(mimikyu_image,LV_ALIGN_CENTER,0,-7);
         lv_timer_set_period(mimikyu_timer,pk_tpk2_idle_duration_ms(0));
         lv_timer_reset(mimikyu_timer);
         lv_timer_resume(mimikyu_timer);
-    } else lv_timer_pause(mimikyu_timer);
+    } else {
+        lv_obj_add_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
+        lv_timer_pause(mimikyu_timer);
+    }
     update_page();
     if(screen_pokemon_companion)lv_scr_load(screen_pokemon_companion);
 }
@@ -174,23 +187,29 @@ void pokemon_ui_build(void)
     lv_obj_clear_flag(biome_background,LV_OBJ_FLAG_CLICKABLE);
     lv_obj_align(biome_background,LV_ALIGN_CENTER,0,0);
 
-    page_label=text_label(screen_pokemon_companion,"COMPANION",24,
-                          &lv_font_montserrat_16,0x183F39);
-    text_label(screen_pokemon_companion,"MIMIKYU  #778",49,
-               &lv_font_montserrat_22,0xFFF9E8);
-    theme_label=text_label(screen_pokemon_companion,"MEADOW",77,
+    /* Readable high-contrast header over every bright/dark biome. */
+    header_plate=scene_shape(screen_pokemon_companion,260,62,50,24,20);
+    lv_obj_set_style_bg_color(header_plate,lv_color_hex(0x172D35),0);
+    lv_obj_set_style_bg_opa(header_plate,LV_OPA_90,0);
+    page_label=text_label(header_plate,"COMPANION",5,
+                          &lv_font_montserrat_14,0xB4E8CC);
+    text_label(header_plate,"MIMIKYU  #778",23,
+               &lv_font_montserrat_22,0xFFFFFF);
+    theme_label=text_label(screen_pokemon_companion,"MEADOW",91,
                            &lv_font_montserrat_14,0x173B37);
+    lv_obj_set_style_bg_color(theme_label,lv_color_hex(0xF1EEDB),0);
+    lv_obj_set_style_bg_opa(theme_label,LV_OPA_90,0);
 
     mimikyu_image=lv_img_create(screen_pokemon_companion);
     lv_obj_align(mimikyu_image,LV_ALIGN_CENTER,0,-7);
     mimikyu_status=text_label(screen_pokemon_companion,"Sprite unavailable",165,
                               &lv_font_montserrat_14,0xF6F4DC);
 
-    info_panel=scene_shape(screen_pokemon_companion,244,44,58,252,21);
+    info_panel=scene_shape(screen_pokemon_companion,232,39,64,236,17);
     lv_obj_set_style_bg_opa(info_panel,LV_OPA_90,0);
-    text_label(info_panel,"GHOST  /  FAIRY",5,&lv_font_montserrat_14,0x274F46);
+    text_label(info_panel,"GHOST  /  FAIRY",2,&lv_font_montserrat_14,0x274F46);
     /* Real level/XP requires a connected profile; never invent stats. */
-    lv_obj_t *sub=text_label(info_panel,"LV / XP: NOT LINKED",24,
+    lv_obj_t *sub=text_label(info_panel,"LV / XP: NOT LINKED",20,
                               &lv_font_montserrat_14,0x274F46);
     lv_obj_set_width(sub,225);
 
@@ -204,12 +223,14 @@ void pokemon_ui_build(void)
     text_label(stats_panel,"Playgroup not linked",120,
                &lv_font_montserrat_14,0xE8F0E4);
 
-    soft_button(screen_pokemon_companion,"BACK",76,-94,on_back);
-    soft_button(screen_pokemon_companion,"SCENE",88,0,on_theme);
-    soft_button(screen_pokemon_companion,"STATS",76,94,on_page);
+    soft_button(screen_pokemon_companion,"BACK",68,-82,on_back);
+    soft_button(screen_pokemon_companion,"SCENE",74,0,on_theme);
+    soft_button(screen_pokemon_companion,"STATS",68,82,on_page);
 
     mimikyu_timer=lv_timer_create(idle_tick,200,NULL);
     lv_timer_pause(mimikyu_timer);
-    update_theme();
+    /* Scene allocation is deferred until entry to reserve heap for sprite. */
+    lv_obj_add_flag(biome_background,LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(theme_label,kSceneNames[scene_theme]);
     update_page();
 }
