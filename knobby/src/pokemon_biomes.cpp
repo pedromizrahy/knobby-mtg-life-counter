@@ -1,5 +1,6 @@
 #include "pokemon_biomes.h"
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include "../board_detect.h"
 #include <FS.h>
 #include <SD_MMC.h>
@@ -254,13 +255,23 @@ bool load_external_scene(unsigned biome) {
 } // namespace
 
 extern "C" void pk_biome_release(void) {
-    free(canvas);
+    heap_caps_free(canvas);
     canvas=nullptr;
     memset(&image,0,sizeof(image));
 }
 extern "C" bool pk_biome_render(unsigned biome) {
     if(biome>=PK_BIOME_COUNT)return false;
-    if(!canvas)canvas=(lv_color_t *)malloc((size_t)W*H*sizeof(lv_color_t));
+    if(!canvas) {
+        /* Preserve internal heap for LVGL and the real Mimikyu frames.
+         * Use external PSRAM when fitted; do not silently consume 64 KiB
+         * of scarce internal RAM for scenery. */
+        canvas=(lv_color_t *)heap_caps_malloc((size_t)W*H*sizeof(lv_color_t),
+                                             MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+        if(!canvas) {
+            Serial.println("[Pokemon] BIOME: PSRAM unavailable; no background allocated");
+            return false;
+        }
+    }
     if(!canvas) {
         Serial.println("[Pokemon] BIOME ERR: 180x180 pixel canvas alloc failed");
         return false;
