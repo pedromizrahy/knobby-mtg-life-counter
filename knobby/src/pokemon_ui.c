@@ -84,7 +84,6 @@ static void update_theme(void)
         lv_obj_center(biome_background);
     } else {
         lv_obj_add_flag(biome_background,LV_OBJ_FLAG_HIDDEN);
-        Serial.println("[Pokemon] BIOME: disabled to protect sprite memory");
     }
     lv_label_set_text(theme_label,kSceneNames[scene_theme]);
 }
@@ -146,8 +145,6 @@ void pokemon_ui_open_companion(void)
     companion_page=0;
     /* Load the actual sprite BEFORE allocating the backdrop. */
     bool ready=pk_tpk2_idle_load();
-    Serial.printf("[Pokemon] COMPANION sprite=%s frames=%u\\n",
-                  ready?"READY":"FAILED",pk_tpk2_idle_frame_count());
     update_theme();
     mimikyu_frame=0;
     if(ready) {
