@@ -1,20 +1,23 @@
 #include "pokemon_tpk2_renderer.h"
 #include "../board_detect.h"
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 #include <FS.h>
 #include <SD_MMC.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* TamaPoke pack_pmd.py (MIT): TPK2, RGB565 LE palette, indexed pixels,
- * 0xff = transparent. LVGL 8-bit indexed images store 256 BGRA palette
- * entries followed by one byte/pixel. Art is read from user microSD only.
+/* TamaPoke pack_pmd.py (MIT): TPK2 indexed RGB565 frames on SD.
+ * LVGL 8.3 CANNOT zoom indexed images (documented transform limitation).
+ * Convert to native LV_IMG_CF_TRUE_COLOR_ALPHA at 3x nearest-neighbor.
+ * Art is read from user microSD only.
  * This loader touches no Magic state, SPIFFS, NVS or Playgroup session. */
 namespace {
 constexpr unsigned kMaxFrames = 12;
 constexpr unsigned kMaxWidth = 96, kMaxHeight = 96;
-constexpr size_t kMaxTotalBytes = 64 * 1024;
-constexpr unsigned kPaletteBytes = 256 * 4;
+constexpr unsigned kScale = 3;
+constexpr unsigned kBytesPerPixel = sizeof(lv_color_t) + 1;
+constexpr size_t kMaxTotalBytes = 512 * 1024;
 struct Frame {
     lv_img_dsc_t image;
     uint8_t *bytes;
@@ -45,13 +48,15 @@ bool read_frames(File &file) {
     unsigned acts = header[4], palette_count = le16(header+5);
     if (!acts || acts > 12 || !palette_count || palette_count > 255)
         return false;
-    uint32_t colors[256] = {};
+    lv_color_t colors[256] = {};
     for (unsigned p = 0; p < palette_count; ++p) {
         uint8_t raw[2];
         if (!exact(file, raw, 2)) return false;
-        colors[p] = rgba565(le16(raw));
+        uint32_t rgba = rgba565(le16(raw));
+        colors[p] = lv_color_make((uint8_t)(rgba >> 16),
+                                  (uint8_t)(rgba >> 8), (uint8_t)rgba);
     }
-    colors[255] = 0; /* 0xff is alpha-transparent */
+    /* Index 0xff is transparent regardless of palette contents. */
     for (unsigned act = 0; act < acts; ++act) {
         uint8_t info[4];
         if (!exact(file, info, 4)) return false;
@@ -65,8 +70,10 @@ bool read_frames(File &file) {
             if (!file.seek(pos + lengths)) return false;
             continue;
         }
+        const size_t enlarged_pixels=(size_t)w*kScale*h*kScale;
+        const size_t frame_bytes=enlarged_pixels*kBytesPerPixel;
         if (count > kMaxFrames || w > kMaxWidth || h > kMaxHeight ||
-            (kPaletteBytes + pixels) * count > kMaxTotalBytes) return false;
+            frame_bytes * count > kMaxTotalBytes) return false;
         uint16_t durations[kMaxFrames] = {};
         for (unsigned i=0; i<count; ++i) {
             uint8_t raw[2];
@@ -75,20 +82,37 @@ bool read_frames(File &file) {
         }
         for (unsigned i=0; i<count; ++i) {
             Frame &f=frames[i];
-            f.bytes=(uint8_t *)malloc(kPaletteBytes + pixels);
-            if (!f.bytes) return false;
-            memcpy(f.bytes, colors, kPaletteBytes);
-            if (!exact(file, f.bytes+kPaletteBytes, pixels)) return false;
-            for (uint32_t p=0; p<pixels; ++p) {
-                uint8_t idx=f.bytes[kPaletteBytes+p];
-                if (idx != 255 && idx >= palette_count) return false;
+            f.bytes=(uint8_t *)heap_caps_malloc(frame_bytes,
+                                                 MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+            if (!f.bytes) {
+                Serial.printf("[Pokemon] TPK2 Idle: PSRAM sprite allocation failed: %u bytes\\n",
+                              (unsigned)frame_bytes);
+                return false;
+            }
+            /* Row-at-a-time reads avoid a second full frame copy. */
+            uint8_t source_row[kMaxWidth];
+            for(unsigned y=0;y<h;++y) {
+                if(!exact(file,source_row,w))return false;
+                for(unsigned x=0;x<w;++x) {
+                    uint8_t idx=source_row[x];
+                    if(idx!=255 && idx>=palette_count)return false;
+                    for(unsigned sy=0;sy<kScale;++sy) {
+                        for(unsigned sx=0;sx<kScale;++sx) {
+                            size_t offset=(((size_t)(y*kScale+sy)*(w*kScale))+
+                                           (x*kScale+sx))*kBytesPerPixel;
+                            lv_color_t color=idx==255?lv_color_black():colors[idx];
+                            memcpy(f.bytes+offset,&color,sizeof(color));
+                            f.bytes[offset+sizeof(color)]=idx==255?LV_OPA_TRANSP:LV_OPA_COVER;
+                        }
+                    }
+                }
             }
             memset(&f.image, 0, sizeof(f.image));
             f.image.header.always_zero=0;
-            f.image.header.w=w;
-            f.image.header.h=h;
-            f.image.header.cf=LV_IMG_CF_INDEXED_8BIT;
-            f.image.data_size=kPaletteBytes+pixels;
+            f.image.header.w=w*kScale;
+            f.image.header.h=h*kScale;
+            f.image.header.cf=LV_IMG_CF_TRUE_COLOR_ALPHA;
+            f.image.data_size=frame_bytes;
             f.image.data=f.bytes;
             f.ms=durations[i] < 70 ? 70 : durations[i];
         }
@@ -101,7 +125,7 @@ bool read_frames(File &file) {
 
 extern "C" void pk_tpk2_idle_release(void) {
     for (unsigned i=0; i<kMaxFrames; ++i) {
-        free(frames[i].bytes);
+        heap_caps_free(frames[i].bytes);
         memset(&frames[i],0,sizeof(frames[i]));
     }
     frame_count=0;
