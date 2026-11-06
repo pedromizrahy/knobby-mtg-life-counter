@@ -248,3 +248,11 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - Nova API `pk_lab_runtime_draw_snapshot_token` obtém resultado e token atomicamente após um DRAW. A animação visual verifica o token a cada frame e antes de revelar. Se a sessão for reiniciada pelo USB durante a abertura, cancela o resultado antigo, pausa timer e atualiza a tela com estatísticas da sessão atual. Não altera recompensa/conta de jogador.
 - Casos de hardware a testar: abrir x1 e dar `PK LAB RESET` no USB durante os quadros; abrir x100 e dar `PK LAB START`; alternar entre LAB/Companion após preview SD; executar muitas aberturas de Mimikyu; garantir ausência de travamento, sem alteração de dados Playgroup.
 - Essa mudança exige novo CI Arduino e teste físico; **não há hardware remoto disponível**. O merge permanece proibido sem pedido explícito.
+
+
+## 23. Testes do token de sessão e watchdog de revelação (2026-11-06)
+
+- Confirmado novamente **CI Arduino e Pokémon Engine Checks PASS** no commit `65036b8e`.
+- Novo `tests/pokemon_lab_runtime_test.cpp` compila `pokemon_lab_runtime.cpp` com mocks isolados de ESP RNG e mutex FreeRTOS, verificando: token incrementado por START/RESET, token estável por DRAW, captura atômica de resultado, dados congelados após outros draws, rejeição de parâmetros inválidos e reset limpando a RAM sem tocar em perfis reais. O mock valida a lógica sequencial, **não mede concorrência real, FreeRTOS ou estabilidade física**.
+- `pokemon_lab_ui.c` recebeu watchdog LVGL de sessão (250 ms) enquanto a tela LAB está visível. Se um `PK LAB START/RESET` vier do monitor USB **após a abertura**, o card e o sprite obsoletos são ocultados, timers interrompidos e estatísticas atualizadas. Durante a abertura, a verificação de token por quadro continua ativa.
+- Pendentes novo CI Arduino da mudança, teste real da corrida de USB/touch no ESP32-S3, confirmação visual de uso da memória PSRAM, retorno ao Mimikyu e ausência de stutter. Laboratório ainda não produz Pokémon nem itens reais.
