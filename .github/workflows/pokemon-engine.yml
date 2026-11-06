@@ -5,6 +5,9 @@ on:
       - 'knobby/src/pokemon_progress.*'
       - 'knobby/src/pokemon_gacha.*'
       - 'tests/pokemon_gacha_test.c'
+      - 'tests/test_pokemon_catalog.py'
+      - 'tools/pokemon/audit_catalog.py'
+      - 'tools/pokemon/catalog.json'
       - 'knobby/src/pokemon_achievements.*'
       - 'knobby/src/pokemon_master_trainer_store.*'
       - 'knobby/src/pokemon_master_trainer_intent.*'
@@ -46,6 +49,8 @@ jobs:
         run: cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c tests/pokemon_progress_test.c -o /tmp/pokemon_progress_test
       - name: Run reward and collection tests
         run: /tmp/pokemon_progress_test
+      - name: Audit SD sprite catalog with synthetic TPK2 fixtures
+        run: python3 -m unittest discover -s tests -p test_pokemon_catalog.py -v
       - name: Test Poke Ball gacha pure sampler
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c tests/pokemon_gacha_test.c -o /tmp/pokemon_gacha_test
