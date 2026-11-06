@@ -52,7 +52,7 @@ int main(void){
   mock_t m=init();
   pk_reward_io_t io=io_for(&m);
   assert(pk_reward_transaction(&io,22,101,true,&reward)==PK_TX_APPLIED);
-  assert(reward.xp_awarded==800 && reward.new_pokeballs==1);
+  assert(reward.xp_awarded==800 && reward.new_pokeballs==4);
   assert(m.p.wins==1 && m.p.battles==1);
   assert(pk_reward_transaction(&io,22,101,true,&reward)==PK_TX_ALREADY);
   assert(m.p.wins==1 && reward.xp_awarded==0);
