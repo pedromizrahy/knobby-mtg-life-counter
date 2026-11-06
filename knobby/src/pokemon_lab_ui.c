@@ -1,5 +1,6 @@
 #include "pokemon_lab_ui.h"
 #include "pokemon_lab_runtime.h"
+#include "pokemon_lab_ball_art.h"
 #include "pokemon_ui.h"
 #include <lvgl.h>
 #include <stdio.h>
@@ -15,6 +16,12 @@ static lv_obj_t *ball_label=NULL;
 static lv_obj_t *reveal_label=NULL;
 static lv_obj_t *rates_label=NULL;
 static lv_obj_t *count_label=NULL;
+static lv_obj_t *ball_image=NULL;
+static lv_timer_t *ball_timer=NULL;
+static unsigned animation_frame=0;
+static bool animating=false;
+static uint8_t ball_pixels[PK_LAB_BALL_BUFFER_BYTES];
+static lv_img_dsc_t ball_descriptor={0};
 static uint8_t active_ball=PK_BALL_POKE;
 static unsigned batch=1;
 static const char *const ball_names[]={"POKE","GREAT","ULTRA","MASTER"};
@@ -114,39 +121,92 @@ static void lab_refresh(void)
         lv_label_set_text(rates_label,msg);
     }
 }
+/* Redraw the same persistent descriptor; invalidate LVGL's decoded
+ * image before mutating pixels. The animation never consumes currency. */
+static void ball_paint(unsigned frame)
+{
+    if(!ball_image || !pk_lab_ball_art_render(active_ball,frame,
+                                              ball_pixels,sizeof(ball_pixels)))
+        return;
+    lv_img_cache_invalidate_src(&ball_descriptor);
+    lv_img_set_src(ball_image,&ball_descriptor);
+}
+static void ball_tick(lv_timer_t *timer)
+{
+    (void)timer;
+    if(!animating)return;
+    if(lv_scr_act()!=lab_screen){
+        animating=false;
+        lv_timer_pause(ball_timer);
+        lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    animation_frame++;
+    if(animation_frame>=PK_LAB_BALL_FRAMES){
+        animating=false;
+        lv_timer_pause(ball_timer);
+        lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
+        /* Show the outcome that was already sampled once on DRAW. */
+        lab_refresh();
+        return;
+    }
+    ball_paint(animation_frame);
+}
+static void ball_begin(void)
+{
+    if(!ball_timer || !ball_image)return;
+    animation_frame=0;
+    animating=true;
+    lv_obj_add_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
+    ball_paint(0);
+    lv_timer_set_period(ball_timer,140);
+    lv_timer_reset(ball_timer);
+    lv_timer_resume(ball_timer);
+}
 static void on_ball(lv_event_t *event)
 {
     unsigned chosen=(unsigned)(uintptr_t)lv_event_get_user_data(event);
-    if(chosen>=PK_BALL_COUNT)return;
+    if(animating || chosen>=PK_BALL_COUNT)return;
     active_ball=(uint8_t)chosen;
     lab_refresh();
 }
 static void on_draw(lv_event_t *event)
 {
     (void)event;
+    if(animating)return;
     if(!pk_lab_runtime_draw(active_ball,batch)) {
         if(reveal_label)lv_label_set_text(reveal_label,"DRAW FAILED (SIM)");
-    } else lab_refresh();
+    } else ball_begin();
 }
 static void on_batch(lv_event_t *event)
 {
     (void)event;
+    if(animating)return;
     batch=batch==1?100:1;
     lab_refresh();
 }
 static void on_badge(lv_event_t *event)
 {
     (void)event;
-    if(pk_lab_runtime_level(100))lab_refresh();
+    if(!animating && pk_lab_runtime_level(100))lab_refresh();
 }
 static void on_reset(lv_event_t *event)
 {
     (void)event;
-    if(pk_lab_runtime_start())lab_refresh();
+    if(!animating && pk_lab_runtime_start())lab_refresh();
 }
 static void on_back(lv_event_t *event)
 {
     (void)event;
+    if(ball_timer)lv_timer_pause(ball_timer);
+    animating=false;
+    if(ball_image)lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
+    if(reveal_label)lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
+    if(rates_label)lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
     /* Returning to existing companion does not restart or clear LAB. */
     if(screen_pokemon_companion)lv_scr_load(screen_pokemon_companion);
 }
@@ -159,6 +219,11 @@ void pokemon_lab_ui_open(void)
     if(!state.active && !pk_lab_runtime_start())return;
     active_ball=PK_BALL_POKE;
     batch=1;
+    animating=false;
+    if(ball_timer)lv_timer_pause(ball_timer);
+    if(ball_image)lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
+    if(reveal_label)lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
+    if(rates_label)lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
     lab_refresh();
     lv_scr_load(lab_screen);
 }
@@ -199,4 +264,19 @@ void pokemon_lab_ui_build(void)
     lab_btn(lab_screen,"BACK",34,298,83,33,on_back,NULL);
     lab_btn(lab_screen,"LV100",137,298,84,33,on_badge,NULL);
     lab_btn(lab_screen,"RESET",241,298,84,33,on_reset,NULL);
+
+    /* Persistent 64x64 RGB565+A image of original 2x pixel artwork.
+     * No external sprites and no allocations on animation ticks. */
+    ball_descriptor.header.always_zero=0;
+    ball_descriptor.header.w=PK_LAB_BALL_PIXELS;
+    ball_descriptor.header.h=PK_LAB_BALL_PIXELS;
+    ball_descriptor.header.cf=LV_IMG_CF_TRUE_COLOR_ALPHA;
+    ball_descriptor.data_size=sizeof(ball_pixels);
+    ball_descriptor.data=ball_pixels;
+    ball_image=lv_img_create(lab_screen);
+    lv_img_set_src(ball_image,&ball_descriptor);
+    lv_obj_align(ball_image,LV_ALIGN_TOP_MID,0,207);
+    lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
+    ball_timer=lv_timer_create(ball_tick,140,NULL);
+    lv_timer_pause(ball_timer);
 }
