@@ -231,3 +231,11 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - **Segurança de memória:** antes de o renderizador trocar os buffers PSRAM, o LAB destaca suas próprias referências LVGL; o Companion também destaca suas referências ao trocar espécies. Ao clicar BACK o LAB libera sua referência e solicita o Mimikyu #778 novamente na tela Companion. Não grava SD, não concede premiação nem altera dados Playgroup.
 - Esse caminho faz uma consulta SD síncrona durante a finalização da animação. Validar em hardware possíveis pausas de frame, taxa de quadros, proporção, transparência, coexistência com a animação do Companion e comportamento ao SD ausente/corrompido.
 - Ainda faltam **assets reais para as demais espécies**, arte Shiny correspondente, seleção real de espécies e validação visual no ESP32-S3. A UI usa emblemas originais enquanto não há assets instalados.
+
+
+## 21. Idle real animado e indicador de origem no TEST LAB (2026-11-06)
+
+- A interface LAB agora avança pelos frames Idle do TPK2 real, se houver mais de um, usando duração de cada frame. Cria timer LVGL inativo por padrão; a animação só roda com o card de revelação visível, sem modificar os dados do Pokémon.
+- Cada mudança de Pokébola, novo DRAW, RESET, entrada ou saída do LAB pausa o timer e destaca a referência à imagem anterior antes de qualquer substituição de buffers PSRAM. Se outra parte mudar a espécie carregada, o timer é interrompido em vez de acessar ponteiros obsoletos.
+- O card passa a distinguir explicitamente `SD PREVIEW` (Idle real instalado) de `LAB ART` (emblema sintético). Resultados Shiny continuam exibindo `LAB ART` se não houver sprite Shiny validado.
+- Pendente compilar essa atualização e testar no ESP32-S3; verificação de memória e visual/touch na placa é obrigatória. Gacha real permanece desligado; PR não deve ser mergeada sem revisão e teste.
