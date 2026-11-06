@@ -2794,6 +2794,18 @@ static void handle_command(char *line)
         return;
     }
 
+    unsigned pmd_check_species=0;
+    char pmd_check_extra=0;
+    if (sscanf(line,"PK PMD CHECK %u %c",
+               &pmd_check_species,&pmd_check_extra)==1) {
+        if (playgroup_pending_current_active()) {
+            Serial.println("[Pokemon] PMD CHECK SKIPPED: exit active Playgroup game first.");
+            return;
+        }
+        pk_pmd_check_species_read_only(pmd_check_species);
+        return;
+    }
+
     if (strcmp(line, "PK PMD CHECK") == 0) {
         if (playgroup_pending_current_active()) {
             Serial.println("[Pokemon] PMD CHECK SKIPPED: exit active Playgroup game first.");
