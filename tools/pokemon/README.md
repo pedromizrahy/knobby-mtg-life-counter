@@ -63,3 +63,42 @@ TamaPoke source code MIT; source artwork credited to SpriteCollab artists,
 generally under CC BY-NC 4.0. See upstream CREDITS.md and per-species
 tracker.json. Use for private, noncommercial projects with appropriate credit;
 do not commit or commercially redistribute downloaded sprites.
+
+
+## Gacha catalog audit (read-only, no firmware upload)
+
+A separate `catalog.json` lists only artwork already confirmed in the current
+project. **It currently lists Mimikyu #778 only**; this is *not* a ready-to-open
+gacha pool. Its `rare` tier is a **provisional DIAL game-design category**, not
+an official Pokémon rarity. No additional species are assumed installed.
+
+On Windows, copy the installed SD `/mons` directory to a local folder
+(or prepare a local mirror using your own properly licensed TPK2 assets).
+Then run:
+
+```powershell
+cd C:\dev\sistema-mz\knobby-mtg-life-counter
+py -3 tools\pokemon\audit_catalog.py --mons-dir "C:\path\to\sdcard\mons"
+```
+
+The report indicates VALID, MISSING, or INVALID for each listed sprite and
+whether OPEN is READY or BLOCKED for Poké, Great, Ultra and Master Balls.
+It is **only a local audit**; the current DIAL firmware does not read this
+manifest or use it to issue real rewards. The audit intentionally never
+writes to the SD card, does not install sprites, and does not create new
+species/art. A gacha opening is disabled if a tier with positive probability
+has no valid installed sprite.
+
+Tests (pure standard-library Python):
+
+```powershell
+py -3 -m unittest discover -s tests -p test_pokemon_catalog.py -v
+```
+
+To expand the pool, add a legitimate species entry with `id`, `name`,
+`tier`, and exactly `p<ID>.bin` under `asset`; then install and validate
+that TPK2 file. Current renderer is still hardcoded to load Mimikyu
+`/mons/p778.bin`, so the audit **does not imply** newly listed Pokémon will
+render in the companion screen. Generic species loading, SD transfer, and
+persistent gacha opening are future steps. Respect the original artwork's
+licensing before distribution.
