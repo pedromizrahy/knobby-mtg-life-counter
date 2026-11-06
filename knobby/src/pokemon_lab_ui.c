@@ -2,6 +2,7 @@
 #include "pokemon_lab_runtime.h"
 #include "pokemon_lab_ball_art.h"
 #include "pokemon_lab_reveal.h"
+#include "pokemon_lab_fixture_art.h"
 #include "pokemon_ui.h"
 #include <lvgl.h>
 #include <stdio.h>
@@ -20,6 +21,9 @@ static lv_obj_t *count_label=NULL;
 static lv_obj_t *reveal_card=NULL;
 static lv_obj_t *reveal_title=NULL;
 static lv_obj_t *reveal_detail=NULL;
+static lv_obj_t *fixture_icon=NULL;
+static uint8_t fixture_pixels[PK_LAB_FIXTURE_BUFFER_BYTES];
+static lv_img_dsc_t fixture_descriptor={0};
 static pk_lab_t captured_draw={0};
 static bool captured_valid=false;
 static lv_obj_t *ball_image=NULL;
@@ -154,6 +158,14 @@ static void show_reveal_card(void)
     snprintf(label,sizeof(label),"%s%s | SIM ONLY",
              pk_lab_tier_name(r->tier),r->shiny?" *SHINY*":"");
     lv_label_set_text(reveal_detail,label);
+    /* Preview a distinct original lab emblem. No user SD sprite or
+     * copyright character art is required for this diagnostic. */
+    if(fixture_icon && pk_lab_fixture_art(r->species,r->shiny!=0,
+                                         fixture_pixels,sizeof(fixture_pixels))){
+        lv_img_cache_invalidate_src(&fixture_descriptor);
+        lv_img_set_src(fixture_icon,&fixture_descriptor);
+        lv_obj_clear_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
+    }
     lv_obj_set_style_border_color(reveal_card,lv_color_hex(accent[r->tier]),0);
     lv_obj_set_style_text_color(reveal_title,
                     lv_color_hex(r->shiny?0xFDEBA4:accent[r->tier]),0);
@@ -330,9 +342,21 @@ void pokemon_lab_ui_build(void)
     lv_obj_set_style_shadow_width(reveal_card,0,0);
     lv_obj_clear_flag(reveal_card,LV_OBJ_FLAG_CLICKABLE |
                                       LV_OBJ_FLAG_SCROLLABLE);
-    reveal_title=lab_text(reveal_card,"",10,268,0xFDEBA4,
+    fixture_descriptor.header.always_zero=0;
+    fixture_descriptor.header.w=PK_LAB_FIXTURE_PIXELS;
+    fixture_descriptor.header.h=PK_LAB_FIXTURE_PIXELS;
+    fixture_descriptor.header.cf=LV_IMG_CF_TRUE_COLOR_ALPHA;
+    fixture_descriptor.data_size=sizeof(fixture_pixels);
+    fixture_descriptor.data=fixture_pixels;
+    fixture_icon=lv_img_create(reveal_card);
+    lv_img_set_src(fixture_icon,&fixture_descriptor);
+    lv_obj_align(fixture_icon,LV_ALIGN_LEFT_MID,7,0);
+    lv_obj_add_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
+    reveal_title=lab_text(reveal_card,"",10,210,0xFDEBA4,
                            &lv_font_montserrat_22);
-    reveal_detail=lab_text(reveal_card,"",43,268,0xFFFFFF,
+    lv_obj_align(reveal_title,LV_ALIGN_TOP_LEFT,53,10);
+    reveal_detail=lab_text(reveal_card,"",43,210,0xFFFFFF,
                             &lv_font_montserrat_14);
+    lv_obj_align(reveal_detail,LV_ALIGN_TOP_LEFT,53,43);
     lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
 }
