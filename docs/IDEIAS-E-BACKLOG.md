@@ -100,3 +100,12 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - Testes isolados de ausência de commit, perfil não persistido, repetição, dados incompatíveis, escrita interrompida e carteira corrompida estão em `tests/pokemon_master_trainer_intent_test.cpp` e no workflow.
 - **NÃO CONECTADO AINDA:** integrar a preparação *antes do save do perfil* e a finalização *depois do commit* no coordenador de pós-jogo, sem fazer isso em uma janela que deixe um PREPARED insolúvel. Ainda precisa provar recuperação com queda real de energia, política de corrupção/storage cheio, e consumo atômico da Master Ball com revelação Pokémon no gacha.
 - Evitar consumir a carteira por `pk_mt_mark_spent` até a transação de gacha garantir que o Pokémon recebido está salvo. Sem alterações no firmware instalado nem prêmios automáticos.
+
+
+## 8. Coordenador XP + Master Trainer opt-in (ainda não ativo no pós-jogo)
+
+- Criado `pokemon_reward_master_coordinator.{h,c}`: fluxo opt-in que consulta journal e intent do jogador, calcula EXP, prepara a prova Master Trainer **antes de PREPARED e do save**, salva perfil, registra COMMITTED e finaliza a badge. Nos demais jogos, não cria intent.
+- Em reinício depois do save mas antes de COMMITTED, só recupera se a partida já estiver no perfil. Antes de salvar a partida, permanece bloqueado se o estado for ambíguo. Nunca reaplica EXP adivinhando. Antes de processar partidas seguintes, exige concluir a concessão pendente.
+- Criado `pokemon_reward_master_storage.{h,cpp}`: adaptador explícito aos métodos atuais NVS + SPIFFS. **Nenhuma chamada inserida no pós-jogo ou nas telas do DIAL.** Continua sendo função de opt-in para teste controlado após conferir resultado durável e identificação.
+- Teste `tests/pokemon_reward_master_coordinator_test.c` cobre sequência `intent prepare → ledger PREPARED → profile save → COMMITTED → badge`, falha de preparação, falha de gravação, falta de commit, retomada, repetição, carteira já utilizada e partidas subsequentes.
+- **Riscos ainda abertos:** procedimento de recuperação de PREPARED cuja gravação do perfil falhou; corrupção ou escrita interrompida na carteira/intent; migração futura NVS→SPIFFS; testes de power-cycle reais; resultado confirmado do Playgroup; consumo de Master Ball e persistência de Pokémon no mesmo sorteio. Não ativar premiações nem enviar build ao DIAL como se fossem validadas no hardware.
