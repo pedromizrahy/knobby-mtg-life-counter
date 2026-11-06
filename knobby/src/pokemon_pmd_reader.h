@@ -9,6 +9,8 @@ extern "C" {
  * No file modifications, no implicit formatting, no Magic gameplay use.
  */
 void pk_pmd_check_mimikyu_read_only(void);
+/* Generic post-transfer read-only check, ID 1..1025. */
+void pk_pmd_check_species_read_only(unsigned species);
 /* Explicit staged serial transfer. No sprite files are overwritten. */
 void pk_pmd_put_species(unsigned species,unsigned long size,unsigned long expected_crc);
 void pk_pmd_put_mimikyu(unsigned long size, unsigned long expected_crc);
