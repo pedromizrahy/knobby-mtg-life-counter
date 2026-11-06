@@ -13,6 +13,7 @@ on:
       - 'tests/pokemon_reward_coordinator_test.c'
       - 'knobby/src/pokemon_reward_coordinator.*'
       - 'knobby/src/pokemon_reward_master_coordinator.*'
+      - 'knobby/src/pokemon_reward_master_storage.*'
       - 'tests/pokemon_reward_master_coordinator_test.c'
       - 'knobby/src/pokemon_reward_storage.*'
       - 'tests/pokemon_reward_storage_test.cpp'
@@ -73,6 +74,9 @@ jobs:
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_reward_storage.cpp tests/pokemon_reward_storage_test.cpp /tmp/pk_progress.o /tmp/pk_coordinator.o -o /tmp/pokemon_storage_test
           /tmp/pokemon_storage_test
+      - name: Compile explicit Master Trainer real-storage adapter
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_reward_master_storage.cpp -o /tmp/pokemon_reward_master_storage.o
       - name: Test guarded NVS profile initialization with simulated Preferences
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_profile_store.cpp tests/pokemon_profile_store_test.cpp /tmp/pk_progress.o -o /tmp/pokemon_profile_store_test
