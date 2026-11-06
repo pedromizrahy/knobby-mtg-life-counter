@@ -202,3 +202,13 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - **Um toque = um único sorteio** (`x1` ou `x100`) antes da animação; novos draws, troca de bola, badge e reset ficam bloqueados enquanto a sequência ocorre. Retornar da tela pausa o timer sem repetir nem reverter sorteios registrados. Ao terminar, o resultado sintético e as porcentagens ficam visíveis.
 - Testes `pokemon_lab_ball_art_test.c` verificam todas as quatro cores e seis frames, rejeição de índices inválidos, transparência e diferenças entre variantes e fases. Adicionados ao workflow Pokémon.
 - **Pendente:** validação visual/touch/tempo no ESP32-S3, revisão de layout circular (64×64 é visual provisório, não arte final), artes finais em alta qualidade e efeitos posteriores de Pokémon. LAB é totalmente isolado do Playgroup; gacha real e gasto de Pokébolas continuam desativados.
+
+
+## 18. Revelação visual congelada e isolamento USB/touch (2026-11-06)
+
+- Foi confirmado CI Arduino e Pokémon Engine Checks **aprovados** na animação anterior (commit `36f8d500`).
+- Criado `pokemon_lab_reveal.{h,c}` com rótulos **SINTÉTICOS** das quatro espécies de teste (Pikachu #25 comum, Mimikyu #778 raro, Dragonite #149 épico, Mewtwo #150 lendário), validação rigorosa da combinação ID/tier e destaque de Shiny. Não utiliza sprites reais nem acrescenta à Pokédex.
+- A nova chamada `pk_lab_runtime_draw_snapshot(ball,count,out)` registra sorteio e captura resultados sob o **mesmo mutex**. Assim uma segunda abertura via USB não pode trocar a identidade do Pokémon revelado pela UI durante os seis quadros.
+- Ao terminar os quadros a tela mostra card de revelação acima da área de estatísticas, com nome, número, raridade e sinalização de Shiny, e **SIM ONLY**. O card utiliza cores por categoria e destaca Shiny. Não é uma arte final, não armazena prêmio, não debita bola.
+- Adicionado `tests/pokemon_lab_reveal_test.c` ao CI com casos válidos, Shiny e rejeição de resultados incoerentes ou buffers pequenos.
+- Falta validar nova compilação e o novo card no ESP32-S3, incluindo condições de toque e sobreposição na tela circular. Nenhuma alteração nos IDs Playgroup reais nem no pós-jogo.
