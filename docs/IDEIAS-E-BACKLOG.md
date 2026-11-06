@@ -146,3 +146,12 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - `tools/pokemon/upload_batch.py`: valida TPK2 e CRC32; **dry-run padrão**, `--execute` explícito para enviar; exclui Mimikyu #778 por padrão. Testes de plano e protocolo em `tests/test_pokemon_batch_upload.py`.
 - O primeiro lote `candidate_pool.json` tem 14 candidatos, mas não significa que seus arquivos estão instalados. Nenhum asset foi distribuído no repositório nem transferido para hardware nesta etapa.
 - **Pendências antes de upload:** revisão do build ESP32, espaço livre real no SD, testes físicos de leitura/escrita e de reinício após upload interrompido, validação no aparelho dos formatos, proteção de gameplay em janela serial, seleção dinâmica de sprites, consumo transacional no gacha.
+
+
+## 12. Troca segura do sprite no LVGL (API opt-in; Mimikyu continua padrão)
+
+- `pokemon_ui_show_species(uint16_t)` expõe uma seleção **programática** para Pokémon com TPK2 instalado. Não existe ainda botão/lista de coleção nem integração ao gacha. Só chamar na thread LVGL, fora de partidas reais.
+- Antes de carregar outra espécie: pausa timer Idle, oculta imagem, destaca `lv_img_set_src(..., NULL)` e invalida todos os descritores antigos do image cache; em seguida o renderizador pode liberar buffers PSRAM e recarregar. Na falha tenta recuperar a espécie anterior, depois Mimikyu se houver arquivo. A falha não altera coleção/EXP ou Pokébolas.
+- Cabeçalho e etiqueta de tipo ficam neutros para outras espécies (`POKEMON #ID` / `TYPE: NOT LINKED`), não inventam nomes/tipos. Mimikyu mantém `MIMIKYU #778` e `GHOST / FAIRY`.
+- `pokemon_ui_open_companion()` permanece no Mimikyu #778, sem trocar a home automaticamente. A posição e o estilo do Mimikyu não foram alterados.
+- **Pendente:** teste de compilação/execução do LVGL no firmware e troca real no ESP32, instalação de outro asset TPK2, fonte verdadeira de coleção/seleção, renderizar nomes/tipos consultando catálogo real. Os testes de motor Pokémon não compilam a tela LVGL nem comprovam ausência de artefatos no display.
