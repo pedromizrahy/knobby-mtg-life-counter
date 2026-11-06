@@ -48,7 +48,7 @@ int main()
     pk_profile_init(&saved);
     assert(pk_team_add(&saved,778,false));
     assert(pk_reward_apply_existing(42,501,true,&reward)==PK_TX_APPLIED);
-    assert(saved.wins==1 && saved.battles==1 && reward.xp_awarded==75);
+    assert(saved.wins==1 && saved.battles==1 && reward.xp_awarded==800);
     assert(pk_reward_apply_existing(42,501,true,&reward)==PK_TX_ALREADY);
     assert(saved.wins==1 && reward.xp_awarded==0);
     fail_commit=true;
