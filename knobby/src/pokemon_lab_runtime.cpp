@@ -5,6 +5,7 @@
 namespace {
 SemaphoreHandle_t lab_lock=nullptr;
 pk_lab_t lab={};
+uint32_t lab_session=0;
 bool ensure_lock()
 {
     if(lab_lock)return true;
@@ -29,12 +30,16 @@ bool rng(void *,uint32_t *out)
 extern "C" bool pk_lab_runtime_start(void)
 {
     if(!enter())return false;
-    pk_lab_start(&lab);leave();return true;
+    pk_lab_start(&lab);
+    lab_session++;
+    leave();return true;
 }
 extern "C" bool pk_lab_runtime_reset(void)
 {
     if(!enter())return false;
-    pk_lab_reset(&lab);leave();return true;
+    pk_lab_reset(&lab);
+    lab_session++;
+    leave();return true;
 }
 extern "C" bool pk_lab_runtime_snapshot(pk_lab_t *out)
 {
@@ -55,6 +60,20 @@ extern "C" bool pk_lab_runtime_draw_snapshot(uint8_t ball,unsigned count,
     if(ok)*out=lab;
     leave();
     return ok;
+}
+extern "C" bool pk_lab_runtime_session_token(uint32_t *out)
+{
+    if(!out || !enter())return false;
+    *out=lab_session;
+    leave();return true;
+}
+extern "C" bool pk_lab_runtime_draw_snapshot_token(uint8_t ball,
+             unsigned count,pk_lab_t *out,uint32_t *token)
+{
+    if(!out || !token || !enter())return false;
+    bool ok=pk_lab_draw(&lab,ball,count,rng,nullptr);
+    if(ok){*out=lab;*token=lab_session;}
+    leave();return ok;
 }
 extern "C" bool pk_lab_runtime_badge(void)
 {
