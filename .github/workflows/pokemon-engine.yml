@@ -4,6 +4,9 @@ on:
     paths:
       - 'knobby/src/pokemon_progress.*'
       - 'knobby/src/pokemon_gacha.*'
+      - 'knobby/src/pokemon_sprite_path.*'
+      - 'knobby/src/pokemon_tpk2_renderer.*'
+      - 'tests/pokemon_sprite_path_test.c'
       - 'tests/pokemon_gacha_test.c'
       - 'tests/test_pokemon_catalog.py'
       - 'tools/pokemon/audit_catalog.py'
@@ -51,6 +54,10 @@ jobs:
         run: /tmp/pokemon_progress_test
       - name: Audit SD sprite catalog with synthetic TPK2 fixtures
         run: python3 -m unittest discover -s tests -p test_pokemon_catalog.py -v
+      - name: Test safe SD sprite paths for all species
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_sprite_path.c tests/pokemon_sprite_path_test.c -o /tmp/pokemon_sprite_path_test
+          /tmp/pokemon_sprite_path_test
       - name: Test Poke Ball gacha pure sampler
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c tests/pokemon_gacha_test.c -o /tmp/pokemon_gacha_test
