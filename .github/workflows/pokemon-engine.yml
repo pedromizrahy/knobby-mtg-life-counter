@@ -5,6 +5,8 @@ on:
       - 'knobby/src/pokemon_progress.*'
       - 'knobby/src/pokemon_gacha.*'
       - 'knobby/src/pokemon_lab.*'
+      - 'knobby/src/pokemon_lab_runtime.*'
+      - 'knobby/src/pokemon_lab_ui.*'
       - 'tests/pokemon_lab_test.c'
       - 'knobby/src/pokemon_sprite_path.*'
       - 'knobby/src/pokemon_companion_selection.*'
