@@ -102,3 +102,43 @@ that TPK2 file. Current renderer is still hardcoded to load Mimikyu
 render in the companion screen. Generic species loading, SD transfer, and
 persistent gacha opening are future steps. Respect the original artwork's
 licensing before distribution.
+
+
+## Candidate sprite batch: Poké / Great / Ultra / Master pools
+
+The verified inventory is `catalog.json` (currently Mimikyu #778 only).
+A **separate tentative list**, `candidate_pool.json`, has 14 species across
+four proposed rarity tiers. This is a game-design shortlist, **not** evidence
+that files are installed or supported. Rarity is DIAL-specific, not official.
+
+The upstream TamaPoke packer can generate PMD SpriteCollab TPK2 assets for
+individual National Dex IDs. For this initial pack, from a local TamaPoke
+clone on Windows, install Pillow and run:
+
+```powershell
+cd C:\dev\TamaPoke
+py -3 -m pip install pillow
+py -3 tools\pack_pmd.py normal 1 4 7 16 25 133 778 6 94 149 144 145 146 150
+```
+
+This is **local asset generation**, not a DIAL firmware step. It downloads
+third-party artwork, and may report missing or unsupported animations. It
+does not touch the DIAL or existing microSD. Inspect the generated files
+in `C:\dev\TamaPoke\tools\sdcard\mons\` and check:
+
+```powershell
+cd C:\dev\sistema-mz\knobby-mtg-life-counter
+py -3 tools\pokemon\audit_catalog.py --catalog tools\pokemon\candidate_pool.json --mons-dir C:\dev\TamaPoke\tools\sdcard\mons
+```
+
+All 14 entries must be valid to use this candidate list unchanged.
+The Poke/Great/Ultra preflight additionally demands all four tiers, while
+Master requires only the legendary tier. No generated assets should be
+bundled into our public firmware repository; see SpriteCollab's CC BY-NC
+terms and artist credits.
+
+**Important:** The current DIAL USB command `PK PMD PUT 778` only installs
+Mimikyu and rejects existing `/mons/p778.bin`. Do **not** use it for the
+other species. Their USB transfer and runtime manifest loading are not
+implemented yet. On-device companion remains Mimikyu, and gacha rewards
+remain disabled.
