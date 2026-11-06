@@ -68,3 +68,15 @@ Direção proposta para validação visual:
 - **BUG/REGRA EM ABERTO:** o motor atual premia **cada Pokémon** que chega a 100 com Master Ball; deve ser substituído por achievement **único por jogador** (`Master Trainer`) com 1 Master Ball, persistido de forma transacional. **Não ativar** até definir armazenamento/migração e garantir concessão idempotente.
 - **Migração:** alteração de fórmula altera progressão dos perfis existentes. Auditar e testar migração de EXP atual/nível antes de mudar código em produção, e não zerar avanços.
 - Qualquer modificação que afete recompensas deve aguardar validação no aparelho e integração segura pós-jogo, sem considerar testes simulados prova suficiente.
+
+
+### Revisão de balanceamento — 05/11/2026
+
+Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitórias deve chegar ao marco em menos da metade desse total. **Nova proposta preferida** para teste (substitui o preset anterior de 250/350 e 30+6×nível):
+
+- EXP necessária para subir do nível L para L+1: **20 + 4×L** (total de **21.780 EXP** do nível 1 ao 100).
+- **Derrota/participação validada: 300 EXP**; **vitória validada: 800 EXP**.
+- Número esperado, aproximado, de partidas quando toda EXP vai a um único Pokémon: **73 com 0% de vitórias; 52 com 25%; 40 com 50%; 28 com 100%**.
+- O resultado ainda é **simulação/proposta**, não regra aplicada no firmware. Simulador em `tools/pokemon/xp_balance.py` atualizado.
+- Milestone `Master Trainer`: **primeiro Pokémon a nível 100**, uma única badge e uma única Master Ball por jogador. Confirmar e implementar de forma segura antes de ativar recompensas reais.
+- A EXP da vitória substitui (não soma a) recompensa-base de derrota; evitar contar duas vezes.
