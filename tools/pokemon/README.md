@@ -142,3 +142,44 @@ Mimikyu and rejects existing `/mons/p778.bin`. Do **not** use it for the
 other species. Their USB transfer and runtime manifest loading are not
 implemented yet. On-device companion remains Mimikyu, and gacha rewards
 remain disabled.
+
+
+## Generic USB transfer of multiple species (NEW — firmware required)
+
+The firmware serial command now accepts any numeric Dex ID 1–1025:
+
+```text
+PK PMD PUT <dex-id> <size> <crc32-hex>
+```
+
+The old `PK PMD PUT 778` remains compatible. Upload is blocked during an
+active Playgroup match. Existing `/mons/p<ID>.bin` files are never overwritten.
+Each upload uses `/mons/p<ID>.part`; a pre-existing partial file is **not
+silently deleted**, and blocks that upload for manual inspection. Final file
+is renamed only after bytes and CRC32 match. No SD formatting is used.
+
+Create all TPK2 candidates locally first (see previous section). Then run
+a **dry run** (no COM port opened or device writes):
+
+```powershell
+cd C:\dev\sistema-mz\knobby-mtg-life-counter
+py -3 tools\pokemon\upload_batch.py --mons-dir C:\dev\TamaPoke\tools\sdcard\mons
+```
+
+The default plan deliberately excludes #778, which is already installed. If
+every listed sprite validates and the new firmware has been flashed, a manual
+transfer can be initiated **only outside an active game**:
+
+```powershell
+py -3 -m pip install pyserial
+py -3 tools\pokemon\upload_batch.py --mons-dir C:\dev\TamaPoke\tools\sdcard\mons --port COM4 --execute
+```
+
+**Do not execute yet without reviewing the device build and available SD
+space.** The original PMD transfer is blocking while bytes arrive; each
+asset can be as large as 3 MiB. This phase has not been verified on the
+physical ESP32. A failed individual transfer ends the batch rather than
+silently skipping. Files are not copied to the source repository.
+
+The current on-screen Pokémon remains Mimikyu and gacha openings remain
+disabled. This only prepares the asset transfer mechanism.
