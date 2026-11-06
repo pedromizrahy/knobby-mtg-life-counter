@@ -256,3 +256,17 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - Novo `tests/pokemon_lab_runtime_test.cpp` compila `pokemon_lab_runtime.cpp` com mocks isolados de ESP RNG e mutex FreeRTOS, verificando: token incrementado por START/RESET, token estável por DRAW, captura atômica de resultado, dados congelados após outros draws, rejeição de parâmetros inválidos e reset limpando a RAM sem tocar em perfis reais. O mock valida a lógica sequencial, **não mede concorrência real, FreeRTOS ou estabilidade física**.
 - `pokemon_lab_ui.c` recebeu watchdog LVGL de sessão (250 ms) enquanto a tela LAB está visível. Se um `PK LAB START/RESET` vier do monitor USB **após a abertura**, o card e o sprite obsoletos são ocultados, timers interrompidos e estatísticas atualizadas. Durante a abertura, a verificação de token por quadro continua ativa.
 - Pendentes novo CI Arduino da mudança, teste real da corrida de USB/touch no ESP32-S3, confirmação visual de uso da memória PSRAM, retorno ao Mimikyu e ausência de stutter. Laboratório ainda não produz Pokémon nem itens reais.
+
+
+## 24. Validação física do LAB — telemetria somente leitura (2026-11-06)
+
+- O commit `9fbfe1fd` passou integralmente no **CI Arduino** e **Pokémon Engine Checks**. Este marco verifica compilação e testes isolados, **não** touch, pixels ou PSRAM real.
+- Novo comando serial `PK LAB DIAG` (mesmo parser do `PK LAB STATUS`): só lê o contador da sessão, status LAB, memória interna livre, PSRAM livre/maior bloco alocável e espécie/frame count do cache TPK2. **Não monta SD, não lê perfis reais, não grava, não apaga nada.**
+- **Sequência de teste no aparelho, após build e upload local da versão que contenha DIAG:**
+  1. Fora de qualquer jogo Playgroup, anotar `PK LAB DIAG` e `PK LAB STATUS` via serial 115200.
+  2. Na tela DIAL entrar em Pokémon → STATS → TEST LAB; selecionar Poké/Great/Ultra/Master, executar uma abertura por tipo e verificar texto `SD PREVIEW` versus `LAB ART`. É esperado fallback para espécie não instalada.
+  3. Abrir x100, observar o card, fazer `PK LAB DIAG` + `PK LAB STATUS`; repetir algumas aberturas e comparar PSRAM livre/maior bloco com o valor inicial. Não supor fuga por uma única amostra: caches e montagem podem reservar memória naturalmente.
+  4. Com o LAB aberto, executar `PK LAB RESET` via USB após a revelação: o card antigo deve desaparecer e as estatísticas voltar a zero; depois iniciar novo draw e executar RESET **durante** a animação.
+  5. Voltar ao Companion, conferir Mimikyu #778 e suas animações; navegar para a tela inicial. Repetir após abrir diversos resultados.
+- Enviar logs `[Pokemon LAB] DIAG`, `[Pokemon LAB] STATUS`, possíveis mensagens `[Pokemon] TPK2 Idle` e fotos da tela. **Nenhuma conclusão de estabilidade física antes dessa evidência.**
+- Não executar durante partidas Magic/Playgroup ativas, não criar usuário real de teste, não fazer merge da PR. Se houver reset, travamento ou alteração inesperada de dados, interromper testes e manter recompensas reais desligadas.
