@@ -14,7 +14,10 @@ int main(void)
     assert(pk_companion_next_owned(&profile,0,-1)==778);
     assert(pk_companion_next_owned(&profile,778,1)==778);
     assert(pk_register_discovery(&profile,25,false));
-    assert(pk_register_discovery(&profile,1025,true));
+    assert(!pk_companion_is_owned(&profile,25));
+    assert(pk_companion_next_owned(&profile,778,1)==778);
+    assert(pk_team_add(&profile,25,false));
+    assert(pk_team_add(&profile,1025,true));
     assert(pk_companion_is_owned(&profile,1025));
     assert(pk_companion_next_owned(&profile,25,1)==778);
     assert(pk_companion_next_owned(&profile,778,1)==1025);
