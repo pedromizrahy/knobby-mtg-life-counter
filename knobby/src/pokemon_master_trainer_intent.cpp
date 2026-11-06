@@ -99,15 +99,17 @@ extern "C" bool pk_mt_intent_finalize(uint32_t id,uint32_t game_id,
         return false;
     if(io->get_ledger(io->ctx,id,game_id)!=PK_LEDGER_COMMITTED)
         return false;
-    pk_profile_t persisted={};
-    if(!io->load_profile(io->ctx,id,&persisted)) return false;
-    /* Do not trust just the level or game ID: any divergent profile
-     * requires reconciliation, never a guessed prize. */
-    if(memcmp(&persisted,&r.after,sizeof(persisted))!=0)return false;
     pk_mt_state_t wallet={};
     const pk_mt_status_t status=pk_mt_inspect(id,&wallet);
+    /* A previously completed claim remains settled even after later
+     * games update the profile. Never reissue spent currency. */
     if(status==PK_MT_VALID)
         return wallet.unlocked && wallet.unlock_game_id==game_id;
     if(status!=PK_MT_MISSING)return false;
+    pk_profile_t persisted={};
+    if(!io->load_profile(io->ctx,id,&persisted)) return false;
+    /* A first-time claim requires the exact saved profile snapshot.
+     * Any intervening game without a claim must block reconciliation. */
+    if(memcmp(&persisted,&r.after,sizeof(persisted))!=0)return false;
     return pk_mt_unlock(id,game_id,&r.before,&r.after);
 }
