@@ -137,3 +137,12 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - Novo helper puro `pokemon_sprite_path.{h,c}` evita aceitar caminhos livres ou IDs fora da Pokédex. Testes em `tests/pokemon_sprite_path_test.c`, incorporados ao CI.
 - **Limitação importante:** o cache de frames LVGL é compartilhado; antes de trocar espécies, a interface precisa pausar animações e remover referências aos frames anteriores para evitar ponteiros inválidos. Por isso a UI atual segue usando **somente Mimikyu**, sem seleção automática e sem alterar a posição/arte.
 - **Pendências:** validação do novo carregador no ESP32; auditoria real dos arquivos no SD; escolha da espécie selecionada a partir de coleção persistida; troca segura de frames e layout dinamicamente, incluindo nome, tipo e bioma; transação de abertura de gacha antes de qualquer sorteio real.
+
+
+## 12. Transferência USB multi-sprites — implementação preliminar
+
+- `PK PMD PUT <dex> <size> <crc32>` agora aceita species 1–1025 via `pk_pmd_put_species` e mantém `PK PMD PUT 778` compatível. O parser está em `playgroup_api.cpp`, conservando o bloqueio durante partida ativa.
+- Destino `/mons/p<ID>.bin`, temporário `/mons/p<ID>.part`; ambos gerados a partir de ID numérico e nunca de caminho livre. Não sobrescreve destino existente, não remove temporário de execução anterior e não formata SD.
+- `tools/pokemon/upload_batch.py`: valida TPK2 e CRC32; **dry-run padrão**, `--execute` explícito para enviar; exclui Mimikyu #778 por padrão. Testes de plano e protocolo em `tests/test_pokemon_batch_upload.py`.
+- O primeiro lote `candidate_pool.json` tem 14 candidatos, mas não significa que seus arquivos estão instalados. Nenhum asset foi distribuído no repositório nem transferido para hardware nesta etapa.
+- **Pendências antes de upload:** revisão do build ESP32, espaço livre real no SD, testes físicos de leitura/escrita e de reinício após upload interrompido, validação no aparelho dos formatos, proteção de gameplay em janela serial, seleção dinâmica de sprites, consumo transacional no gacha.
