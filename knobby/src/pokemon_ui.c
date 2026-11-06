@@ -4,9 +4,9 @@
 #include <stdio.h>
 #include <stdint.h>
 
-/* A companion-focused 360x360 display, inspired by the round-screen approach
- * in TamaPoke. No artwork is copied or bundled: only the user-installed
- * /mons/p778.bin is displayed. No synthetic rewards or Playgroup numbers.
+/* A companion-focused 360x360 display. Art always comes from user-installed
+ * TPK2 sprites on SD. No synthetic rewards or Playgroup numbers.
+ * Explicit other-species selection is opt-in; Mimikyu #778 remains default.
  * All controls operate outside Magic gameplay screens. */
 lv_obj_t *screen_pokemon_companion = NULL;
 
@@ -15,6 +15,9 @@ static lv_obj_t *mimikyu_image = NULL;
 static lv_obj_t *mimikyu_status = NULL;
 static lv_obj_t *theme_label = NULL;
 static lv_obj_t *page_label = NULL;
+static lv_obj_t *species_label = NULL;
+static lv_obj_t *species_types = NULL;
+static uint16_t displayed_species = 0;
 static lv_obj_t *header_plate = NULL;
 static lv_obj_t *info_panel = NULL;
 static lv_obj_t *stats_panel = NULL;
@@ -93,7 +96,9 @@ static void update_page(void)
     if(home) {
         lv_obj_clear_flag(info_panel,LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(stats_panel,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
+        if (pk_tpk2_idle_frame_count())
+            lv_obj_clear_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(page_label,"COMPANION");
     } else {
         lv_obj_add_flag(info_panel,LV_OBJ_FLAG_HIDDEN);
@@ -139,24 +144,71 @@ void pokemon_ui_knob_page(int direction)
     companion_page=(companion_page+1U)%2U;
     update_page();
 }
+/* Switch sprites only on the UI thread, after detaching the LVGL image.
+ * The renderer reuses a bounded PSRAM frame cache, so the previous cache
+ * must never remain referenced by a visible LVGL object when released.
+ * This is a preview API, not an inventory selection or a reward claim. */
+bool pokemon_ui_show_species(uint16_t species)
+{
+    if(!screen_pokemon_companion || !mimikyu_image || !mimikyu_timer ||
+       species<1U || species>1025U)
+        return false;
+    if(pk_tpk2_idle_loaded_species()==species &&
+       pk_tpk2_idle_frame_count()>0) {
+        displayed_species=species;
+    } else {
+        const uint16_t previous=pk_tpk2_idle_loaded_species();
+        lv_timer_pause(mimikyu_timer);
+        lv_obj_add_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
+        /* Drop the old descriptor while memory is still allocated. */
+        lv_img_set_src(mimikyu_image,NULL);
+        for(unsigned i=0;i<pk_tpk2_idle_frame_count();i++)
+            lv_img_cache_invalidate_src(pk_tpk2_idle_frame(i));
+
+        bool ready=pk_tpk2_idle_load_species(species);
+        if(!ready) {
+            /* A failed test selection does not invent a companion.
+             * Restore the last valid species, or the Mimikyu default. */
+            if(previous && previous!=species)
+                ready=pk_tpk2_idle_load_species(previous);
+            if(!ready && species!=778U && previous!=778U)
+                ready=pk_tpk2_idle_load_species(778U);
+            if(!ready) {
+                displayed_species=0;
+                if(species_label)lv_label_set_text(species_label,"SPRITE UNAVAILABLE");
+                if(species_types)lv_label_set_text(species_types,"TYPE: NOT AVAILABLE");
+                update_page();
+                return false;
+            }
+            displayed_species=pk_tpk2_idle_loaded_species();
+        } else displayed_species=species;
+    }
+    if(species_label) {
+        if(displayed_species==778U)lv_label_set_text(species_label,"MIMIKYU  #778");
+        else {
+            char label[32];
+            snprintf(label,sizeof(label),"POKEMON  #%u",(unsigned)displayed_species);
+            lv_label_set_text(species_label,label);
+        }
+    }
+    if(species_types)
+        lv_label_set_text(species_types,
+                          displayed_species==778U?"GHOST  /  FAIRY":"TYPE: NOT LINKED");
+    mimikyu_frame=0;
+    lv_img_set_src(mimikyu_image,pk_tpk2_idle_frame(0));
+    lv_obj_align(mimikyu_image,LV_ALIGN_CENTER,0,-7);
+    lv_timer_set_period(mimikyu_timer,pk_tpk2_idle_duration_ms(0));
+    lv_timer_reset(mimikyu_timer);
+    lv_timer_resume(mimikyu_timer);
+    update_page();
+    return displayed_species==species;
+}
 void pokemon_ui_open_companion(void)
 {
     companion_page=0;
-    /* Load the actual sprite BEFORE allocating the backdrop. */
-    bool ready=pk_tpk2_idle_load();
+    /* Keep Mimikyu #778 as the initial, proven working companion. */
+    (void)pokemon_ui_show_species(778U);
     update_theme();
-    mimikyu_frame=0;
-    if(ready) {
-        lv_obj_clear_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
-        lv_img_set_src(mimikyu_image,pk_tpk2_idle_frame(0));
-        lv_obj_align(mimikyu_image,LV_ALIGN_CENTER,0,-7);
-        lv_timer_set_period(mimikyu_timer,pk_tpk2_idle_duration_ms(0));
-        lv_timer_reset(mimikyu_timer);
-        lv_timer_resume(mimikyu_timer);
-    } else {
-        lv_obj_add_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
-        lv_timer_pause(mimikyu_timer);
-    }
     update_page();
     if(screen_pokemon_companion)lv_scr_load(screen_pokemon_companion);
 }
@@ -188,8 +240,8 @@ void pokemon_ui_build(void)
     lv_obj_set_style_bg_opa(header_plate,LV_OPA_90,0);
     page_label=text_label(header_plate,"COMPANION",5,
                           &lv_font_montserrat_14,0xB4E8CC);
-    text_label(header_plate,"MIMIKYU  #778",23,
-               &lv_font_montserrat_22,0xFFFFFF);
+    species_label=text_label(header_plate,"MIMIKYU  #778",23,
+                             &lv_font_montserrat_22,0xFFFFFF);
     theme_label=text_label(screen_pokemon_companion,"MEADOW",91,
                            &lv_font_montserrat_14,0x173B37);
     lv_obj_set_style_bg_color(theme_label,lv_color_hex(0xF1EEDB),0);
@@ -204,7 +256,8 @@ void pokemon_ui_build(void)
 
     info_panel=scene_shape(screen_pokemon_companion,232,39,64,236,17);
     lv_obj_set_style_bg_opa(info_panel,LV_OPA_90,0);
-    text_label(info_panel,"GHOST  /  FAIRY",2,&lv_font_montserrat_14,0x274F46);
+    species_types=text_label(info_panel,"GHOST  /  FAIRY",2,
+                             &lv_font_montserrat_14,0x274F46);
     /* Real level/XP requires a connected profile; never invent stats. */
     lv_obj_t *sub=text_label(info_panel,"LV / XP: NOT LINKED",20,
                               &lv_font_montserrat_14,0x274F46);
