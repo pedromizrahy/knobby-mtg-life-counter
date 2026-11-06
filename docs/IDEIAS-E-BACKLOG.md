@@ -193,3 +193,12 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - A tela LAB **não aparece dentro do jogo Magic**, não usa dados de usuário do Playgroup e não foi vinculada a um assento. É uma ferramenta de teste para inspecionar sorteios/rates/badges no hardware.
 - **Antes de upload:** conferir compilação Arduino da nova tela e, depois, validação visual/touch no ESP32-S3 (geometria circular, event handlers, heap, saída da tela e retorno ao companion). Testes host do motor não comprovam aparência ou fluidez.
 - **Etapas futuras:** arte pixelada original e animação de Pokébola, carregamento de sprites reais dentro do laboratório, gráficos de taxa por amostra, histórico e filtros, e opção de perfil de testes persistente (se desejado) em namespace próprio, sem conectar ao Playgroup.
+
+
+## 17. Animação pixelada de abertura no TEST LAB (2026-11-06)
+
+- Adicionados `pokemon_lab_ball_art.{h,c}`: quatro Pokébolas desenhadas por código, pixelizadas em uma grade lógica de 32×32 ampliada 2× para 64×64 (RGB565 + alpha), com seis quadros: fechada, movimento, tampa abrindo, iluminação, brilho e revelação. Não são imagens oficiais externas ou sprites de Pokémon.
+- A tela `pokemon_lab_ui.c` mostra a bola selecionada e executa a sequência em timer LVGL de 140 ms, usando buffer persistente de 12 KiB, sem alocações por frame. O desenho da bola é apenas visual e não altera RNG, perfis, ledger ou inventário.
+- **Um toque = um único sorteio** (`x1` ou `x100`) antes da animação; novos draws, troca de bola, badge e reset ficam bloqueados enquanto a sequência ocorre. Retornar da tela pausa o timer sem repetir nem reverter sorteios registrados. Ao terminar, o resultado sintético e as porcentagens ficam visíveis.
+- Testes `pokemon_lab_ball_art_test.c` verificam todas as quatro cores e seis frames, rejeição de índices inválidos, transparência e diferenças entre variantes e fases. Adicionados ao workflow Pokémon.
+- **Pendente:** validação visual/touch/tempo no ESP32-S3, revisão de layout circular (64×64 é visual provisório, não arte final), artes finais em alta qualidade e efeitos posteriores de Pokémon. LAB é totalmente isolado do Playgroup; gacha real e gasto de Pokébolas continuam desativados.
