@@ -1,4 +1,5 @@
 #include "pokemon_tpk2_renderer.h"
+#include "pokemon_sprite_path.h"
 #include "../board_detect.h"
 #include <Arduino.h>
 #include <esp_heap_caps.h>
@@ -26,6 +27,7 @@ struct Frame {
 Frame frames[kMaxFrames] = {};
 unsigned frame_count = 0;
 bool loaded = false;
+uint16_t current_species = 0;
 
 bool exact(File &file, void *dest, size_t size) {
     return file.read((uint8_t *)dest, size) == size;
@@ -130,9 +132,14 @@ extern "C" void pk_tpk2_idle_release(void) {
     }
     frame_count=0;
     loaded=false;
+    current_species=0;
 }
-extern "C" bool pk_tpk2_idle_load(void) {
-    if (loaded) return true;
+extern "C" bool pk_tpk2_idle_load_species(uint16_t species) {
+    char path[24];
+    if (!pk_sprite_path(species,path,sizeof(path))) return false;
+    if (loaded && current_species==species) return true;
+    /* Callers must stop animations and detach LVGL references before
+     * replacing the shared sprite cache. */
     pk_tpk2_idle_release();
     int clk=-1,cmd=-1,d0=-1;
     if (board==&board_k518) { clk=4;cmd=3;d0=5; }
@@ -144,7 +151,7 @@ extern "C" bool pk_tpk2_idle_load(void) {
     }
     bool success=false;
     if (SD_MMC.cardType()!=CARD_NONE) {
-        File file=SD_MMC.open("/mons/p778.bin",FILE_READ);
+        File file=SD_MMC.open(path,FILE_READ);
         if (file && !file.isDirectory()) success=read_frames(file);
         if (file) file.close();
     }
@@ -155,8 +162,16 @@ extern "C" bool pk_tpk2_idle_load(void) {
         return false;
     }
     loaded=true;
-    Serial.printf("[Pokemon] TPK2 Idle: ready, %u real frames (read-only)\n",frame_count);
+    current_species=species;
+    Serial.printf("[Pokemon] TPK2 Idle: species #%u ready, %u real frames (read-only)\n",
+                  (unsigned)species,frame_count);
     return true;
+}
+extern "C" bool pk_tpk2_idle_load(void) {
+    return pk_tpk2_idle_load_species(778U);
+}
+extern "C" uint16_t pk_tpk2_idle_loaded_species(void) {
+    return loaded?current_species:0U;
 }
 extern "C" const lv_img_dsc_t *pk_tpk2_idle_frame(unsigned i) {
     return loaded && i<frame_count ? &frames[i].image : nullptr;
