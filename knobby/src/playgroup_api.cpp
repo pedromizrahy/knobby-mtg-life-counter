@@ -2770,14 +2770,14 @@ static void pokemon_lab_print_status(void)
         Serial.println("[Pokemon LAB] INACTIVE (no saved test account)");
         return;
     }
-    Serial.printf("[Pokemon LAB] RAM ONLY / UNLIMITED BALLS / level=%u / Master Trainer=%s\\n",
+    Serial.printf("[Pokemon LAB] RAM ONLY / UNLIMITED BALLS / level=%u / Master Trainer=%s\n",
                   (unsigned)pokemon_lab.simulated_level,
                   pokemon_lab.master_trainer_badge?"YES":"NO");
     const char *tier_names[]={"common","rare","epic","legendary"};
     for(unsigned b=0;b<PK_BALL_COUNT;b++) {
         const unsigned long long total=
             (unsigned long long)pokemon_lab.draws[b];
-        Serial.printf("[Pokemon LAB] %s draws=%llu shiny=%llu\\n",
+        Serial.printf("[Pokemon LAB] %s draws=%llu shiny=%llu\n",
                       pokemon_lab_ball_name(b),total,
                       (unsigned long long)pokemon_lab.shinies[b]);
         for(unsigned t=0;t<PK_TIER_COUNT;t++) {
@@ -2785,13 +2785,13 @@ static void pokemon_lab_print_status(void)
                 (unsigned long long)pokemon_lab.tiers[b][t];
             const unsigned long long basis_points=total?
                 (hits*10000ULL)/total:0ULL;
-            Serial.printf("[Pokemon LAB]   %s = %llu (%llu.%02llu%%)\\n",
+            Serial.printf("[Pokemon LAB]   %s = %llu (%llu.%02llu%%)\n",
                           tier_names[t],hits,basis_points/100ULL,
                           basis_points%100ULL);
         }
     }
     if(pokemon_lab.has_last)
-        Serial.printf("[Pokemon LAB] Last %s: synthetic species=%u tier=%u shiny=%u\\n",
+        Serial.printf("[Pokemon LAB] Last %s: synthetic species=%u tier=%u shiny=%u\n",
                       pokemon_lab_ball_name(pokemon_lab.last_ball),
                       (unsigned)pokemon_lab.last.species,
                       (unsigned)pokemon_lab.last.tier,
@@ -2849,7 +2849,7 @@ static void pokemon_lab_handle_command(const char *line)
             Serial.println("[Pokemon LAB] ERROR: START lab or RNG failed; no batch committed.");
             return;
         }
-        Serial.printf("[Pokemon LAB] %u synthetic %s draw(s) completed.\\n",
+        Serial.printf("[Pokemon LAB] %u synthetic %s draw(s) completed.\n",
                       count,pokemon_lab_ball_name((unsigned)type));
         pokemon_lab_print_status();
         return;
