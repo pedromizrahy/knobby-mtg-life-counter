@@ -31,7 +31,11 @@ typedef struct {
 typedef bool (*pk_gacha_rng_t)(void *ctx,uint32_t *out);
 /* Default shiny chance 1/4096, configurable later. */
 #define PK_GACHA_SHINY_DENOMINATOR 4096U
-/* Preflight before enabling OPEN: every tier with nonzero weight needs\n * at least one species with usable installed sprite. Pure, no RNG. */\nbool pk_gacha_catalog_ready(uint8_t ball,\n                            const pk_gacha_entry_t *catalog,size_t count);\n/* Returns true only if the full draw succeeds. Missing tier/assets
+/* Preflight before enabling OPEN: every tier with nonzero weight needs
+ * at least one species with usable installed sprite. Pure, no RNG. */
+bool pk_gacha_catalog_ready(uint8_t ball,
+                            const pk_gacha_entry_t *catalog,size_t count);
+/* Returns true only if the full draw succeeds. Missing tier/assets
  * or RNG failure leaves output unchanged. Does not consume a Pokeball.
  */
 bool pk_gacha_preview(uint8_t ball,
