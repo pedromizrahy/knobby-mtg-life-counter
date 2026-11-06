@@ -1,6 +1,7 @@
 #include "pokemon_lab_ui.h"
 #include "pokemon_lab_runtime.h"
 #include "pokemon_lab_ball_art.h"
+#include "pokemon_lab_reveal.h"
 #include "pokemon_ui.h"
 #include <lvgl.h>
 #include <stdio.h>
@@ -16,6 +17,11 @@ static lv_obj_t *ball_label=NULL;
 static lv_obj_t *reveal_label=NULL;
 static lv_obj_t *rates_label=NULL;
 static lv_obj_t *count_label=NULL;
+static lv_obj_t *reveal_card=NULL;
+static lv_obj_t *reveal_title=NULL;
+static lv_obj_t *reveal_detail=NULL;
+static pk_lab_t captured_draw={0};
+static bool captured_valid=false;
 static lv_obj_t *ball_image=NULL;
 static lv_timer_t *ball_timer=NULL;
 static unsigned animation_frame=0;
@@ -131,6 +137,28 @@ static void ball_paint(unsigned frame)
     lv_img_cache_invalidate_src(&ball_descriptor);
     lv_img_set_src(ball_image,&ball_descriptor);
 }
+static void show_reveal_card(void)
+{
+    if(!reveal_card || !captured_valid || !captured_draw.has_last)return;
+    const pk_gacha_result_t *r=&captured_draw.last;
+    char details[80];
+    if(!pk_lab_reveal_text(r,details,sizeof(details)))return;
+    const char *name=pk_lab_fixture_name(r->species);
+    static const uint32_t accent[]={
+        0xA5D7B9,0x7CBCE7,0xB9A2F3,0xE9C26D
+    };
+    if(!name || r->tier>=PK_TIER_COUNT)return;
+    char label[48];
+    snprintf(label,sizeof(label),"%s  #%u",name,(unsigned)r->species);
+    lv_label_set_text(reveal_title,label);
+    snprintf(label,sizeof(label),"%s%s | SIM ONLY",
+             pk_lab_tier_name(r->tier),r->shiny?" *SHINY*":"");
+    lv_label_set_text(reveal_detail,label);
+    lv_obj_set_style_border_color(reveal_card,lv_color_hex(accent[r->tier]),0);
+    lv_obj_set_style_text_color(reveal_title,
+                    lv_color_hex(r->shiny?0xFDEBA4:accent[r->tier]),0);
+    lv_obj_clear_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
+}
 static void ball_tick(lv_timer_t *timer)
 {
     (void)timer;
@@ -148,8 +176,10 @@ static void ball_tick(lv_timer_t *timer)
         lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
-        /* Show the outcome that was already sampled once on DRAW. */
+        /* The card shows this DRAW's frozen result, not a concurrent
+         * serial draw. Statistics may reflect newer serial activity. */
         lab_refresh();
+        show_reveal_card();
         return;
     }
     ball_paint(animation_frame);
@@ -159,6 +189,7 @@ static void ball_begin(void)
     if(!ball_timer || !ball_image)return;
     animation_frame=0;
     animating=true;
+    if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
@@ -172,15 +203,19 @@ static void on_ball(lv_event_t *event)
     unsigned chosen=(unsigned)(uintptr_t)lv_event_get_user_data(event);
     if(animating || chosen>=PK_BALL_COUNT)return;
     active_ball=(uint8_t)chosen;
+    if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
     lab_refresh();
 }
 static void on_draw(lv_event_t *event)
 {
     (void)event;
     if(animating)return;
-    if(!pk_lab_runtime_draw(active_ball,batch)) {
+    if(!pk_lab_runtime_draw_snapshot(active_ball,batch,&captured_draw)) {
         if(reveal_label)lv_label_set_text(reveal_label,"DRAW FAILED (SIM)");
-    } else ball_begin();
+    } else {
+        captured_valid=true;
+        ball_begin();
+    }
 }
 static void on_batch(lv_event_t *event)
 {
@@ -204,6 +239,7 @@ static void on_back(lv_event_t *event)
     (void)event;
     if(ball_timer)lv_timer_pause(ball_timer);
     animating=false;
+    if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
     if(ball_image)lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
     if(reveal_label)lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
     if(rates_label)lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
@@ -219,6 +255,8 @@ void pokemon_lab_ui_open(void)
     if(!state.active && !pk_lab_runtime_start())return;
     active_ball=PK_BALL_POKE;
     batch=1;
+    captured_valid=false;
+    if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
     animating=false;
     if(ball_timer)lv_timer_pause(ball_timer);
     if(ball_image)lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
@@ -279,4 +317,22 @@ void pokemon_lab_ui_build(void)
     lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
     ball_timer=lv_timer_create(ball_tick,140,NULL);
     lv_timer_pause(ball_timer);
+    /* Non-interactive reveal layer above statistics, still strictly a
+     * simulated fixture. Original 64x64 ball remains separately animated. */
+    reveal_card=lv_obj_create(lab_screen);
+    lv_obj_set_size(reveal_card,278,70);
+    lv_obj_align(reveal_card,LV_ALIGN_TOP_MID,0,214);
+    lv_obj_set_style_radius(reveal_card,15,0);
+    lv_obj_set_style_bg_color(reveal_card,lv_color_hex(0x132733),0);
+    lv_obj_set_style_bg_opa(reveal_card,LV_OPA_COVER,0);
+    lv_obj_set_style_border_width(reveal_card,2,0);
+    lv_obj_set_style_pad_all(reveal_card,0,0);
+    lv_obj_set_style_shadow_width(reveal_card,0,0);
+    lv_obj_clear_flag(reveal_card,LV_OBJ_FLAG_CLICKABLE |
+                                      LV_OBJ_FLAG_SCROLLABLE);
+    reveal_title=lab_text(reveal_card,"",10,268,0xFDEBA4,
+                           &lv_font_montserrat_22);
+    reveal_detail=lab_text(reveal_card,"",43,268,0xFFFFFF,
+                            &lv_font_montserrat_14);
+    lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
 }
