@@ -7,13 +7,17 @@ typedef struct {
     int save_fail,prepared_fail,commit_fail,intent_prepare_fail,intent_finalize_fail;
     int event_order,prepare_order,save_order,commit_order,finalize_order;
     uint32_t game_id, pending_id,intent_game;
+    uint32_t committed[8];unsigned committed_count;
     pk_ledger_state_t state;
     pk_mt_intent_status_t intent;
     int spent, unlocks;
 } mock_t;
 static pk_ledger_state_t get(void *v,uint32_t u,uint32_t g) {
     mock_t *m=v;(void)u;
-    return m->game_id==g?m->state:PK_LEDGER_ABSENT;
+    if(m->game_id==g)return m->state;
+    for(unsigned i=0;i<m->committed_count;i++)
+        if(m->committed[i]==g)return PK_LEDGER_COMMITTED;
+    return PK_LEDGER_ABSENT;
 }
 static bool record(void *v,uint32_t u,uint32_t g,pk_ledger_state_t s){
     mock_t *m=v;(void)u;
@@ -21,7 +25,10 @@ static bool record(void *v,uint32_t u,uint32_t g,pk_ledger_state_t s){
        (s==PK_LEDGER_COMMITTED&&m->commit_fail))return false;
     m->game_id=g;m->state=s;
     m->pending_id=s==PK_LEDGER_PREPARED?g:0;
-    if(s==PK_LEDGER_COMMITTED)m->commit_order=++m->event_order;
+    if(s==PK_LEDGER_COMMITTED){
+        m->commit_order=++m->event_order;
+        if(m->committed_count<8)m->committed[m->committed_count++]=g;
+    }
     return true;
 }
 static bool load(void *v,uint32_t u,pk_profile_t *p){
