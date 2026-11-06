@@ -31,6 +31,8 @@ int main(void)
       {150,PK_TIER_EPIC,1},
       {151,PK_TIER_LEGENDARY,1}
     };
+    for(unsigned ball=0;ball<PK_BALL_COUNT;ball++)
+        assert(pk_gacha_catalog_ready(ball,pool,4));
     const uint16_t expected[PK_BALL_COUNT][PK_TIER_COUNT]={
         {7500,2000,450,50},
         {5500,3000,1300,200},
@@ -59,6 +61,9 @@ int main(void)
     assert(draw(PK_BALL_MASTER,0,pool,4,&result));
     assert(result.tier==PK_TIER_LEGENDARY);
 
+    const pk_gacha_entry_t only_legend[]={ {151,PK_TIER_LEGENDARY,1} };
+    assert(pk_gacha_catalog_ready(PK_BALL_MASTER,only_legend,1));
+    assert(!pk_gacha_catalog_ready(PK_BALL_POKE,only_legend,1));
     /* Independent shiny roll, same Pokemon and tier. */
     rng_state_t shiny={{10000,0,4096},3,0,false};
     assert(pk_gacha_preview(PK_BALL_POKE,pool,4,next,&shiny,&result));
@@ -67,6 +72,10 @@ int main(void)
     /* Missing selected rarity cannot silently become another tier. */
     pk_gacha_result_t unchanged={999,7,7};
     const pk_gacha_entry_t starter[]={ {778,PK_TIER_RARE,1} };
+    assert(!pk_gacha_catalog_ready(PK_BALL_POKE,starter,1));
+    assert(!pk_gacha_catalog_ready(PK_BALL_GREAT,starter,1));
+    assert(!pk_gacha_catalog_ready(PK_BALL_ULTRA,starter,1));
+    assert(!pk_gacha_catalog_ready(PK_BALL_MASTER,starter,1));
     assert(!draw(PK_BALL_MASTER,0,starter,1,&unchanged));
     assert(unchanged.species==999 && unchanged.tier==7 && unchanged.shiny==7);
     assert(!draw(PK_BALL_POKE,0,starter,1,&unchanged));
@@ -74,6 +83,7 @@ int main(void)
     assert(!draw(PK_BALL_COUNT,0,pool,4,&unchanged));
     pk_gacha_entry_t bad[]={ {25,PK_TIER_COMMON,1},
                               {25,PK_TIER_RARE,1} };
+    assert(!pk_gacha_catalog_ready(PK_BALL_POKE,bad,2));
     assert(!draw(PK_BALL_POKE,0,bad,2,&unchanged));
     bad[1].species=151;bad[1].sprite_ready=0;
     assert(!draw(PK_BALL_POKE,0,bad,2,&unchanged));
