@@ -1,5 +1,6 @@
 #include "pokemon_ui.h"
 #include "pokemon_tpk2_renderer.h"
+#include "pokemon_companion_selection.h"
 #include "pokemon_biomes.h"
 #include <stdio.h>
 #include <stdint.h>
@@ -202,6 +203,12 @@ bool pokemon_ui_show_species(uint16_t species)
     lv_timer_resume(mimikyu_timer);
     update_page();
     return displayed_species==species;
+}
+bool pokemon_ui_show_owned_species(const pk_profile_t *profile,
+                                    uint16_t species)
+{
+    if(!pk_companion_is_owned(profile,species))return false;
+    return pokemon_ui_show_species(species);
 }
 void pokemon_ui_open_companion(void)
 {
