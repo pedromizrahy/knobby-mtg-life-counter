@@ -1,4 +1,5 @@
 #include "pokemon_ui.h"
+#include "pokemon_lab_ui.h"
 #include "pokemon_tpk2_renderer.h"
 #include "pokemon_companion_selection.h"
 #include "pokemon_companion_profile_view.h"
@@ -125,6 +126,11 @@ static void on_page(lv_event_t *event)
 {
     (void)event;
     pokemon_ui_knob_page(1);
+}
+static void on_lab(lv_event_t *event)
+{
+    (void)event;
+    pokemon_lab_ui_open();
 }
 static void on_theme(lv_event_t *event)
 {
@@ -306,13 +312,26 @@ void pokemon_ui_build(void)
                &lv_font_montserrat_14,0xE8F0E4);
     text_label(stats_panel,"Streak  --       Damage  --",85,
                &lv_font_montserrat_14,0xE8F0E4);
-    text_label(stats_panel,"Playgroup not linked",120,
+    text_label(stats_panel,"Playgroup not linked",112,
                &lv_font_montserrat_14,0xE8F0E4);
+    /* Test lab is an opt-in screen; never a Playgroup player/account. */
+    lv_obj_t *lab_entry=lv_btn_create(stats_panel);
+    lv_obj_set_size(lab_entry,104,29);
+    lv_obj_align(lab_entry,LV_ALIGN_BOTTOM_MID,0,-3);
+    lv_obj_set_style_radius(lab_entry,14,0);
+    lv_obj_set_style_bg_color(lab_entry,lv_color_hex(0xEAD6A4),0);
+    lv_obj_add_event_cb(lab_entry,on_lab,LV_EVENT_CLICKED,NULL);
+    lv_obj_t *lab_caption=lv_label_create(lab_entry);
+    lv_label_set_text(lab_caption,"TEST LAB");
+    lv_obj_set_style_text_color(lab_caption,lv_color_hex(0x19303A),0);
+    lv_obj_set_style_text_font(lab_caption,&lv_font_montserrat_14,0);
+    lv_obj_center(lab_caption);
 
     soft_button(screen_pokemon_companion,"BACK",68,-82,on_back);
     soft_button(screen_pokemon_companion,"SCENE",74,0,on_theme);
     soft_button(screen_pokemon_companion,"STATS",68,82,on_page);
 
+    pokemon_lab_ui_build();
     mimikyu_timer=lv_timer_create(idle_tick,200,NULL);
     lv_timer_pause(mimikyu_timer);
     /* Scene allocation is deferred until entry to reserve heap for sprite. */
