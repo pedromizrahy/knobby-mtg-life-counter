@@ -28,7 +28,8 @@ int main(void) {
  assert(pk_dex_count(&other)==1);
  /* Complete 10 wins to validate second milestone, no double payout. */
  for(unsigned id=106;id<=110;id++) assert(pk_award_game(&p,id,true,&reward));
- assert(p.wins==10 && p.balls[PK_BALL_ULTRA]==2);
+ /* Two five-win awards plus the level-50 milestone. */
+ assert(p.wins==10 && p.balls[PK_BALL_ULTRA]==3);
  assert(!pk_award_game(&p,110,true,&reward));
  /* One validated win gives 800 XP; level 99 -> 100, without
   * granting an untracked Master Ball on every Pokemon. */
