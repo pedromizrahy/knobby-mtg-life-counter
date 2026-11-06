@@ -1,4 +1,5 @@
 #include "pokemon_pmd_reader.h"
+#include "pokemon_sprite_path.h"
 #include "../board_detect.h"
 #include <Arduino.h>
 #include <FS.h>
@@ -105,9 +106,20 @@ static uint32_t pk_pmd_crc_step(uint32_t crc,const uint8_t *data,size_t n)
     return crc;
 }
 
-extern "C" void pk_pmd_put_mimikyu(unsigned long input_size,
-                                   unsigned long input_crc)
+extern "C" void pk_pmd_put_species(unsigned species,
+                                    unsigned long input_size,
+                                    unsigned long input_crc)
 {
+    char dest[24]={0},part[24]={0};
+    if(species>1025U || !pk_sprite_path((uint16_t)species,dest,sizeof(dest))) {
+        Serial.println("[Pokemon] PMD PUT ERR: invalid species.");
+        return;
+    }
+    const int part_n=snprintf(part,sizeof(part),"/mons/p%u.part",species);
+    if(part_n<=0 || (size_t)part_n>=sizeof(part)) {
+        Serial.println("[Pokemon] PMD PUT ERR: invalid staging path.");
+        return;
+    }
     const uint32_t size=(uint32_t)input_size;
     const uint32_t expected=(uint32_t)input_crc;
     if(size<7 || size>3UL*1024UL*1024UL || !board) {
@@ -126,8 +138,6 @@ extern "C" void pk_pmd_put_mimikyu(unsigned long input_size,
         Serial.println("[Pokemon] PMD PUT ERR: SD mount failed; no format.");
         return;
     }
-    const char *dest="/mons/p778.bin";
-    const char *part="/mons/p778.part";
     bool ok=false;
     if(SD_MMC.cardType()==CARD_NONE || SD_MMC.exists(dest)) {
         Serial.println("[Pokemon] PMD PUT ERR: SD missing or destination already exists.");
@@ -137,10 +147,10 @@ extern "C" void pk_pmd_put_mimikyu(unsigned long input_size,
         Serial.println("[Pokemon] PMD PUT ERR: cannot create /mons.");
         SD_MMC.end();return;
     }
-    /* .part is exclusively owned by this command. Remove stale incomplete
-     * transfers, but never touch the destination or other files. */
-    if(SD_MMC.exists(part) && !SD_MMC.remove(part)) {
-        Serial.println("[Pokemon] PMD PUT ERR: stale .part cannot be removed.");
+    /* Interrupted uploads are ambiguous. Never delete stale staging
+     * files automatically, and never overwrite an existing sprite. */
+    if(SD_MMC.exists(part)) {
+        Serial.println("[Pokemon] PMD PUT ERR: staging exists; no overwrite.");
         SD_MMC.end();return;
     }
     File out=SD_MMC.open(part,FILE_WRITE);
@@ -189,10 +199,16 @@ extern "C" void pk_pmd_put_mimikyu(unsigned long input_size,
     }
     if(!ok && remaining==0 && crc!=expected)failure="crc_mismatch";
     if(!ok && remaining==0 && crc==expected)failure="rename_failed";
-    if(!ok)SD_MMC.remove(part);
+    if(!ok && !SD_MMC.remove(part))
+        Serial.println("[Pokemon] PMD PUT WARN: staging cleanup failed.");
     SD_MMC.end();
     if(ok)Serial.printf("[Pokemon] PMD PUT DONE size=%lu crc32=%08lx\n",
                         (unsigned long)size,(unsigned long)crc);
     else Serial.printf("[Pokemon] PMD PUT ERR reason=%s remaining=%lu crc32=%08lx expected=%08lx; staging removed\n",
                        failure,(unsigned long)remaining,(unsigned long)crc,(unsigned long)expected);
+}
+
+extern "C" void pk_pmd_put_mimikyu(unsigned long size,unsigned long crc)
+{
+    pk_pmd_put_species(778U,size,crc);
 }
