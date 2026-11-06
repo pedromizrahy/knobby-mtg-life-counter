@@ -212,3 +212,12 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - Ao terminar os quadros a tela mostra card de revelação acima da área de estatísticas, com nome, número, raridade e sinalização de Shiny, e **SIM ONLY**. O card utiliza cores por categoria e destaca Shiny. Não é uma arte final, não armazena prêmio, não debita bola.
 - Adicionado `tests/pokemon_lab_reveal_test.c` ao CI com casos válidos, Shiny e rejeição de resultados incoerentes ou buffers pequenos.
 - Falta validar nova compilação e o novo card no ESP32-S3, incluindo condições de toque e sobreposição na tela circular. Nenhuma alteração nos IDs Playgroup reais nem no pós-jogo.
+
+
+## 19. Emblemas pixelados do resultado de teste (2026-11-06)
+
+- Compilação Arduino e Pokémon Engine Checks da revelação textual anterior **PASS** no commit `b1f84325`.
+- `pokemon_lab_fixture_art.{h,c}` gera quatro emblemas temáticos **originais de laboratório**, 40×40 RGB565+A, sem arte externa: raio para a fixture Pikachu #25, fantasma abstrato para Mimikyu #778, asas estilizadas para Dragonite #149 e símbolo psíquico para Mewtwo #150. Um sinal adicional de brilho é desenhado na variação Shiny.
+- A tela `pokemon_lab_ui.c` apresenta o emblema à esquerda do card de revelação, acompanhado de nome, National Dex ID, tier e `SIM ONLY`. Não promete renderização de sprites Pokémon oficiais: são **marcadores visuais de teste**, não criaturas instaladas no cartão SD.
+- Testes `tests/pokemon_lab_fixture_art_test.c` validam transparência, quatro espécies distintas, Shiny e entradas inválidas; incluídos no workflow Pokémon.
+- Ainda falta validar no ESP32-S3 real o layout circular, as fontes e a transição entre quadros e card; a compilação CI não valida toque nem imagem exibida na tela física. O LAB continua sem posse ou recompensa de Playgroup.
