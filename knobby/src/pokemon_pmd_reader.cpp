@@ -14,8 +14,13 @@ static bool pk_pmd_read_exact(File &f,uint8_t *dst,size_t n)
     return f.read(dst,n)==n;
 }
 
-extern "C" void pk_pmd_check_mimikyu_read_only(void)
+extern "C" void pk_pmd_check_species_read_only(unsigned species)
 {
+    char path[24]={0};
+    if(species>1025U || !pk_sprite_path((uint16_t)species,path,sizeof(path))) {
+        Serial.println("[Pokemon] PMD FAIL: invalid species.");
+        return;
+    }
     if(!board) {
         Serial.println("[Pokemon] PMD FAIL: board unavailable.");
         return;
@@ -27,7 +32,7 @@ extern "C" void pk_pmd_check_mimikyu_read_only(void)
         Serial.println("[Pokemon] PMD FAIL: unsupported board.");
         return;
     }
-    Serial.println("[Pokemon] PMD CHECK MIMIKYU #778: /mons/p778.bin (read-only)");
+    Serial.printf("[Pokemon] PMD CHECK #%u: %s (read-only)\n",species,path);
     if(!SD_MMC.setPins(clk,cmd,d0) ||
        !SD_MMC.begin("/sdcard",true,false)) {
         Serial.println("[Pokemon] PMD FAIL: SD mount failed; no format.");
@@ -38,9 +43,8 @@ extern "C" void pk_pmd_check_mimikyu_read_only(void)
         SD_MMC.end();
         return;
     }
-    const char *path="/mons/p778.bin";
     if(!SD_MMC.exists(path)) {
-        Serial.println("[Pokemon] PMD MISSING: /mons/p778.bin (asset not installed).");
+        Serial.printf("[Pokemon] PMD MISSING: %s (asset not installed).\n",path);
         SD_MMC.end();
         return;
     }
@@ -60,11 +64,12 @@ extern "C" void pk_pmd_check_mimikyu_read_only(void)
     const uint8_t action_count=header[4];
     const uint16_t palette_count=(uint16_t)header[5]|((uint16_t)header[6]<<8);
     if(ok)ok=action_count>0 && action_count<=12 &&
-             palette_count>0 && palette_count<=256 &&
+             palette_count>0 && palette_count<=255 &&
              7UL+(uint32_t)palette_count*2UL<=size;
     if(ok)ok=f.seek(7UL+(uint32_t)palette_count*2UL);
     unsigned seen_mask=0;
     unsigned frames_total=0;
+    bool idle_supported=false;
     for(unsigned i=0;ok && i<action_count;++i) {
         const uint32_t pos=(uint32_t)f.position();
         uint8_t act[4];
@@ -76,13 +81,19 @@ extern "C" void pk_pmd_check_mimikyu_read_only(void)
            (uint32_t)f.position()>size || bytes>size-(uint32_t)f.position()) {
             ok=false;break;
         }
+        if(id==0) {
+            const uint32_t expanded=(uint32_t)w*h*9UL*3UL*frames;
+            if(w>96 || h>96 || frames>12 ||
+               expanded>512UL*1024UL)ok=false;
+            else idle_supported=true;
+        }
         seen_mask|=1U<<id;
         frames_total+=frames;
         Serial.printf("[Pokemon] PMD ACTION id=%u size=%ux%u frames=%u\n",
                       id,w,h,frames);
         ok=f.seek((uint32_t)f.position()+bytes);
     }
-    if(ok)ok=(uint32_t)f.position()==size;
+    if(ok)ok=(uint32_t)f.position()==size && idle_supported;
     Serial.printf("[Pokemon] PMD %s size=%lu actions=%u palette=%u frames=%u\n",
                   ok?"VALID":"INVALID",(unsigned long)size,
                   (unsigned)action_count,(unsigned)palette_count,frames_total);
@@ -92,7 +103,12 @@ extern "C" void pk_pmd_check_mimikyu_read_only(void)
 }
 
 
-/* Optional USB transfer, only /mons/p778.bin, never overwrites another file.
+extern "C" void pk_pmd_check_mimikyu_read_only(void)
+{
+    pk_pmd_check_species_read_only(778U);
+}
+
+/* Optional USB transfer to /mons/p<ID>.bin, never overwrites another file.
  * Sender provides size and CRC32 and waits for a '#' after every 1024 bytes.
  * Stage in /mons/p778.part, then rename only after successful verification.
  */
