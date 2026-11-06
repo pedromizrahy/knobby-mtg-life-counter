@@ -27,6 +27,8 @@ static uint8_t fixture_pixels[PK_LAB_FIXTURE_BUFFER_BYTES];
 static lv_img_dsc_t fixture_descriptor={0};
 static bool lab_sprite_attached=false;
 static lv_timer_t *sprite_timer=NULL;
+static lv_timer_t *session_watchdog=NULL;
+static uint32_t visible_session=0;
 static unsigned sprite_frame=0;
 static uint16_t sprite_species=0;
 static pk_lab_t captured_draw={0};
@@ -186,6 +188,26 @@ static void lab_restore_companion(void)
     lab_detach_sprite();
     /* The companion page must not inherit a laboratory-only selection. */
     (void)pokemon_ui_show_species(778U);
+}
+/* A USB START/RESET can happen even after the reveal animation.
+ * Clear any already-visible stale card, sprite and counters next UI tick.
+ * UI-only timer; never calls Playgroup, reward or persistent storage. */
+static void lab_session_tick(lv_timer_t *timer)
+{
+    (void)timer;
+    if(lv_scr_act()!=lab_screen)return;
+    uint32_t now=0;
+    if(!pk_lab_runtime_session_token(&now) || now==visible_session)return;
+    visible_session=now;
+    captured_valid=false;
+    animating=false;
+    if(ball_timer)lv_timer_pause(ball_timer);
+    lab_detach_sprite();
+    if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
+    if(ball_image)lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
+    if(reveal_label)lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
+    if(rates_label)lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
+    lab_refresh();
 }
 static void show_reveal_card(void)
 {
@@ -349,6 +371,7 @@ static void on_reset(lv_event_t *event)
 {
     (void)event;
     if(animating || !pk_lab_runtime_start())return;
+    (void)pk_lab_runtime_session_token(&visible_session);
     /* A reset must never leave an old result or sprite on screen. */
     captured_valid=false;
     lab_detach_sprite();
@@ -359,6 +382,7 @@ static void on_back(lv_event_t *event)
 {
     (void)event;
     if(ball_timer)lv_timer_pause(ball_timer);
+    if(session_watchdog)lv_timer_pause(session_watchdog);
     animating=false;
     if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
     lab_restore_companion();
@@ -375,6 +399,7 @@ void pokemon_lab_ui_open(void)
     pk_lab_t state={0};
     if(!pk_lab_runtime_snapshot(&state))return;
     if(!state.active && !pk_lab_runtime_start())return;
+    if(!pk_lab_runtime_session_token(&visible_session))return;
     active_ball=PK_BALL_POKE;
     batch=1;
     captured_valid=false;
@@ -387,6 +412,7 @@ void pokemon_lab_ui_open(void)
     if(rates_label)lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
     lab_refresh();
     lv_scr_load(lab_screen);
+    if(session_watchdog)lv_timer_resume(session_watchdog);
 }
 void pokemon_lab_ui_build(void)
 {
@@ -472,4 +498,7 @@ void pokemon_lab_ui_build(void)
     lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
     sprite_timer=lv_timer_create(lab_sprite_tick,200,NULL);
     lv_timer_pause(sprite_timer);
+    session_watchdog=lv_timer_create(lab_session_tick,250,NULL);
+    /* Never run watchdog logic while the lab screen is inactive. */
+    lv_timer_pause(session_watchdog);
 }
