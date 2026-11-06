@@ -8,6 +8,8 @@ on:
       - 'knobby/src/pokemon_lab_runtime.*'
       - 'knobby/src/pokemon_lab_ui.*'
       - 'knobby/src/pokemon_lab_ball_art.*'
+      - 'knobby/src/pokemon_lab_reveal.*'
+      - 'tests/pokemon_lab_reveal_test.c'
       - 'tests/pokemon_lab_ball_art_test.c'
       - 'tests/pokemon_lab_test.c'
       - 'knobby/src/pokemon_sprite_path.*'
@@ -89,6 +91,10 @@ jobs:
           /tmp/pokemon_sprite_path_test
       - name: Test multi-sprite transfer protocol and dry-run safety
         run: python3 -m unittest discover -s tests -p test_pokemon_batch_upload.py -v
+      - name: Test synthetic Pokemon LAB reveal and Shiny labels
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_lab_reveal.c tests/pokemon_lab_reveal_test.c -o /tmp/pokemon_lab_reveal_test
+          /tmp/pokemon_lab_reveal_test
       - name: Test original pixel-ball procedural animation frames
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_lab_ball_art.c tests/pokemon_lab_ball_art_test.c -o /tmp/pokemon_lab_ball_art_test
