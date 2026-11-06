@@ -6,6 +6,8 @@ on:
       - 'knobby/src/pokemon_gacha.*'
       - 'knobby/src/pokemon_sprite_path.*'
       - 'knobby/src/pokemon_companion_selection.*'
+      - 'knobby/src/pokemon_companion_profile_view.*'
+      - 'tests/pokemon_companion_profile_view_test.c'
       - 'knobby/src/pokemon_ui.*'
       - 'tests/pokemon_companion_selection_test.c'
       - 'knobby/src/pokemon_tpk2_renderer.*'
@@ -65,6 +67,10 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_companion_selection.c tests/pokemon_companion_selection_test.c -o /tmp/pokemon_companion_selection_test
           /tmp/pokemon_companion_selection_test
+      - name: Test read-only authenticated profile companion view
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_companion_selection.c knobby/src/pokemon_companion_profile_view.c tests/pokemon_companion_profile_view_test.c -o /tmp/pokemon_companion_profile_view_test
+          /tmp/pokemon_companion_profile_view_test
       - name: Test safe SD sprite paths for all species
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_sprite_path.c tests/pokemon_sprite_path_test.c -o /tmp/pokemon_sprite_path_test
