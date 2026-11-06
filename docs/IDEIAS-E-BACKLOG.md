@@ -90,3 +90,13 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - **API voluntária:** `pk_mt_unlock` exige uma transição primeiro nível 100 e ID novo presente na partida confirmada; `pk_mt_inspect` consulta estado; `pk_mt_mark_spent` marca o único direito utilizado (não chamar até existir revelação do Pokémon com persistência conjunta).
 - **Testes:** `tests/pokemon_master_trainer_store_test.cpp` exercita unlock único, retomada do estado, consumo único, danos de arquivo, interrupção de escrita, IDs independentes e falhas de montagem, com mocks SPIFFS. Workflow Pokémon atualizado para rodá-los.
 - **Ainda falta antes de habilitar:** regra de persistência conjunta entre resultado confirmado, perfil XP, achievement e gacha; evitar perder a conquista se houver desligamento entre salvar perfil e gravar achievement; definir tratamento operacional para corrupção; testar recuperação no aparelho; integrar saldo da carteira e resultado da abertura de forma atômica. **Nenhuma recompensa real automática foi ligada.**
+
+
+## 7. Recuperação Master Trainer após queda de energia — nova fase isolada
+
+- Criado `pokemon_master_trainer_intent.{h,cpp}`: uma prova de transição nível 99→100 (snapshots antes/depois + game ID + checksum) guardada em SPIFFS antes de salvar o perfil da partida.
+- `pk_mt_intent_prepare()` cria o registro imutável uma vez e não sobrescreve registro incompleto, corrompido ou pertencente a outra partida.
+- `pk_mt_intent_finalize()` exige **COMMITTED** no ledger E perfil persistido idêntico à transição preparada; só então chama a carteira Master Trainer para disponibilizar a recompensa única. Tentativas de repetição reconhecem a mesma badge sem recriar Master Ball já gasta.
+- Testes isolados de ausência de commit, perfil não persistido, repetição, dados incompatíveis, escrita interrompida e carteira corrompida estão em `tests/pokemon_master_trainer_intent_test.cpp` e no workflow.
+- **NÃO CONECTADO AINDA:** integrar a preparação *antes do save do perfil* e a finalização *depois do commit* no coordenador de pós-jogo, sem fazer isso em uma janela que deixe um PREPARED insolúvel. Ainda precisa provar recuperação com queda real de energia, política de corrupção/storage cheio, e consumo atômico da Master Ball com revelação Pokémon no gacha.
+- Evitar consumir a carteira por `pk_mt_mark_spent` até a transação de gacha garantir que o Pokémon recebido está salvo. Sem alterações no firmware instalado nem prêmios automáticos.
