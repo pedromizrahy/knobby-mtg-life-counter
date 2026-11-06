@@ -1,6 +1,7 @@
 #ifndef POKEMON_UI_H
 #define POKEMON_UI_H
 #include "types.h"
+#include "pokemon_progress.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -14,6 +15,11 @@ void pokemon_ui_open_companion(void);
  * Failure restores the existing Mimikyu default if available.
  * Call only on the LVGL/UI thread, outside active game screens. */
 bool pokemon_ui_show_species(uint16_t species);
+/* Ownership-gated selection; use a validated, currently authenticated
+ * player's loaded profile. Still requires the sprite installed on SD.
+ * Explicit call only: does not resolve identity or write any profile. */
+bool pokemon_ui_show_owned_species(const pk_profile_t *profile,
+                                    uint16_t species);
 bool pokemon_ui_handle_back(lv_obj_t *screen);
 void pokemon_ui_knob_page(int direction);
 #ifdef __cplusplus
