@@ -155,3 +155,12 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - Cabeçalho e etiqueta de tipo ficam neutros para outras espécies (`POKEMON #ID` / `TYPE: NOT LINKED`), não inventam nomes/tipos. Mimikyu mantém `MIMIKYU #778` e `GHOST / FAIRY`.
 - `pokemon_ui_open_companion()` permanece no Mimikyu #778, sem trocar a home automaticamente. A posição e o estilo do Mimikyu não foram alterados.
 - **Pendente:** teste de compilação/execução do LVGL no firmware e troca real no ESP32, instalação de outro asset TPK2, fonte verdadeira de coleção/seleção, renderizar nomes/tipos consultando catálogo real. Os testes de motor Pokémon não compilam a tela LVGL nem comprovam ausência de artefatos no display.
+
+
+## 13. Seleção por coleção real (gate puro, sem usuário automático)
+
+- Criado `pokemon_companion_selection.{h,c}`: `pk_companion_is_owned(profile,id)` valida que espécie 1–1025 está registrada na Pokédex do perfil v1. O SD conter sprite **não** implica que o Pokémon pertence ao jogador; ter badge de descoberta também não deve substituir futuras regras de inventário/duplicatas.
+- `pk_companion_next_owned(profile,from,direction)` percorre as espécies descobertas em ambas as direções com wrap-around, sem modificar dados, para futura seleção no dial.
+- `pokemon_ui_show_owned_species(profile,id)` é chamada LVGL explícita que exige a checagem de coleção antes de tentar carregar o sprite instalado; não carrega usuário, não salva nada e não é invocada automaticamente. O caminho antigo `pokemon_ui_show_species` permanece para **preview/diagnóstico**; não usá-lo como caminho de seleção autenticada.
+- Teste unitário `tests/pokemon_companion_selection_test.c` verifica coleção vazia, espécies próprias/não descobertas, wrap, entradas inválidas e compatibilidade de perfil. Workflow Pokémon atualizado; build Arduino deve confirmar inclusão do novo módulo.
+- **Ainda falta:** identificar jogador Playgroup de forma durável, ler perfil real com autorização, definir semantics de posse (Pokédex atual marca descoberta, não fornece múltiplas unidades nem equipe armazenada completa), instalar um segundo TPK2 validado, testar troca visual no ESP32, e garantir timer/cache LVGL estáveis. Sem botão de seleção e sem premiações automáticas.
