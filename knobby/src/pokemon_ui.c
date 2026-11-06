@@ -222,6 +222,10 @@ static bool load_saved_profile(void *ctx,uint32_t id,pk_profile_t *out)
 bool pokemon_ui_show_saved_species(uint32_t verified_user_id,
                                    uint16_t species)
 {
+    /* This opt-in read must never touch SD/LVGL on a Magic gameplay
+     * screen. The current user must already be verified by the caller. */
+    if(!screen_pokemon_companion ||
+       lv_scr_act()!=screen_pokemon_companion)return false;
     pk_companion_view_t view;
     if(!pk_companion_read_view(load_saved_profile,NULL,
                                verified_user_id,species,&view))
