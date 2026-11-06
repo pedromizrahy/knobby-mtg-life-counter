@@ -8,6 +8,7 @@
 #include "playgroup_api.h"
 
 #include "playgroup_pending.h"
+#include "pokemon_player_identity.h"
 #include "damage_log.h"
 #include "game.h"
 #include "storage.h"
@@ -128,7 +129,7 @@ bool playgroup_pending_get_pokemon_reward_context(pg_pokemon_reward_context_t *o
     context.winner_index = (uint8_t)current_result_winner;
     for (int i=0; i<context.player_count; ++i) {
         long id = current_seed.players[i].user_id;
-        if (id <= 0 || (uint64_t)id > UINT32_MAX) return false;
+        if (id <= 0 || !pk_player_id_valid((uint64_t)id)) return false;
         for (int j=0; j<i; ++j)
             if (context.user_ids[j] == (uint32_t)id) return false;
         context.user_ids[i] = (uint32_t)id;
