@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools" / "pokemon"))
-from upload_batch import plan, upload
+from upload_batch import plan, upload, verify_installed
 
 
 def sprite():
@@ -43,14 +43,31 @@ class BatchUploadTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             plan(self.manifest, self.root)
 
+    def test_post_upload_verification_succeeds(self):
+        port = MagicMock()
+        port.readline.side_effect = [
+            b"[Pokemon] PMD CHECK #25: /mons/p25.bin (read-only)\\n",
+            b"[Pokemon] PMD VALID size=16 actions=1 palette=1 frames=1\\n",
+            b"[Pokemon] PMD CHECK COMPLETE: card unmounted; no files modified.\\n",
+        ]
+        verify_installed(port, 25)
+        port.write.assert_called_once_with(b"PK PMD CHECK 25\\n")
+
+    def test_post_upload_verification_fails_closed(self):
+        port = MagicMock()
+        port.readline.side_effect = [b"[Pokemon] PMD INVALID size=16\\n"]
+        with self.assertRaises(RuntimeError):
+            verify_installed(port, 25)
+
     def test_protocol_uses_species_and_256_byte_acks(self):
         fake = MagicMock()
-        with patch("upload_batch.receive") as read, patch("upload_batch.time.sleep"):
+        with patch("upload_batch.receive") as read, patch("upload_batch.verify_installed") as verify, patch("upload_batch.time.sleep"):
             upload(fake, 25, sprite(), 0x1234abcd)
             self.assertIn(b"PK PMD PUT 25 ", fake.write.call_args_list[0].args[0])
             self.assertEqual(read.call_args_list[0].args[1], "PMD_READY")
             self.assertEqual(read.call_args_list[1].args[1], "#")
             self.assertIn("1234abcd", read.call_args_list[-1].args[1])
+            verify.assert_called_once_with(fake, 25)
 
 
 if __name__ == "__main__":
