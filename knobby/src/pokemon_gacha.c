@@ -31,23 +31,32 @@ static bool bounded(pk_gacha_rng_t rng,void *ctx,uint32_t upper,uint32_t *out)
     }
     return false;
 }
+bool pk_gacha_catalog_ready(uint8_t ball,
+                            const pk_gacha_entry_t *catalog,size_t count)
+{
+    if(ball>=PK_BALL_COUNT || !catalog || count==0 ||
+       count>PK_DEX_SPECIES)return false;
+    uint8_t available[PK_TIER_COUNT]={0};
+    for(size_t i=0;i<count;i++){
+        const pk_gacha_entry_t *e=&catalog[i];
+        if(e->species==0 || e->species>PK_DEX_SPECIES ||
+           e->tier>=PK_TIER_COUNT || e->sprite_ready!=1)
+            return false;
+        for(size_t j=0;j<i;j++)
+            if(catalog[j].species==e->species)return false;
+        available[e->tier]=1;
+    }
+    for(uint8_t t=0;t<PK_TIER_COUNT;t++)
+        if(kWeights[ball][t] && !available[t])return false;
+    return true;
+}
 bool pk_gacha_preview(uint8_t ball,
                       const pk_gacha_entry_t *catalog,size_t count,
                       pk_gacha_rng_t rng,void *ctx,
                       pk_gacha_result_t *out)
 {
-    if(ball>=PK_BALL_COUNT || !catalog || !count || count>PK_DEX_SPECIES ||
-       !rng || !out)return false;
-    /* Validate the whole installed catalog, including duplicates:
-     * never silently accept a species that is absent or lacks its sprite.
-     */
-    for(size_t i=0;i<count;i++){
-        if(catalog[i].species<1 || catalog[i].species>PK_DEX_SPECIES ||
-           catalog[i].tier>=PK_TIER_COUNT || catalog[i].sprite_ready!=1)
-            return false;
-        for(size_t j=0;j<i;j++)
-            if(catalog[j].species==catalog[i].species)return false;
-    }
+    if(!rng || !out || !pk_gacha_catalog_ready(ball,catalog,count))
+        return false;
     uint32_t roll=0;
     if(!bounded(rng,ctx,10000U,&roll))return false;
     uint8_t tier=PK_TIER_COUNT;
