@@ -46,16 +46,16 @@ class BatchUploadTests(unittest.TestCase):
     def test_post_upload_verification_succeeds(self):
         port = MagicMock()
         port.readline.side_effect = [
-            b"[Pokemon] PMD CHECK #25: /mons/p25.bin (read-only)\\n",
-            b"[Pokemon] PMD VALID size=16 actions=1 palette=1 frames=1\\n",
-            b"[Pokemon] PMD CHECK COMPLETE: card unmounted; no files modified.\\n",
+            b"[Pokemon] PMD CHECK #25: /mons/p25.bin (read-only)\n",
+            b"[Pokemon] PMD VALID size=16 actions=1 palette=1 frames=1\n",
+            b"[Pokemon] PMD CHECK COMPLETE: card unmounted; no files modified.\n",
         ]
         verify_installed(port, 25)
-        port.write.assert_called_once_with(b"PK PMD CHECK 25\\n")
+        port.write.assert_called_once_with(b"PK PMD CHECK 25\n")
 
     def test_post_upload_verification_fails_closed(self):
         port = MagicMock()
-        port.readline.side_effect = [b"[Pokemon] PMD INVALID size=16\\n"]
+        port.readline.side_effect = [b"[Pokemon] PMD INVALID size=16\n"]
         with self.assertRaises(RuntimeError):
             verify_installed(port, 25)
 
