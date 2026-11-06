@@ -70,6 +70,22 @@ class AuditTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             audit(self.catalog, self.mons)
 
+    def test_repository_candidate_pool_has_all_four_tiers(self):
+        # Candidate pool is a PROPOSAL, not a list of files installed on DIAL.
+        candidate = Path(__file__).resolve().parent.parent / "tools" / "pokemon" / "candidate_pool.json"
+        manifest = json.loads(candidate.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["schema"], 1)
+        self.assertIn("NOT_INSTALLED", manifest["status"])
+        rows = manifest["species"]
+        self.assertGreaterEqual(len(rows), 4)
+        ids = [row["id"] for row in rows]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual({row["tier"] for row in rows},
+                         {"common", "rare", "epic", "legendary"})
+        for row in rows:
+            self.assertEqual(row["asset"], f"p{row['id']}.bin")
+            self.assertTrue(1 <= row["id"] <= 1025)
+
     def test_no_idle_and_trailing_bytes(self):
         good = fake_tpk2()
         (self.mons / "p778.bin").write_bytes(good + b"X")
