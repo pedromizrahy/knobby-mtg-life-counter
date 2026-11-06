@@ -17,6 +17,8 @@
 #include "pokemon_file_store.h"
 #include "pokemon_sd_diagnostic.h"
 #include "pokemon_pmd_reader.h"
+#include "pokemon_lab.h"
+#include <esp_random.h>
 #include "../knobby_net.h"
 
 extern "C" void knob_print_reset_diagnostics(void);
@@ -2746,12 +2748,130 @@ static void print_help(void)
     Serial.println("Secrets are stored in NVS and are never echoed back.");
 }
 
+
+/* Dedicated diagnostic lab: process RAM only. Never invoke Pokemon profile
+ * storage, the Playgroup API, reward ledgers or online synchronization. */
+static pk_lab_t pokemon_lab = {};
+static bool pokemon_lab_random(void *ctx,uint32_t *value)
+{
+    (void)ctx;
+    if (!value) return false;
+    *value=esp_random();
+    return true;
+}
+static const char *pokemon_lab_ball_name(unsigned ball)
+{
+    static const char *names[]={"POKE","GREAT","ULTRA","MASTER"};
+    return ball<PK_BALL_COUNT?names[ball]:"?";
+}
+static void pokemon_lab_print_status(void)
+{
+    if (!pokemon_lab.active) {
+        Serial.println("[Pokemon LAB] INACTIVE (no saved test account)");
+        return;
+    }
+    Serial.printf("[Pokemon LAB] RAM ONLY / UNLIMITED BALLS / level=%u / Master Trainer=%s\\n",
+                  (unsigned)pokemon_lab.simulated_level,
+                  pokemon_lab.master_trainer_badge?"YES":"NO");
+    const char *tier_names[]={"common","rare","epic","legendary"};
+    for(unsigned b=0;b<PK_BALL_COUNT;b++) {
+        const unsigned long long total=
+            (unsigned long long)pokemon_lab.draws[b];
+        Serial.printf("[Pokemon LAB] %s draws=%llu shiny=%llu\\n",
+                      pokemon_lab_ball_name(b),total,
+                      (unsigned long long)pokemon_lab.shinies[b]);
+        for(unsigned t=0;t<PK_TIER_COUNT;t++) {
+            const unsigned long long hits=
+                (unsigned long long)pokemon_lab.tiers[b][t];
+            const unsigned long long basis_points=total?
+                (hits*10000ULL)/total:0ULL;
+            Serial.printf("[Pokemon LAB]   %s = %llu (%llu.%02llu%%)\\n",
+                          tier_names[t],hits,basis_points/100ULL,
+                          basis_points%100ULL);
+        }
+    }
+    if(pokemon_lab.has_last)
+        Serial.printf("[Pokemon LAB] Last %s: synthetic species=%u tier=%u shiny=%u\\n",
+                      pokemon_lab_ball_name(pokemon_lab.last_ball),
+                      (unsigned)pokemon_lab.last.species,
+                      (unsigned)pokemon_lab.last.tier,
+                      (unsigned)pokemon_lab.last.shiny);
+    Serial.println("[Pokemon LAB] SIMULATION ONLY: no sprite ownership, no real rewards.");
+}
+static void pokemon_lab_handle_command(const char *line)
+{
+    if(strcmp(line,"PK LAB HELP")==0) {
+        Serial.println("[Pokemon LAB] START | RESET | STATUS | BADGE MASTER | LEVEL <1..100>");
+        Serial.println("[Pokemon LAB] DRAW <POKE|GREAT|ULTRA|MASTER> <1..1000>");
+        Serial.println("[Pokemon LAB] Test-only synthetic IDs; Master guarantees legendary.");
+        return;
+    }
+    if(strcmp(line,"PK LAB START")==0){
+        pk_lab_start(&pokemon_lab);
+        Serial.println("[Pokemon LAB] STARTED: unlimited balls, isolated RAM-only account.");
+        return;
+    }
+    if(strcmp(line,"PK LAB RESET")==0){
+        pk_lab_reset(&pokemon_lab);
+        Serial.println("[Pokemon LAB] RESET: RAM counters and badges cleared.");
+        return;
+    }
+    if(strcmp(line,"PK LAB STATUS")==0) {
+        pokemon_lab_print_status();
+        return;
+    }
+    if(strcmp(line,"PK LAB BADGE MASTER")==0){
+        Serial.println(pk_lab_award_master_badge(&pokemon_lab)?
+            "[Pokemon LAB] MASTER TRAINER unlocked (TEST ONLY)":
+            "[Pokemon LAB] ERROR: START lab first.");
+        return;
+    }
+    unsigned level=0;
+    char extra=0;
+    if(sscanf(line,"PK LAB LEVEL %u %c",&level,&extra)==1) {
+        Serial.println(level<=100U && pk_lab_set_level(&pokemon_lab,(uint8_t)level)?
+            "[Pokemon LAB] simulated level updated (no real XP)": 
+            "[Pokemon LAB] ERROR: START lab or choose level 1..100.");
+        return;
+    }
+    char ball[16]={0};
+    unsigned count=0;
+    if(sscanf(line,"PK LAB DRAW %15s %u %c",ball,&count,&extra)==2){
+        int type=-1;
+        for(unsigned b=0;b<PK_BALL_COUNT;b++)
+            if(strcmp(ball,pokemon_lab_ball_name(b))==0)type=(int)b;
+        if(type<0 || count==0 || count>PK_LAB_MAX_BATCH){
+            Serial.println("[Pokemon LAB] ERROR: ball or count invalid (max 1000).");
+            return;
+        }
+        if(!pk_lab_draw(&pokemon_lab,(uint8_t)type,count,
+                        pokemon_lab_random,NULL)){
+            Serial.println("[Pokemon LAB] ERROR: START lab or RNG failed; no batch committed.");
+            return;
+        }
+        Serial.printf("[Pokemon LAB] %u synthetic %s draw(s) completed.\\n",
+                      count,pokemon_lab_ball_name((unsigned)type));
+        pokemon_lab_print_status();
+        return;
+    }
+    Serial.println("[Pokemon LAB] Invalid command. Use PK LAB HELP.");
+}
+
 static void handle_command(char *line)
 {
     const char *wifi_prefix = "PG WIFI ";
     const char *key_prefix = "PG KEY ";
 
     while (*line == ' ' || *line == '\t') line++;
+    if(strncmp(line,"PK LAB",6)==0) {
+        if(playgroup_pending_current_active()) {
+            Serial.println("[Pokemon LAB] BLOCKED: exit active Playgroup game first.");
+            return;
+        }
+        pokemon_lab_handle_command(line);
+        return;
+    }
+
 
     /* Explicit opt-in. This command is ignored during active Playgroup games
        and never touches Magic settings or a real player's Pokemon profile. */
