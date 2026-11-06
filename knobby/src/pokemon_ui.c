@@ -1,6 +1,8 @@
 #include "pokemon_ui.h"
 #include "pokemon_tpk2_renderer.h"
 #include "pokemon_companion_selection.h"
+#include "pokemon_companion_profile_view.h"
+#include "pokemon_profile_store.h"
 #include "pokemon_biomes.h"
 #include <stdio.h>
 #include <stdint.h>
@@ -18,6 +20,7 @@ static lv_obj_t *theme_label = NULL;
 static lv_obj_t *page_label = NULL;
 static lv_obj_t *species_label = NULL;
 static lv_obj_t *species_types = NULL;
+static lv_obj_t *level_label = NULL;
 static uint16_t displayed_species = 0;
 static lv_obj_t *header_plate = NULL;
 static lv_obj_t *info_panel = NULL;
@@ -195,6 +198,7 @@ bool pokemon_ui_show_species(uint16_t species)
     if(species_types)
         lv_label_set_text(species_types,
                           displayed_species==778U?"GHOST  /  FAIRY":"TYPE: NOT LINKED");
+    if(level_label)lv_label_set_text(level_label,"LV / XP: NOT LINKED");
     mimikyu_frame=0;
     lv_img_set_src(mimikyu_image,pk_tpk2_idle_frame(0));
     lv_obj_align(mimikyu_image,LV_ALIGN_CENTER,0,-7);
@@ -209,6 +213,27 @@ bool pokemon_ui_show_owned_species(const pk_profile_t *profile,
 {
     if(!pk_companion_is_owned(profile,species))return false;
     return pokemon_ui_show_species(species);
+}
+static bool load_saved_profile(void *ctx,uint32_t id,pk_profile_t *out)
+{
+    (void)ctx;
+    return pk_store_load(id,out);
+}
+bool pokemon_ui_show_saved_species(uint32_t verified_user_id,
+                                   uint16_t species)
+{
+    pk_companion_view_t view;
+    if(!pk_companion_read_view(load_saved_profile,NULL,
+                               verified_user_id,species,&view))
+        return false;
+    if(!pokemon_ui_show_species(view.species))return false;
+    if(level_label){
+        char label[40];
+        snprintf(label,sizeof(label),"LV %u  /  XP %lu",
+                 (unsigned)view.level,(unsigned long)view.xp);
+        lv_label_set_text(level_label,label);
+    }
+    return true;
 }
 void pokemon_ui_open_companion(void)
 {
@@ -266,9 +291,9 @@ void pokemon_ui_build(void)
     species_types=text_label(info_panel,"GHOST  /  FAIRY",2,
                              &lv_font_montserrat_14,0x274F46);
     /* Real level/XP requires a connected profile; never invent stats. */
-    lv_obj_t *sub=text_label(info_panel,"LV / XP: NOT LINKED",20,
+    level_label=text_label(info_panel,"LV / XP: NOT LINKED",20,
                               &lv_font_montserrat_14,0x274F46);
-    lv_obj_set_width(sub,225);
+    lv_obj_set_width(level_label,225);
 
     stats_panel=scene_shape(screen_pokemon_companion,276,164,42,115,20);
     lv_obj_set_style_bg_opa(stats_panel,LV_OPA_90,0);
