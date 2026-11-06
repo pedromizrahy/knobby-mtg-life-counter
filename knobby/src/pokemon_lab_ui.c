@@ -175,9 +175,9 @@ void pokemon_lab_ui_build(void)
 
     lab_text(lab_screen,"TEST LAB",22,220,0xF4DEAD,&lv_font_montserrat_22);
     lab_text(lab_screen,"UNLIMITED BALLS - SIM ONLY",52,275,
-             0x9CC8D0,&lv_font_montserrat_12);
+             0x9CC8D0,&lv_font_montserrat_14);
     badge_label=lab_text(lab_screen,"LV 1 | MASTER BADGE: NO",68,275,
-                         0xFFFFFF,&lv_font_montserrat_12);
+                         0xFFFFFF,&lv_font_montserrat_14);
     const int x[]={30,107,184,261};
     for(unsigned i=0;i<PK_BALL_COUNT;i++)
         lab_btn(lab_screen,ball_names[i],x[i],93,69,32,on_ball,
@@ -185,16 +185,16 @@ void pokemon_lab_ui_build(void)
 
     lv_obj_t *open_panel=lab_panel(40,136,280,64);
     ball_label=lab_text(open_panel,"POKE",2,88,0xF4DEAD,
-                        &lv_font_montserrat_12);
+                        &lv_font_montserrat_14);
     lab_btn(open_panel,"DRAW",9,22,108,29,on_draw,NULL);
     count_label=lab_text(open_panel,"x100",2,72,0xF4DEAD,
-                         &lv_font_montserrat_12);
+                         &lv_font_montserrat_14);
     lab_btn(open_panel,"QTY",164,22,105,29,on_batch,NULL);
-    reveal_label=lab_text(lab_screen,"NO DRAWS YET - SIMULATION",205,294,
-                           0xFFFFFF,&lv_font_montserrat_12);
-    lv_obj_t *stats=lab_panel(43,228,274,59);
+    reveal_label=lab_text(lab_screen,"NO DRAWS YET - SIMULATION",201,294,
+                           0xFFFFFF,&lv_font_montserrat_14);
+    lv_obj_t *stats=lab_panel(43,222,274,68);
     rates_label=lab_text(stats,"NO DATA",4,264,0xE8F1EB,
-                          &lv_font_montserrat_12);
+                          &lv_font_montserrat_14);
     lv_obj_set_style_text_line_space(rates_label,3,0);
     lab_btn(lab_screen,"BACK",34,298,83,33,on_back,NULL);
     lab_btn(lab_screen,"LV100",137,298,84,33,on_badge,NULL);
