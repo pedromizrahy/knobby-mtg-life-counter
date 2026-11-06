@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../knobby/src/pokemon_reward_master_coordinator.h"
+#include "../knobby/src/pokemon_achievements.h"
 typedef struct {
     pk_profile_t profile;
     int save_fail,prepared_fail,commit_fail,intent_prepare_fail,intent_finalize_fail;
@@ -79,7 +80,7 @@ static mock_t init(uint8_t level){
     return m;
 }
 int main(void){
-    pk_reward_t reward={};
+    pk_reward_t reward={0};
     mock_t m=init(99);pk_reward_master_io_t io=io_for(&m);
     assert(pk_reward_master_transaction(&io,42,101,true,&reward)==PK_TX_APPLIED);
     assert(m.prepare_order && m.prepare_order<m.save_order);
