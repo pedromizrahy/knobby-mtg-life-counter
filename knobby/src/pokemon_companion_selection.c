@@ -8,8 +8,15 @@ static bool valid(const pk_profile_t *p)
 }
 bool pk_companion_is_owned(const pk_profile_t *p,uint16_t species)
 {
-    return valid(p) && species>=1U && species<=PK_DEX_SPECIES &&
-           pk_dex_has(p,species,false);
+    if(!valid(p) || species<1U || species>PK_DEX_SPECIES)return false;
+    /* Dex flags mark discoveries, NOT ownership. The current profile
+     * has no persistent box; only occupied team slots prove possession. */
+    for(unsigned i=0;i<p->team_count;i++){
+        if(p->team[i].species==species &&
+           p->team[i].level>=1U && p->team[i].level<=100U)
+            return true;
+    }
+    return false;
 }
 uint16_t pk_companion_next_owned(const pk_profile_t *p,
                                  uint16_t from,int direction)
