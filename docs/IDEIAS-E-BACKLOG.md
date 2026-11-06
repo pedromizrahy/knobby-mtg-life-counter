@@ -80,3 +80,13 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - O resultado ainda é **simulação/proposta**, não regra aplicada no firmware. Simulador em `tools/pokemon/xp_balance.py` atualizado.
 - Milestone `Master Trainer`: **primeiro Pokémon a nível 100**, uma única badge e uma única Master Ball por jogador. Confirmar e implementar de forma segura antes de ativar recompensas reais.
 - A EXP da vitória substitui (não soma a) recompensa-base de derrota; evitar contar duas vezes.
+
+
+## 6. Master Trainer — carteira isolada, sem premiação ativa
+
+- **Criado:** `knobby/src/pokemon_master_trainer_store.{h,cpp}`, um armazenamento SPIFFS próprio por Playgroup user ID. Não altera o layout do perfil Pokémon versão 1 nem interfere no Magic.
+- **Estado persistido:** conquista `Master Trainer` desbloqueada, ID da partida que causou o primeiro nível 100 e **um direito de Master Ball** com estado de utilização. A Master Ball da conquista NÃO é adicionada ainda a `profile.balls[PK_BALL_MASTER]`; esta carteira precisará ser integrada como fonte de saldo quando o gacha existir.
+- **Integridade:** dois slots verificados com geração/checksum. Em caso de slot truncado ou corrompido, o sistema falha fechado em vez de usar o registro anterior que poderia ressuscitar uma recompensa já usada. Sem formatação nem exclusão automáticas.
+- **API voluntária:** `pk_mt_unlock` exige uma transição primeiro nível 100 e ID novo presente na partida confirmada; `pk_mt_inspect` consulta estado; `pk_mt_mark_spent` marca o único direito utilizado (não chamar até existir revelação do Pokémon com persistência conjunta).
+- **Testes:** `tests/pokemon_master_trainer_store_test.cpp` exercita unlock único, retomada do estado, consumo único, danos de arquivo, interrupção de escrita, IDs independentes e falhas de montagem, com mocks SPIFFS. Workflow Pokémon atualizado para rodá-los.
+- **Ainda falta antes de habilitar:** regra de persistência conjunta entre resultado confirmado, perfil XP, achievement e gacha; evitar perder a conquista se houver desligamento entre salvar perfil e gravar achievement; definir tratamento operacional para corrupção; testar recuperação no aparelho; integrar saldo da carteira e resultado da abertura de forma atômica. **Nenhuma recompensa real automática foi ligada.**
