@@ -178,7 +178,9 @@ static void show_reveal_card(void)
      * read-only SD lookups fall back to our original LAB emblem. The
      * companion sprite cache is shared, so release LAB references FIRST. */
     lab_detach_sprite();
-    bool real_sprite=pokemon_ui_show_species(r->species);
+    /* A normal TPK2 does not prove a shiny variant exists. Never
+     * mislabel ordinary art as shiny; use the shiny LAB emblem instead. */
+    bool real_sprite=!r->shiny && pokemon_ui_show_species(r->species);
     if(fixture_icon && real_sprite && pk_tpk2_idle_frame_count()>0){
         const lv_img_dsc_t *frame=pk_tpk2_idle_frame(0);
         if(frame){
@@ -191,6 +193,8 @@ static void show_reveal_card(void)
             if(zoom<1U)zoom=1U;
             if(zoom>256U)zoom=256U;
             lv_img_set_zoom(fixture_icon,(uint16_t)zoom);
+            lv_obj_set_size(fixture_icon,40,40);
+            lv_obj_align(fixture_icon,LV_ALIGN_LEFT_MID,7,0);
             lab_sprite_attached=true;
             lv_obj_clear_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
         } else real_sprite=false;
@@ -201,6 +205,8 @@ static void show_reveal_card(void)
         lv_img_cache_invalidate_src(&fixture_descriptor);
         lv_img_set_zoom(fixture_icon,256);
         lv_img_set_src(fixture_icon,&fixture_descriptor);
+        lv_obj_set_size(fixture_icon,40,40);
+        lv_obj_align(fixture_icon,LV_ALIGN_LEFT_MID,7,0);
         lv_obj_clear_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
     }
     lv_obj_set_style_border_color(reveal_card,lv_color_hex(accent[r->tier]),0);
