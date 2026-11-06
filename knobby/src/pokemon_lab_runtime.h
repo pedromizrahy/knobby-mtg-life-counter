@@ -14,6 +14,12 @@ bool pk_lab_runtime_draw(uint8_t ball,unsigned count);
 /* Draw and capture result/stats under the SAME lock. This ensures the
  * visual reveal cannot accidentally display a concurrent serial draw. */
 bool pk_lab_runtime_draw_snapshot(uint8_t ball,unsigned count,pk_lab_t *out);
+/* A monotonically incrementing RAM session token. START and RESET bump
+ * it, but ordinary draws do not. Use the atomic draw-token API to avoid
+ * revealing a stale result after a serial reset during LVGL animation. */
+bool pk_lab_runtime_draw_snapshot_token(uint8_t ball,unsigned count,
+                                        pk_lab_t *out,uint32_t *token);
+bool pk_lab_runtime_session_token(uint32_t *token);
 bool pk_lab_runtime_badge(void);
 bool pk_lab_runtime_level(uint8_t level);
 #ifdef __cplusplus
