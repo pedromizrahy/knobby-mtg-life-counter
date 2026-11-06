@@ -4,6 +4,8 @@ on:
     paths:
       - 'knobby/src/pokemon_progress.*'
       - 'knobby/src/pokemon_achievements.*'
+      - 'knobby/src/pokemon_master_trainer_store.*'
+      - 'tests/pokemon_master_trainer_store_test.cpp'
       - 'tests/pokemon_achievements_test.c'
       - 'tests/pokemon_progress_test.c'
       - 'tests/pokemon_reward_coordinator_test.c'
@@ -41,6 +43,12 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_achievements.c tests/pokemon_achievements_test.c -o /tmp/pokemon_achievements_test
           /tmp/pokemon_achievements_test
+      - name: Test isolated durable Master Trainer wallet
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_progress.c -o /tmp/mt_progress.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_achievements.c -o /tmp/mt_achievements.o
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_master_trainer_store.cpp tests/pokemon_master_trainer_store_test.cpp /tmp/mt_progress.o /tmp/mt_achievements.o -o /tmp/master_trainer_store_test
+          /tmp/master_trainer_store_test
       - name: Compile isolated reward crash-recovery tests
         run: cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_reward_coordinator.c tests/pokemon_reward_coordinator_test.c -o /tmp/pokemon_reward_test
       - name: Verify rewards never duplicate on simulated failures
