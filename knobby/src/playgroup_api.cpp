@@ -2809,13 +2809,13 @@ static void pokemon_lab_print_diagnostic(void)
     const size_t psram_free=heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     const size_t psram_largest=heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
     const size_t internal_free=heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-    Serial.printf("[Pokemon LAB] DIAG session=%lu active=%u\\n",
+    Serial.printf("[Pokemon LAB] DIAG session=%lu active=%u\n",
                   (unsigned long)session,(unsigned)snapshot.active);
-    Serial.printf("[Pokemon LAB] DIAG heap_internal_free=%lu psram_free=%lu psram_largest=%lu\\n",
+    Serial.printf("[Pokemon LAB] DIAG heap_internal_free=%lu psram_free=%lu psram_largest=%lu\n",
                   (unsigned long)internal_free,
                   (unsigned long)psram_free,
                   (unsigned long)psram_largest);
-    Serial.printf("[Pokemon LAB] DIAG sprite_loaded=%u idle_frames=%u\\n",
+    Serial.printf("[Pokemon LAB] DIAG sprite_loaded=%u idle_frames=%u\n",
                   (unsigned)pk_tpk2_idle_loaded_species(),
                   pk_tpk2_idle_frame_count());
     Serial.println("[Pokemon LAB] DIAG READ-ONLY: no storage or players changed.");
