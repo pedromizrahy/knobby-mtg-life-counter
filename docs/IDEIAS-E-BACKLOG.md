@@ -128,3 +128,12 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - Criados testes com TPK2 sintético em `tests/test_pokemon_catalog.py`, adicionados ao workflow Pokémon; não incluem sprites de terceiros.
 - O auditor é uma ferramenta de preparação **offline**, não uma consulta em tempo real ao SD pelo firmware. O sorteador permanece isolado e nenhum botão abre ou consome Pokébolas.
 - **Próximos passos:** obter/instalar espécies com licenças adequadas em todos os quatro tiers; tornar o carregador LVGL genérico por espécie (atualmente hardcoded `p778.bin`); transferir/validar assets sem sobrescrever existentes; integrar sorteio e gasto com persistência; produzir sprites de abertura consistentes para as quatro bolas.
+
+
+## 11. Renderizador TPK2 por espécie (sem seleção automática)
+
+- O renderizador antes fixo em `/mons/p778.bin` agora expõe `pk_tpk2_idle_load_species(uint16_t species)`, que busca o asset `/mons/p<ID>.bin` para espécies 1–1025, mantendo `pk_tpk2_idle_load()` como entrada compatível para Mimikyu #778.
+- `pk_tpk2_idle_loaded_species()` informa o ID carregado; `pk_tpk2_idle_release()` libera o cache. O carregamento continua read-only e desmonta SD. Não há escrita nem criação de arquivos.
+- Novo helper puro `pokemon_sprite_path.{h,c}` evita aceitar caminhos livres ou IDs fora da Pokédex. Testes em `tests/pokemon_sprite_path_test.c`, incorporados ao CI.
+- **Limitação importante:** o cache de frames LVGL é compartilhado; antes de trocar espécies, a interface precisa pausar animações e remover referências aos frames anteriores para evitar ponteiros inválidos. Por isso a UI atual segue usando **somente Mimikyu**, sem seleção automática e sem alterar a posição/arte.
+- **Pendências:** validação do novo carregador no ESP32; auditoria real dos arquivos no SD; escolha da espécie selecionada a partir de coleção persistida; troca segura de frames e layout dinamicamente, incluindo nome, tipo e bioma; transação de abertura de gacha antes de qualquer sorteio real.
