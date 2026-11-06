@@ -26,6 +26,9 @@ static lv_obj_t *fixture_icon=NULL;
 static uint8_t fixture_pixels[PK_LAB_FIXTURE_BUFFER_BYTES];
 static lv_img_dsc_t fixture_descriptor={0};
 static bool lab_sprite_attached=false;
+static lv_timer_t *sprite_timer=NULL;
+static unsigned sprite_frame=0;
+static uint16_t sprite_species=0;
 static pk_lab_t captured_draw={0};
 static bool captured_valid=false;
 static lv_obj_t *ball_image=NULL;
@@ -147,9 +150,35 @@ static void ball_paint(unsigned frame)
  * shared PSRAM frame cache. No Playgroup data and no SD writes. */
 static void lab_detach_sprite(void)
 {
-    if(!fixture_icon || !lab_sprite_attached)return;
-    lv_img_set_src(fixture_icon,NULL);
+    /* Never let an LVGL timer retain or redraw a freed TPK2 descriptor. */
+    if(sprite_timer)lv_timer_pause(sprite_timer);
+    if(fixture_icon && lab_sprite_attached)
+        lv_img_set_src(fixture_icon,NULL);
     lab_sprite_attached=false;
+    sprite_species=0;
+    sprite_frame=0;
+}
+static void lab_sprite_tick(lv_timer_t *timer)
+{
+    (void)timer;
+    if(!lab_sprite_attached || lv_scr_act()!=lab_screen ||
+       !reveal_card || lv_obj_has_flag(reveal_card,LV_OBJ_FLAG_HIDDEN)){
+        if(sprite_timer)lv_timer_pause(sprite_timer);
+        return;
+    }
+    if(pk_tpk2_idle_loaded_species()!=sprite_species ||
+       pk_tpk2_idle_frame_count()==0){
+        /* Fail closed: an external renderer change invalidated our cache. */
+        lab_detach_sprite();
+        if(fixture_icon)lv_obj_add_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    sprite_frame=(sprite_frame+1U)%pk_tpk2_idle_frame_count();
+    const lv_img_dsc_t *frame=pk_tpk2_idle_frame(sprite_frame);
+    if(!frame){lab_detach_sprite();return;}
+    lv_img_set_src(fixture_icon,frame);
+    lv_timer_set_period(sprite_timer,
+                        pk_tpk2_idle_duration_ms(sprite_frame));
 }
 static void lab_restore_companion(void)
 {
@@ -196,7 +225,14 @@ static void show_reveal_card(void)
             lv_obj_set_size(fixture_icon,40,40);
             lv_obj_align(fixture_icon,LV_ALIGN_LEFT_MID,7,0);
             lab_sprite_attached=true;
+            sprite_species=r->species;
+            sprite_frame=0;
             lv_obj_clear_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
+            if(sprite_timer && pk_tpk2_idle_frame_count()>1U){
+                lv_timer_set_period(sprite_timer,pk_tpk2_idle_duration_ms(0));
+                lv_timer_reset(sprite_timer);
+                lv_timer_resume(sprite_timer);
+            }
         } else real_sprite=false;
     }
     if(!real_sprite && fixture_icon &&
@@ -411,4 +447,6 @@ void pokemon_lab_ui_build(void)
                             &lv_font_montserrat_14);
     lv_obj_align(reveal_detail,LV_ALIGN_TOP_LEFT,53,43);
     lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
+    sprite_timer=lv_timer_create(lab_sprite_tick,200,NULL);
+    lv_timer_pause(sprite_timer);
 }
