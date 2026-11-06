@@ -109,3 +109,13 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - Criado `pokemon_reward_master_storage.{h,cpp}`: adaptador explícito aos métodos atuais NVS + SPIFFS. **Nenhuma chamada inserida no pós-jogo ou nas telas do DIAL.** Continua sendo função de opt-in para teste controlado após conferir resultado durável e identificação.
 - Teste `tests/pokemon_reward_master_coordinator_test.c` cobre sequência `intent prepare → ledger PREPARED → profile save → COMMITTED → badge`, falha de preparação, falha de gravação, falta de commit, retomada, repetição, carteira já utilizada e partidas subsequentes.
 - **Riscos ainda abertos:** procedimento de recuperação de PREPARED cuja gravação do perfil falhou; corrupção ou escrita interrompida na carteira/intent; migração futura NVS→SPIFFS; testes de power-cycle reais; resultado confirmado do Playgroup; consumo de Master Ball e persistência de Pokémon no mesmo sorteio. Não ativar premiações nem enviar build ao DIAL como se fossem validadas no hardware.
+
+
+## 9. Sorteador de gacha puro (sem consumo de Pokébolas)
+
+- Implementado `pokemon_gacha.{h,c}`: sorteio isolado de Pokémon a partir de catálogo explícito de espécies com sprite instalado, tier e estado de disponibilidade. **Não altera perfil, Pokébolas, arquivos ou UI**.
+- Taxas inicialmente adotadas (não oficiais): Poké 75/20/4,5/0,5%, Great 55/30/13/2%, Ultra 30/40/24/6%, Master 0/0/0/100% [comum/raro/épico/lendário].
+- Sorteio de tier seguido de espécie uniformemente dentro do tier e shiny separado (chance **provisória** 1/4096). RNG deve vir de fonte segura fornecida pelo chamador; algoritmo evita viés de módulo.
+- Preflight `pk_gacha_catalog_ready` exige pelo menos uma espécie com sprite instalado em **cada** tier com probabilidade positiva na Pokébola. **Apenas Mimikyu confirmado no DIAL não permite abertura ainda**; mostrar indisponível em vez de consumir bola sem entrega.
+- Testes `tests/pokemon_gacha_test.c` verificam limites das faixas, Master lendário, shiny separado, catálogo incompleto, duplicatas, falha de RNG, rejeição sem viés e não mutação da saída em caso de falha. Conectados ao workflow Pokémon.
+- **Próximas etapas:** escolher e instalar catálogo inicial com pelo menos uma espécie por tier, definir regra de duplicatas/shards, criar registro transacional de abertura (consumo da bola + prêmio persistido) e assets/animações homogêneos das quatro Pokébolas. Só então conectar botões e abertura reais.
