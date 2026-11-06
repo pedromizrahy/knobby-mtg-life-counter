@@ -39,3 +39,12 @@ Direção proposta para validação visual:
 5. **Visual:** badges de tipos com acabamento fiel à Pokédex; baixar alguns pixels o sprite em teste futuro; criar/validar propostas de **nova marca, nome e intro**, sem alterar firmware durante teste atual.
 
 **Nota de estado:** sprite visível no hardware; Pokébolas, achievements, leaderboard e Favorite Deck **ainda pendentes** de integração real. Este arquivo apenas documenta a fila, sem habilitar recompensas nem alterar a interface.
+
+
+## 3. Gacha de Pokébolas — pesquisa inicial
+
+- Mecânica escolhida: abrir a bola sempre entrega um Pokémon; não há encontros nem falhas de captura.
+- Arte: quatro bolas (Poké, Great, Ultra, Master) com mesma resolução-base, perspectiva, sombreamento e quadros de animação. Referências: https://www.spriters-resource.com/game_boy_advance/pokemonfireredleafgreen/asset/20104/ ; https://www.spriters-resource.com/ds_dsi/pokemonblackwhite/asset/39327/ ; https://codepen.io/simeydotme/pen/QWdBOwx . Licenças de redistribuição ainda não confirmadas.
+- Taxas oficiais de captura NÃO correspondem ao gacha: Poké 1x, Great 1.5x, Ultra 2x, Master garante captura (https://www.serebii.net/games/capture.shtml).
+- **Proposta de gacha, não oficial:** Poké Ball comum 75%, raro 20%, épico 4,5%, lendário 0,5%; Great Ball 55%, 30%, 13%, 2%; Ultra Ball 30%, 40%, 24%, 6%; Master Ball 0%, 0%, 0%, 100%. Proposta sujeita a rebalanceamento.
+- Shiny sorteado separadamente. Definir pools reais, recompensas por partida, duplicatas e economia. Sortear/salvar resultado e consumo de bola atomicamente antes da animação; proteger contra queda de energia e reabertura duplicada.
