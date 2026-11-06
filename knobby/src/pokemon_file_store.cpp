@@ -217,7 +217,7 @@ extern "C" bool pk_file_profile_selftest(void)
     if(!pk_award_game(&next.profile,0xD1A10001UL,true,&reward) ||
        reward.xp_awarded!=800 || reward.new_pokeballs!=4 ||
        next.profile.team[0].level<=1 ||
-       next.profile.balls[PK_BALL_POKE]!=1)
+       next.profile.balls[PK_BALL_POKE]!=4)
         goto cleanup;
     next.checksum=record_checksum(&next);
     created_b=true;
