@@ -48,3 +48,13 @@ Direção proposta para validação visual:
 - Taxas oficiais de captura NÃO correspondem ao gacha: Poké 1x, Great 1.5x, Ultra 2x, Master garante captura (https://www.serebii.net/games/capture.shtml).
 - **Proposta de gacha, não oficial:** Poké Ball comum 75%, raro 20%, épico 4,5%, lendário 0,5%; Great Ball 55%, 30%, 13%, 2%; Ultra Ball 30%, 40%, 24%, 6%; Master Ball 0%, 0%, 0%, 100%. Proposta sujeita a rebalanceamento.
 - Shiny sorteado separadamente. Definir pools reais, recompensas por partida, duplicatas e economia. Sortear/salvar resultado e consumo de bola atomicamente antes da animação; proteger contra queda de energia e reabertura duplicada.
+
+
+## 4. Master Ball — ideias de obtenção e equilíbrio
+
+- **Master Ball: 100% de Pokémon lendário da pool disponível** (proposta aprovada para discussão). O shiny é sorteado à parte, e o resultado ainda deve respeitar catálogo instalado e regras para duplicatas.
+- **Primeiro nível 100:** prêmio único por marco de progressão, vinculado ao jogador, com regra explícita de elegibilidade e limite para não farmar Master Balls ao levar vários Pokémon ao nível 100. Alternativa a decidir: apenas primeiro Pokémon nível 100 por conta vs. marcos excepcionais adicionais.
+- **Achievement extraordinário:** recompensa única de uma Master Ball por conquista realmente difícil, bem definida e verificável, sem concessão repetida.
+- **Drop extremamente raro após vitória real:** sugestão 0,1% por vitória validada; a chance de pelo menos um drop em N vitórias é 1-(0,999)^N (independentes). Não conceder em partidas de teste, eventos repetidos, sem confirmação durável ou com IDs inconsistentes.
+- **Economia:** avaliar o ritmo efetivo de partidas, chances e distribuição antes de ativar. Drops devem ser atômicos/idempotentes e vinculados a IDs únicos de partida; não gastar bola nem revelar resultado antes de persistir a concessão.
+- **Pendências:** decidir se Master garante lendário ainda não coletado ou se duplicatas são possíveis; não prometer não-duplicação sem catálogo suficiente.
