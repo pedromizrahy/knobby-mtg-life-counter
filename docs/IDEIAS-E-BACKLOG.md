@@ -221,3 +221,13 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - A tela `pokemon_lab_ui.c` apresenta o emblema à esquerda do card de revelação, acompanhado de nome, National Dex ID, tier e `SIM ONLY`. Não promete renderização de sprites Pokémon oficiais: são **marcadores visuais de teste**, não criaturas instaladas no cartão SD.
 - Testes `tests/pokemon_lab_fixture_art_test.c` validam transparência, quatro espécies distintas, Shiny e entradas inválidas; incluídos no workflow Pokémon.
 - Ainda falta validar no ESP32-S3 real o layout circular, as fontes e a transição entre quadros e card; a compilação CI não valida toque nem imagem exibida na tela física. O LAB continua sem posse ou recompensa de Playgroup.
+
+
+## 20. Exibição de sprite TPK2 real na revelação do TEST LAB (2026-11-06)
+
+- Confirmado CI Arduino e Pokémon Engine Checks **sucesso** no commit anterior `caab0f23`.
+- O card do TEST LAB passa a tentar mostrar um **sprite Idle real existente no cartão SD** para um resultado de teste **não Shiny**, por meio do renderizador TPK2 compartilhado com a tela Companion. Se a espécie não tem asset instalado/válido, mantém o emblema original criado pelo firmware. Nenhum Pokémon é adicionado à coleção real.
+- O sprite é exibido em tamanho reduzido de aproximadamente 38px, limitado ao espaço do card. **Não confundir com sprite Shiny:** resultados Shiny sempre usam o emblema alternativo do LAB até existir arte Shiny explicitamente validada.
+- **Segurança de memória:** antes de o renderizador trocar os buffers PSRAM, o LAB destaca suas próprias referências LVGL; o Companion também destaca suas referências ao trocar espécies. Ao clicar BACK o LAB libera sua referência e solicita o Mimikyu #778 novamente na tela Companion. Não grava SD, não concede premiação nem altera dados Playgroup.
+- Esse caminho faz uma consulta SD síncrona durante a finalização da animação. Validar em hardware possíveis pausas de frame, taxa de quadros, proporção, transparência, coexistência com a animação do Companion e comportamento ao SD ausente/corrompido.
+- Ainda faltam **assets reais para as demais espécies**, arte Shiny correspondente, seleção real de espécies e validação visual no ESP32-S3. A UI usa emblemas originais enquanto não há assets instalados.
