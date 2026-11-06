@@ -26,6 +26,7 @@ pk_tx_result_t pk_reward_master_transaction(const pk_reward_master_io_t *io,
     pk_mt_intent_status_t ist=io->intent_status(ctx,user_id,&intent_game);
     if(ist!=PK_MT_INTENT_MISSING && ist!=PK_MT_INTENT_VALID)
         return PK_TX_BLOCKED;
+    bool intent_settled=false;
     if(ist==PK_MT_INTENT_VALID) {
         if(!intent_game)return PK_TX_BLOCKED;
         /* Never let another game overwrite the exact profile snapshot
@@ -33,6 +34,7 @@ pk_tx_result_t pk_reward_master_transaction(const pk_reward_master_io_t *io,
         if(g->get_state(ctx,user_id,intent_game)==PK_LEDGER_COMMITTED) {
             if(!io->intent_finalize(ctx,user_id,intent_game))
                 return PK_TX_BLOCKED;
+            intent_settled=true;
         } else if(intent_game!=game_id) {
             return PK_TX_BLOCKED;
         }
@@ -65,7 +67,7 @@ pk_tx_result_t pk_reward_master_transaction(const pk_reward_master_io_t *io,
         return PK_TX_BLOCKED;
     /* Existing uncommitted intent means a prior attempt may have
      * stopped before PREPARED. Do not guess whether to restart it. */
-    if(ist==PK_MT_INTENT_VALID)return PK_TX_BLOCKED;
+    if(ist==PK_MT_INTENT_VALID && !intent_settled)return PK_TX_BLOCKED;
 
     pk_profile_t updated=profile;
     pk_reward_t calculated;
