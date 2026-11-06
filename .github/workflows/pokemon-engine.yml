@@ -12,6 +12,8 @@ on:
       - 'tests/pokemon_progress_test.c'
       - 'tests/pokemon_reward_coordinator_test.c'
       - 'knobby/src/pokemon_reward_coordinator.*'
+      - 'knobby/src/pokemon_reward_master_coordinator.*'
+      - 'tests/pokemon_reward_master_coordinator_test.c'
       - 'knobby/src/pokemon_reward_storage.*'
       - 'tests/pokemon_reward_storage_test.cpp'
       - 'tests/pokemon_profile_store_test.cpp'
@@ -59,6 +61,10 @@ jobs:
         run: cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_reward_coordinator.c tests/pokemon_reward_coordinator_test.c -o /tmp/pokemon_reward_test
       - name: Verify rewards never duplicate on simulated failures
         run: /tmp/pokemon_reward_test
+      - name: Test opt-in XP / Master Trainer transactional ordering
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_achievements.c knobby/src/pokemon_reward_master_coordinator.c tests/pokemon_reward_master_coordinator_test.c -o /tmp/pokemon_reward_master_test
+          /tmp/pokemon_reward_master_test
       - name: Build C transaction objects for C++ storage adapter
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_progress.c -o /tmp/pk_progress.o
