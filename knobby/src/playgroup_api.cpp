@@ -18,6 +18,7 @@
 #include "pokemon_sd_diagnostic.h"
 #include "pokemon_pmd_reader.h"
 #include "pokemon_lab_runtime.h"
+#include "pokemon_tpk2_renderer.h"
 #include "../knobby_net.h"
 
 extern "C" void knob_print_reset_diagnostics(void);
@@ -2794,10 +2795,36 @@ static void pokemon_lab_print_status(void)
                       (unsigned)pokemon_lab.last.shiny);
     Serial.println("[Pokemon LAB] SIMULATION ONLY: no sprite ownership, no real rewards.");
 }
+static void pokemon_lab_print_diagnostic(void)
+{
+    /* Memory and cache metadata only: does NOT mount SD, inspect user
+     * records, write flash or load another species. */
+    uint32_t session=0;
+    pk_lab_t snapshot={};
+    if(!pk_lab_runtime_session_token(&session) ||
+       !pk_lab_runtime_snapshot(&snapshot)){
+        Serial.println("[Pokemon LAB] DIAG ERROR: snapshot unavailable");
+        return;
+    }
+    const size_t psram_free=heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    const size_t psram_largest=heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+    const size_t internal_free=heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    Serial.printf("[Pokemon LAB] DIAG session=%lu active=%u\\n",
+                  (unsigned long)session,(unsigned)snapshot.active);
+    Serial.printf("[Pokemon LAB] DIAG heap_internal_free=%lu psram_free=%lu psram_largest=%lu\\n",
+                  (unsigned long)internal_free,
+                  (unsigned long)psram_free,
+                  (unsigned long)psram_largest);
+    Serial.printf("[Pokemon LAB] DIAG sprite_loaded=%u idle_frames=%u\\n",
+                  (unsigned)pk_tpk2_idle_loaded_species(),
+                  pk_tpk2_idle_frame_count());
+    Serial.println("[Pokemon LAB] DIAG READ-ONLY: no storage or players changed.");
+}
+
 static void pokemon_lab_handle_command(const char *line)
 {
     if(strcmp(line,"PK LAB HELP")==0) {
-        Serial.println("[Pokemon LAB] START | RESET | STATUS | BADGE MASTER | LEVEL <1..100>");
+        Serial.println("[Pokemon LAB] START | RESET | STATUS | DIAG | BADGE MASTER | LEVEL <1..100>");
         Serial.println("[Pokemon LAB] DRAW <POKE|GREAT|ULTRA|MASTER> <1..1000>");
         Serial.println("[Pokemon LAB] Test-only synthetic IDs; Master guarantees legendary.");
         return;
@@ -2816,6 +2843,10 @@ static void pokemon_lab_handle_command(const char *line)
     }
     if(strcmp(line,"PK LAB STATUS")==0) {
         pokemon_lab_print_status();
+        return;
+    }
+    if(strcmp(line,"PK LAB DIAG")==0) {
+        pokemon_lab_print_diagnostic();
         return;
     }
     if(strcmp(line,"PK LAB BADGE MASTER")==0){
