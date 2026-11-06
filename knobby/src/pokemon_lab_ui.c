@@ -3,6 +3,7 @@
 #include "pokemon_lab_ball_art.h"
 #include "pokemon_lab_reveal.h"
 #include "pokemon_lab_fixture_art.h"
+#include "pokemon_tpk2_renderer.h"
 #include "pokemon_ui.h"
 #include <lvgl.h>
 #include <stdio.h>
@@ -24,6 +25,7 @@ static lv_obj_t *reveal_detail=NULL;
 static lv_obj_t *fixture_icon=NULL;
 static uint8_t fixture_pixels[PK_LAB_FIXTURE_BUFFER_BYTES];
 static lv_img_dsc_t fixture_descriptor={0};
+static bool lab_sprite_attached=false;
 static pk_lab_t captured_draw={0};
 static bool captured_valid=false;
 static lv_obj_t *ball_image=NULL;
@@ -141,6 +143,20 @@ static void ball_paint(unsigned frame)
     lv_img_cache_invalidate_src(&ball_descriptor);
     lv_img_set_src(ball_image,&ball_descriptor);
 }
+/* Detach LAB's references before the companion renderer frees its
+ * shared PSRAM frame cache. No Playgroup data and no SD writes. */
+static void lab_detach_sprite(void)
+{
+    if(!fixture_icon || !lab_sprite_attached)return;
+    lv_img_set_src(fixture_icon,NULL);
+    lab_sprite_attached=false;
+}
+static void lab_restore_companion(void)
+{
+    lab_detach_sprite();
+    /* The companion page must not inherit a laboratory-only selection. */
+    (void)pokemon_ui_show_species(778U);
+}
 static void show_reveal_card(void)
 {
     if(!reveal_card || !captured_valid || !captured_draw.has_last)return;
@@ -158,11 +174,32 @@ static void show_reveal_card(void)
     snprintf(label,sizeof(label),"%s%s | SIM ONLY",
              pk_lab_tier_name(r->tier),r->shiny?" *SHINY*":"");
     lv_label_set_text(reveal_detail,label);
-    /* Preview a distinct original lab emblem. No user SD sprite or
-     * copyright character art is required for this diagnostic. */
-    if(fixture_icon && pk_lab_fixture_art(r->species,r->shiny!=0,
-                                         fixture_pixels,sizeof(fixture_pixels))){
+    /* Preview the user's installed Idle sprite when available. Failed
+     * read-only SD lookups fall back to our original LAB emblem. The
+     * companion sprite cache is shared, so release LAB references FIRST. */
+    lab_detach_sprite();
+    bool real_sprite=pokemon_ui_show_species(r->species);
+    if(fixture_icon && real_sprite && pk_tpk2_idle_frame_count()>0){
+        const lv_img_dsc_t *frame=pk_tpk2_idle_frame(0);
+        if(frame){
+            lv_img_set_src(fixture_icon,frame);
+            const unsigned max_dimension=
+                frame->header.w>frame->header.h?
+                frame->header.w:frame->header.h;
+            unsigned zoom=max_dimension?
+                (256U*38U)/max_dimension:256U;
+            if(zoom<1U)zoom=1U;
+            if(zoom>256U)zoom=256U;
+            lv_img_set_zoom(fixture_icon,(uint16_t)zoom);
+            lab_sprite_attached=true;
+            lv_obj_clear_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
+        } else real_sprite=false;
+    }
+    if(!real_sprite && fixture_icon &&
+       pk_lab_fixture_art(r->species,r->shiny!=0,
+                          fixture_pixels,sizeof(fixture_pixels))){
         lv_img_cache_invalidate_src(&fixture_descriptor);
+        lv_img_set_zoom(fixture_icon,256);
         lv_img_set_src(fixture_icon,&fixture_descriptor);
         lv_obj_clear_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
     }
@@ -202,6 +239,7 @@ static void ball_begin(void)
     animation_frame=0;
     animating=true;
     if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
+    lab_detach_sprite();
     lv_obj_add_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
@@ -216,6 +254,7 @@ static void on_ball(lv_event_t *event)
     if(animating || chosen>=PK_BALL_COUNT)return;
     active_ball=(uint8_t)chosen;
     if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
+    lab_detach_sprite();
     lab_refresh();
 }
 static void on_draw(lv_event_t *event)
@@ -252,6 +291,7 @@ static void on_back(lv_event_t *event)
     if(ball_timer)lv_timer_pause(ball_timer);
     animating=false;
     if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
+    lab_restore_companion();
     if(ball_image)lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
     if(reveal_label)lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
     if(rates_label)lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
@@ -268,6 +308,7 @@ void pokemon_lab_ui_open(void)
     active_ball=PK_BALL_POKE;
     batch=1;
     captured_valid=false;
+    lab_detach_sprite();
     if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
     animating=false;
     if(ball_timer)lv_timer_pause(ball_timer);
