@@ -9,6 +9,8 @@ on:
       - 'knobby/src/pokemon_sprite_path.*'
       - 'knobby/src/pokemon_companion_selection.*'
       - 'knobby/src/pokemon_companion_profile_view.*'
+      - 'knobby/src/pokemon_player_identity.*'
+      - 'tests/pokemon_player_identity_test.c'
       - 'tests/pokemon_companion_profile_view_test.c'
       - 'knobby/src/pokemon_ui.*'
       - 'tests/pokemon_companion_selection_test.c'
@@ -69,9 +71,13 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_companion_selection.c tests/pokemon_companion_selection_test.c -o /tmp/pokemon_companion_selection_test
           /tmp/pokemon_companion_selection_test
+      - name: Test strict Playgroup user ID boundaries
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_player_identity.c tests/pokemon_player_identity_test.c -o /tmp/pokemon_player_identity_test
+          /tmp/pokemon_player_identity_test
       - name: Test read-only authenticated profile companion view
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_companion_selection.c knobby/src/pokemon_companion_profile_view.c tests/pokemon_companion_profile_view_test.c -o /tmp/pokemon_companion_profile_view_test
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_companion_selection.c knobby/src/pokemon_companion_profile_view.c knobby/src/pokemon_player_identity.c tests/pokemon_companion_profile_view_test.c -o /tmp/pokemon_companion_profile_view_test
           /tmp/pokemon_companion_profile_view_test
       - name: Test safe SD sprite paths for all species
         run: |
