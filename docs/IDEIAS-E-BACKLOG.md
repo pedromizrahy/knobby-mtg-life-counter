@@ -58,3 +58,13 @@ Direção proposta para validação visual:
 - **Não implementar drop aleatório de Master Ball por vitória por enquanto.** A ideia anterior de 0,1% foi rejeitada como inadequada ao ritmo de vitórias em Commander; reconsiderar somente após medir ritmo real de progressão e economia.
 - Concessão da badge e de sua recompensa deve ser idempotente, durável e recuperável após queda de energia.
 - Pendente: decidir duplicatas de lendários, pool instalada, taxa de EXP/partida e outros achievements excepcionais que possam premiar Master Ball no futuro.
+
+
+## 5. Balanceamento da experiência — simulação isolada (ainda NÃO em produção)
+
+- **Problema auditado:** fórmula atual `xp_for_next(level)=100+25*level`; total nível 1→100 = **133.650 EXP**. Ganhos atuais: derrota 50, vitória 75. Isso exigiria cerca de **2.673 derrotas ou 1.782 vitórias**, totalmente inadequado para partidas longas de Commander.
+- **Simulador versionado:** `tools/pokemon/xp_balance.py`, executar `python tools/pokemon/xp_balance.py --self-test` e `python tools/pokemon/xp_balance.py`. Não modifica firmware nem perfis.
+- **Preset para discussão:** `xp_for_next(level)=30+6*level`; total **32.670 EXP**; derrota = **250 EXP**, vitória = **350 EXP**. Aproximadamente 119 partidas com 25% de vitórias, 109 com 50%, 94 se ganhar todas. Supõe toda EXP num mesmo Pokémon e partidas válidas; avaliar a rotina real do grupo antes de ativar.
+- **BUG/REGRA EM ABERTO:** o motor atual premia **cada Pokémon** que chega a 100 com Master Ball; deve ser substituído por achievement **único por jogador** (`Master Trainer`) com 1 Master Ball, persistido de forma transacional. **Não ativar** até definir armazenamento/migração e garantir concessão idempotente.
+- **Migração:** alteração de fórmula altera progressão dos perfis existentes. Auditar e testar migração de EXP atual/nível antes de mudar código em produção, e não zerar avanços.
+- Qualquer modificação que afete recompensas deve aguardar validação no aparelho e integração segura pós-jogo, sem considerar testes simulados prova suficiente.
