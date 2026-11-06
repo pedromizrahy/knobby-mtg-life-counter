@@ -55,6 +55,27 @@ def receive(port, expected, timeout=15):
     raise TimeoutError(f"Expected {expected} not received")
 
 
+def verify_installed(port, species, timeout=30):
+    """Read-only on-device structural verification after upload."""
+    port.write(f"PK PMD CHECK {species}\n".encode("ascii"))
+    port.flush()
+    deadline = time.monotonic() + timeout
+    valid = False
+    while time.monotonic() < deadline:
+        response = port.readline().decode("utf-8", errors="replace").strip()
+        if response:
+            print("DIAL:", response)
+        if "PMD INVALID" in response or "PMD FAIL" in response or "PMD MISSING" in response or "SKIPPED" in response:
+            raise RuntimeError(f"Installed species #{species} failed verification: {response}")
+        if "[Pokemon] PMD VALID " in response:
+            valid = True
+        if "PMD CHECK COMPLETE" in response:
+            if valid:
+                return
+            raise RuntimeError(f"Verification for #{species} completed without valid TPK2")
+    raise TimeoutError(f"Did not receive completion of PK PMD CHECK {species}")
+
+
 def upload(port, species, data, crc):
     port.reset_input_buffer()
     port.write(f"PK PMD PUT {species} {len(data)} {crc:08x}\n".encode("ascii"))
@@ -67,6 +88,7 @@ def upload(port, species, data, crc):
         receive(port, "#", timeout=25)
     receive_done = f"[Pokemon] PMD PUT DONE size={len(data)} crc32={crc:08x}"
     receive(port, receive_done, timeout=25)
+    verify_installed(port, species)
 
 
 def main():
