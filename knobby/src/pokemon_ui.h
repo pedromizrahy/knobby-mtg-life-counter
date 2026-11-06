@@ -20,6 +20,12 @@ bool pokemon_ui_show_species(uint16_t species);
  * Explicit call only: does not resolve identity or write any profile. */
 bool pokemon_ui_show_owned_species(const pk_profile_t *profile,
                                     uint16_t species);
+/* Explicit opt-in NVS preview for a verified Playgroup user ID.
+ * Caller MUST authenticate user identity before invoking. No guest IDs,
+ * automatic postgame invocation, profile creation or collection changes.
+ * Only call on LVGL thread outside live games. */
+bool pokemon_ui_show_saved_species(uint32_t verified_user_id,
+                                   uint16_t species);
 bool pokemon_ui_handle_back(lv_obj_t *screen);
 void pokemon_ui_knob_page(int direction);
 #ifdef __cplusplus
