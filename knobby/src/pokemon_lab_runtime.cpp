@@ -47,6 +47,15 @@ extern "C" bool pk_lab_runtime_draw(uint8_t ball,unsigned count)
     bool ok=pk_lab_draw(&lab,ball,count,rng,nullptr);
     leave();return ok;
 }
+extern "C" bool pk_lab_runtime_draw_snapshot(uint8_t ball,unsigned count,
+                                                pk_lab_t *out)
+{
+    if(!out || !enter())return false;
+    const bool ok=pk_lab_draw(&lab,ball,count,rng,nullptr);
+    if(ok)*out=lab;
+    leave();
+    return ok;
+}
 extern "C" bool pk_lab_runtime_badge(void)
 {
     if(!enter())return false;
