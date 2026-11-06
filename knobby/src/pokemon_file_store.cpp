@@ -215,8 +215,8 @@ extern "C" bool pk_file_profile_selftest(void)
     next=first;
     next.generation=2;
     if(!pk_award_game(&next.profile,0xD1A10001UL,true,&reward) ||
-       reward.xp_awarded!=75 || reward.new_pokeballs!=1 ||
-       next.profile.team[0].xp!=75 ||
+       reward.xp_awarded!=800 || reward.new_pokeballs!=1 ||
+       next.profile.team[0].level<=1 ||
        next.profile.balls[PK_BALL_POKE]!=1)
         goto cleanup;
     next.checksum=record_checksum(&next);
@@ -273,7 +273,7 @@ static bool reboot_expected(file_record_t *a,file_record_t *b)
     b->generation=2;
     pk_reward_t award={};
     if(!pk_award_game(&b->profile,0xD1A10002UL,true,&award) ||
-       award.xp_awarded!=75 || award.new_pokeballs!=1)return false;
+       award.xp_awarded!=800 || award.new_pokeballs!=1)return false;
     b->checksum=record_checksum(b);
     return true;
 }
