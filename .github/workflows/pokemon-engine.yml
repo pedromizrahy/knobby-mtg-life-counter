@@ -6,6 +6,9 @@ on:
       - 'knobby/src/pokemon_gacha.*'
       - 'knobby/src/pokemon_lab.*'
       - 'knobby/src/pokemon_lab_runtime.*'
+      - 'tests/pokemon_lab_runtime_test.cpp'
+      - 'tests/pokemon_mocks/freertos/**'
+      - 'tests/pokemon_mocks/esp_random.h'
       - 'knobby/src/pokemon_lab_ui.*'
       - 'knobby/src/pokemon_lab_ball_art.*'
       - 'knobby/src/pokemon_lab_reveal.*'
@@ -109,6 +112,12 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c knobby/src/pokemon_lab.c tests/pokemon_lab_test.c -o /tmp/pokemon_lab_test
           /tmp/pokemon_lab_test
+      - name: Test LAB RAM sessions and discard stale reveals after serial reset
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_gacha.c -o /tmp/lab_rt_gacha.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_lab.c -o /tmp/lab_rt_lab.o
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_lab_runtime.cpp tests/pokemon_lab_runtime_test.cpp /tmp/lab_rt_gacha.o /tmp/lab_rt_lab.o -o /tmp/pokemon_lab_runtime_test
+          /tmp/pokemon_lab_runtime_test
       - name: Test Poke Ball gacha pure sampler
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c tests/pokemon_gacha_test.c -o /tmp/pokemon_gacha_test
