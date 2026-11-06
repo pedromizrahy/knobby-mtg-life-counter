@@ -119,3 +119,12 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - Preflight `pk_gacha_catalog_ready` exige pelo menos uma espécie com sprite instalado em **cada** tier com probabilidade positiva na Pokébola. **Apenas Mimikyu confirmado no DIAL não permite abertura ainda**; mostrar indisponível em vez de consumir bola sem entrega.
 - Testes `tests/pokemon_gacha_test.c` verificam limites das faixas, Master lendário, shiny separado, catálogo incompleto, duplicatas, falha de RNG, rejeição sem viés e não mutação da saída em caso de falha. Conectados ao workflow Pokémon.
 - **Próximas etapas:** escolher e instalar catálogo inicial com pelo menos uma espécie por tier, definir regra de duplicatas/shards, criar registro transacional de abertura (consumo da bola + prêmio persistido) e assets/animações homogêneos das quatro Pokébolas. Só então conectar botões e abertura reais.
+
+
+## 10. Catálogo real de sprites para habilitar gacha (fase preparatória)
+
+- Criado `tools/pokemon/catalog.json` com **apenas Mimikyu #778**, a única espécie confirmada no DIAL, em categoria *rare* provisória (raridades são internas ao gacha).
+- Criado `tools/pokemon/audit_catalog.py`: inspeção **local e somente leitura** da pasta `/mons` (espelho do SD). Valida cabeçalho e estrutura TPK2, Idle e limites do renderer 3× atual; detecta arquivo ausente/inválido e impede liberar uma Pokébola sem pelo menos uma espécie válida em cada tier com chance positiva.
+- Criados testes com TPK2 sintético em `tests/test_pokemon_catalog.py`, adicionados ao workflow Pokémon; não incluem sprites de terceiros.
+- O auditor é uma ferramenta de preparação **offline**, não uma consulta em tempo real ao SD pelo firmware. O sorteador permanece isolado e nenhum botão abre ou consome Pokébolas.
+- **Próximos passos:** obter/instalar espécies com licenças adequadas em todos os quatro tiers; tornar o carregador LVGL genérico por espécie (atualmente hardcoded `p778.bin`); transferir/validar assets sem sobrescrever existentes; integrar sorteio e gasto com persistência; produzir sprites de abertura consistentes para as quatro bolas.
