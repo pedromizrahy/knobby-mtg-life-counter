@@ -202,7 +202,6 @@ static void show_reveal_card(void)
     lv_label_set_text(reveal_title,label);
     snprintf(label,sizeof(label),"%s%s | SIM ONLY",
              pk_lab_tier_name(r->tier),r->shiny?" *SHINY*":"");
-    lv_label_set_text(reveal_detail,label);
     /* Preview the user's installed Idle sprite when available. Failed
      * read-only SD lookups fall back to our original LAB emblem. The
      * companion sprite cache is shared, so release LAB references FIRST. */
@@ -245,6 +244,10 @@ static void show_reveal_card(void)
         lv_obj_align(fixture_icon,LV_ALIGN_LEFT_MID,7,0);
         lv_obj_clear_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
     }
+    snprintf(label,sizeof(label),"%s%s | %s",
+             pk_lab_tier_name(r->tier),r->shiny?" SHINY":"",
+             real_sprite?"SD PREVIEW":"LAB ART");
+    lv_label_set_text(reveal_detail,label);
     lv_obj_set_style_border_color(reveal_card,lv_color_hex(accent[r->tier]),0);
     lv_obj_set_style_text_color(reveal_title,
                     lv_color_hex(r->shiny?0xFDEBA4:accent[r->tier]),0);
