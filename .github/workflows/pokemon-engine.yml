@@ -9,6 +9,10 @@ on:
       - 'tests/pokemon_sprite_path_test.c'
       - 'tests/pokemon_gacha_test.c'
       - 'tests/test_pokemon_catalog.py'
+      - 'tests/test_pokemon_batch_upload.py'
+      - 'tools/pokemon/upload_batch.py'
+      - 'knobby/src/pokemon_pmd_reader.*'
+      - 'knobby/src/playgroup_api.cpp'
       - 'tools/pokemon/audit_catalog.py'
       - 'tools/pokemon/catalog.json'
       - 'knobby/src/pokemon_achievements.*'
@@ -58,6 +62,8 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_sprite_path.c tests/pokemon_sprite_path_test.c -o /tmp/pokemon_sprite_path_test
           /tmp/pokemon_sprite_path_test
+      - name: Test multi-sprite transfer protocol and dry-run safety
+        run: python3 -m unittest discover -s tests -p test_pokemon_batch_upload.py -v
       - name: Test Poke Ball gacha pure sampler
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c tests/pokemon_gacha_test.c -o /tmp/pokemon_gacha_test
