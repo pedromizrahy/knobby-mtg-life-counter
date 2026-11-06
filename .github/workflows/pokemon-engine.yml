@@ -7,6 +7,8 @@ on:
       - 'knobby/src/pokemon_lab.*'
       - 'knobby/src/pokemon_lab_runtime.*'
       - 'knobby/src/pokemon_lab_ui.*'
+      - 'knobby/src/pokemon_lab_ball_art.*'
+      - 'tests/pokemon_lab_ball_art_test.c'
       - 'tests/pokemon_lab_test.c'
       - 'knobby/src/pokemon_sprite_path.*'
       - 'knobby/src/pokemon_companion_selection.*'
@@ -87,6 +89,10 @@ jobs:
           /tmp/pokemon_sprite_path_test
       - name: Test multi-sprite transfer protocol and dry-run safety
         run: python3 -m unittest discover -s tests -p test_pokemon_batch_upload.py -v
+      - name: Test original pixel-ball procedural animation frames
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_lab_ball_art.c tests/pokemon_lab_ball_art_test.c -o /tmp/pokemon_lab_ball_art_test
+          /tmp/pokemon_lab_ball_art_test
       - name: Test isolated unlimited Pokemon laboratory
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c knobby/src/pokemon_lab.c tests/pokemon_lab_test.c -o /tmp/pokemon_lab_test
