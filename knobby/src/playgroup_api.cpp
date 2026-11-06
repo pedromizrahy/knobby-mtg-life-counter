@@ -17,8 +17,7 @@
 #include "pokemon_file_store.h"
 #include "pokemon_sd_diagnostic.h"
 #include "pokemon_pmd_reader.h"
-#include "pokemon_lab.h"
-#include <esp_random.h>
+#include "pokemon_lab_runtime.h"
 #include "../knobby_net.h"
 
 extern "C" void knob_print_reset_diagnostics(void);
@@ -2751,14 +2750,6 @@ static void print_help(void)
 
 /* Dedicated diagnostic lab: process RAM only. Never invoke Pokemon profile
  * storage, the Playgroup API, reward ledgers or online synchronization. */
-static pk_lab_t pokemon_lab = {};
-static bool pokemon_lab_random(void *ctx,uint32_t *value)
-{
-    (void)ctx;
-    if (!value) return false;
-    *value=esp_random();
-    return true;
-}
 static const char *pokemon_lab_ball_name(unsigned ball)
 {
     static const char *names[]={"POKE","GREAT","ULTRA","MASTER"};
@@ -2766,6 +2757,11 @@ static const char *pokemon_lab_ball_name(unsigned ball)
 }
 static void pokemon_lab_print_status(void)
 {
+    pk_lab_t pokemon_lab={};
+    if(!pk_lab_runtime_snapshot(&pokemon_lab)) {
+        Serial.println("[Pokemon LAB] ERROR: snapshot unavailable");
+        return;
+    }
     if (!pokemon_lab.active) {
         Serial.println("[Pokemon LAB] INACTIVE (no saved test account)");
         return;
@@ -2807,13 +2803,15 @@ static void pokemon_lab_handle_command(const char *line)
         return;
     }
     if(strcmp(line,"PK LAB START")==0){
-        pk_lab_start(&pokemon_lab);
-        Serial.println("[Pokemon LAB] STARTED: unlimited balls, isolated RAM-only account.");
+        Serial.println(pk_lab_runtime_start()?
+            "[Pokemon LAB] STARTED: unlimited balls, isolated RAM-only account.":
+            "[Pokemon LAB] ERROR: lab unavailable.");
         return;
     }
     if(strcmp(line,"PK LAB RESET")==0){
-        pk_lab_reset(&pokemon_lab);
-        Serial.println("[Pokemon LAB] RESET: RAM counters and badges cleared.");
+        Serial.println(pk_lab_runtime_reset()?
+            "[Pokemon LAB] RESET: RAM counters and badges cleared.":
+            "[Pokemon LAB] ERROR: lab unavailable.");
         return;
     }
     if(strcmp(line,"PK LAB STATUS")==0) {
@@ -2821,7 +2819,7 @@ static void pokemon_lab_handle_command(const char *line)
         return;
     }
     if(strcmp(line,"PK LAB BADGE MASTER")==0){
-        Serial.println(pk_lab_award_master_badge(&pokemon_lab)?
+        Serial.println(pk_lab_runtime_badge()?
             "[Pokemon LAB] MASTER TRAINER unlocked (TEST ONLY)":
             "[Pokemon LAB] ERROR: START lab first.");
         return;
@@ -2829,7 +2827,7 @@ static void pokemon_lab_handle_command(const char *line)
     unsigned level=0;
     char extra=0;
     if(sscanf(line,"PK LAB LEVEL %u %c",&level,&extra)==1) {
-        Serial.println(level<=100U && pk_lab_set_level(&pokemon_lab,(uint8_t)level)?
+        Serial.println(level<=100U && pk_lab_runtime_level((uint8_t)level)?
             "[Pokemon LAB] simulated level updated (no real XP)": 
             "[Pokemon LAB] ERROR: START lab or choose level 1..100.");
         return;
@@ -2844,8 +2842,7 @@ static void pokemon_lab_handle_command(const char *line)
             Serial.println("[Pokemon LAB] ERROR: ball or count invalid (max 1000).");
             return;
         }
-        if(!pk_lab_draw(&pokemon_lab,(uint8_t)type,count,
-                        pokemon_lab_random,NULL)){
+        if(!pk_lab_runtime_draw((uint8_t)type,count)){
             Serial.println("[Pokemon LAB] ERROR: START lab or RNG failed; no batch committed.");
             return;
         }
