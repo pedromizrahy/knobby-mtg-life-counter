@@ -289,7 +289,12 @@ static void on_badge(lv_event_t *event)
 static void on_reset(lv_event_t *event)
 {
     (void)event;
-    if(!animating && pk_lab_runtime_start())lab_refresh();
+    if(animating || !pk_lab_runtime_start())return;
+    /* A reset must never leave an old result or sprite on screen. */
+    captured_valid=false;
+    lab_detach_sprite();
+    if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
+    lab_refresh();
 }
 static void on_back(lv_event_t *event)
 {
