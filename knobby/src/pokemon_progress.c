@@ -5,7 +5,8 @@
 static bool valid_species(uint16_t id) { return id>=1 && id<=PK_DEX_SPECIES; }
 static uint8_t bit_for(uint16_t id) { return (uint8_t)(1U<<((id-1U)&7U)); }
 static unsigned offset_for(uint16_t id) { return (unsigned)(id-1U)/8U; }
-static uint32_t xp_for_next(uint8_t level) { return 100U+(uint32_t)level*25U; }
+/* Commander-paced leveling: 21,780 XP from level 1 to 100. */
+static uint32_t xp_for_next(uint8_t level) { return 20U+(uint32_t)level*4U; }
 void pk_profile_init(pk_profile_t *p) {
     if(!p) return;
     memset(p,0,sizeof(*p));
@@ -54,7 +55,7 @@ bool pk_award_game(pk_profile_t *p,uint32_t id,bool won,pk_reward_t *out) {
         }
     }
     pk_mon_t *m=&p->team[p->active_index];
-    uint32_t grant=won?75U:50U;
+    uint32_t grant=won?800U:300U;
     out->xp_awarded=(uint16_t)grant;
     if(m->level<100) {
         m->xp=(m->xp>UINT32_MAX-grant)?UINT32_MAX:m->xp+grant;
@@ -67,9 +68,9 @@ bool pk_award_game(pk_profile_t *p,uint32_t id,bool won,pk_reward_t *out) {
             if(m->level==50 && p->balls[PK_BALL_ULTRA]<UINT16_MAX) {
                 p->balls[PK_BALL_ULTRA]++;out->new_ultraballs++;
             }
-            if(m->level==100 && p->balls[PK_BALL_MASTER]<UINT16_MAX) {
-                p->balls[PK_BALL_MASTER]++;out->new_masterballs++;
-            }
+            /* Master Ball is reserved for the once-per-player Master Trainer
+             * achievement. Do not award per-Pokemon: the persistent unlock
+             * marker and crash-safe claim still need their own integration. */
         }
     }
     return true;
