@@ -3,6 +3,8 @@ on:
   push:
     paths:
       - 'knobby/src/pokemon_progress.*'
+      - 'knobby/src/pokemon_gacha.*'
+      - 'tests/pokemon_gacha_test.c'
       - 'knobby/src/pokemon_achievements.*'
       - 'knobby/src/pokemon_master_trainer_store.*'
       - 'knobby/src/pokemon_master_trainer_intent.*'
@@ -44,6 +46,10 @@ jobs:
         run: cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c tests/pokemon_progress_test.c -o /tmp/pokemon_progress_test
       - name: Run reward and collection tests
         run: /tmp/pokemon_progress_test
+      - name: Test Poke Ball gacha pure sampler
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c tests/pokemon_gacha_test.c -o /tmp/pokemon_gacha_test
+          /tmp/pokemon_gacha_test
       - name: Test isolated first-level-100 achievement detection
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_achievements.c tests/pokemon_achievements_test.c -o /tmp/pokemon_achievements_test
