@@ -31,6 +31,7 @@ static unsigned sprite_frame=0;
 static uint16_t sprite_species=0;
 static pk_lab_t captured_draw={0};
 static bool captured_valid=false;
+static uint32_t captured_session=0;
 static lv_obj_t *ball_image=NULL;
 static lv_timer_t *ball_timer=NULL;
 static unsigned animation_frame=0;
@@ -189,6 +190,9 @@ static void lab_restore_companion(void)
 static void show_reveal_card(void)
 {
     if(!reveal_card || !captured_valid || !captured_draw.has_last)return;
+    uint32_t session=0;
+    if(!pk_lab_runtime_session_token(&session) ||
+       session!=captured_session)return;
     const pk_gacha_result_t *r=&captured_draw.last;
     char details[80];
     if(!pk_lab_reveal_text(r,details,sizeof(details)))return;
@@ -257,6 +261,21 @@ static void ball_tick(lv_timer_t *timer)
 {
     (void)timer;
     if(!animating)return;
+    uint32_t current_session=0;
+    if(!pk_lab_runtime_session_token(&current_session) ||
+       !captured_valid || current_session!=captured_session){
+        /* USB START/RESET invalidates the pending reveal. Do not present
+         * an old result in a newly reset LAB session. */
+        animating=false;
+        if(ball_timer)lv_timer_pause(ball_timer);
+        if(ball_image)lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
+        if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
+        if(reveal_label)lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
+        if(rates_label)lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
+        captured_valid=false;
+        lab_refresh();
+        return;
+    }
     if(lv_scr_act()!=lab_screen){
         animating=false;
         lv_timer_pause(ball_timer);
@@ -306,7 +325,8 @@ static void on_draw(lv_event_t *event)
 {
     (void)event;
     if(animating)return;
-    if(!pk_lab_runtime_draw_snapshot(active_ball,batch,&captured_draw)) {
+    if(!pk_lab_runtime_draw_snapshot_token(active_ball,batch,
+                                            &captured_draw,&captured_session)) {
         if(reveal_label)lv_label_set_text(reveal_label,"DRAW FAILED (SIM)");
     } else {
         captured_valid=true;
