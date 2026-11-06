@@ -183,3 +183,22 @@ silently skipping. Files are not copied to the source repository.
 
 The current on-screen Pokémon remains Mimikyu and gacha openings remain
 disabled. This only prepares the asset transfer mechanism.
+
+
+### Verificação após transferência (nova proteção)
+
+O firmware agora suporta `PK PMD CHECK <ID>`, em modo somente leitura,
+para validar `/mons/p<ID>.bin` (incluindo animação Idle dentro dos limites
+do renderizador). O comando sem argumento `PK PMD CHECK` continua validando
+o Mimikyu #778.
+
+O `upload_batch.py --execute` **não considera uma espécie concluída só
+pelo CRC de transferência**. Após cada arquivo, emite o CHECK correspondente,
+exige o resultado `PMD VALID` e a confirmação final `PMD CHECK COMPLETE`
+antes de começar o próximo. Se houver falha, o lote é interrompido.
+Nenhum arquivo existente é sobrescrito nem removido.
+
+**Atenção:** a prova física de instalação continua pendente. O comando
+CHECK é estrutural, não representa confirmação visual de que cada animação
+é bonita/adequada. Também não transfere arte shiny; `ps<ID>.bin` exige
+um fluxo próprio. Não executar em partida ativa.
