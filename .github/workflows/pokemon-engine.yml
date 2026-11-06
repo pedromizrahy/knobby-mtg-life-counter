@@ -9,6 +9,8 @@ on:
       - 'knobby/src/pokemon_lab_ui.*'
       - 'knobby/src/pokemon_lab_ball_art.*'
       - 'knobby/src/pokemon_lab_reveal.*'
+      - 'knobby/src/pokemon_lab_fixture_art.*'
+      - 'tests/pokemon_lab_fixture_art_test.c'
       - 'tests/pokemon_lab_reveal_test.c'
       - 'tests/pokemon_lab_ball_art_test.c'
       - 'tests/pokemon_lab_test.c'
@@ -91,6 +93,10 @@ jobs:
           /tmp/pokemon_sprite_path_test
       - name: Test multi-sprite transfer protocol and dry-run safety
         run: python3 -m unittest discover -s tests -p test_pokemon_batch_upload.py -v
+      - name: Test synthetic LAB pixel crest transparency and variants
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_lab_fixture_art.c tests/pokemon_lab_fixture_art_test.c -o /tmp/pokemon_lab_fixture_art_test
+          /tmp/pokemon_lab_fixture_art_test
       - name: Test synthetic Pokemon LAB reveal and Shiny labels
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_lab_reveal.c tests/pokemon_lab_reveal_test.c -o /tmp/pokemon_lab_reveal_test
