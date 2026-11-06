@@ -3,6 +3,8 @@ on:
   push:
     paths:
       - 'knobby/src/pokemon_progress.*'
+      - 'knobby/src/pokemon_achievements.*'
+      - 'tests/pokemon_achievements_test.c'
       - 'tests/pokemon_progress_test.c'
       - 'tests/pokemon_reward_coordinator_test.c'
       - 'knobby/src/pokemon_reward_coordinator.*'
@@ -35,6 +37,10 @@ jobs:
         run: cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c tests/pokemon_progress_test.c -o /tmp/pokemon_progress_test
       - name: Run reward and collection tests
         run: /tmp/pokemon_progress_test
+      - name: Test isolated first-level-100 achievement detection
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_achievements.c tests/pokemon_achievements_test.c -o /tmp/pokemon_achievements_test
+          /tmp/pokemon_achievements_test
       - name: Compile isolated reward crash-recovery tests
         run: cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_reward_coordinator.c tests/pokemon_reward_coordinator_test.c -o /tmp/pokemon_reward_test
       - name: Verify rewards never duplicate on simulated failures
