@@ -239,3 +239,12 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
 - Cada mudança de Pokébola, novo DRAW, RESET, entrada ou saída do LAB pausa o timer e destaca a referência à imagem anterior antes de qualquer substituição de buffers PSRAM. Se outra parte mudar a espécie carregada, o timer é interrompido em vez de acessar ponteiros obsoletos.
 - O card passa a distinguir explicitamente `SD PREVIEW` (Idle real instalado) de `LAB ART` (emblema sintético). Resultados Shiny continuam exibindo `LAB ART` se não houver sprite Shiny validado.
 - Pendente compilar essa atualização e testar no ESP32-S3; verificação de memória e visual/touch na placa é obrigatória. Gacha real permanece desligado; PR não deve ser mergeada sem revisão e teste.
+
+
+## 22. LAB: invalidação segura de revelação em RESET via USB (2026-11-06)
+
+- Confirmado GitHub **CI Arduino e Pokémon Engine Checks PASS** no commit `031355a9` (animação Idle real e origem SD/LAB). Isso não substitui validação no aparelho.
+- `pokemon_lab_runtime.cpp` agora acompanha um contador de **sessão RAM** protegido pelo mutex existente. Os comandos `PK LAB START` e `PK LAB RESET` incrementam o contador; sorteios normais mantêm o token.
+- Nova API `pk_lab_runtime_draw_snapshot_token` obtém resultado e token atomicamente após um DRAW. A animação visual verifica o token a cada frame e antes de revelar. Se a sessão for reiniciada pelo USB durante a abertura, cancela o resultado antigo, pausa timer e atualiza a tela com estatísticas da sessão atual. Não altera recompensa/conta de jogador.
+- Casos de hardware a testar: abrir x1 e dar `PK LAB RESET` no USB durante os quadros; abrir x100 e dar `PK LAB START`; alternar entre LAB/Companion após preview SD; executar muitas aberturas de Mimikyu; garantir ausência de travamento, sem alteração de dados Playgroup.
+- Essa mudança exige novo CI Arduino e teste físico; **não há hardware remoto disponível**. O merge permanece proibido sem pedido explícito.
