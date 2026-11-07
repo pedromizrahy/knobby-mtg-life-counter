@@ -50,13 +50,13 @@ bool pk_gacha_catalog_ready(uint8_t ball,
         if(kWeights[ball][t] && !available[t])return false;
     return true;
 }
-bool pk_gacha_preview(uint8_t ball,
+bool pk_gacha_preview_prevalidated(uint8_t ball,
                       const pk_gacha_entry_t *catalog,size_t count,
                       pk_gacha_rng_t rng,void *ctx,
                       pk_gacha_result_t *out)
 {
-    if(!rng || !out || !pk_gacha_catalog_ready(ball,catalog,count))
-        return false;
+    if(!rng || !out || !catalog || count==0U || count>PK_DEX_SPECIES ||
+       ball>=PK_BALL_COUNT)return false;
     uint32_t roll=0;
     if(!bounded(rng,ctx,10000U,&roll))return false;
     uint8_t tier=PK_TIER_COUNT;
@@ -86,4 +86,13 @@ bool pk_gacha_preview(uint8_t ball,
         }
     }
     return false;
+}
+
+bool pk_gacha_preview(uint8_t ball,
+                      const pk_gacha_entry_t *catalog,size_t count,
+                      pk_gacha_rng_t rng,void *ctx,
+                      pk_gacha_result_t *out)
+{
+    if(!pk_gacha_catalog_ready(ball,catalog,count))return false;
+    return pk_gacha_preview_prevalidated(ball,catalog,count,rng,ctx,out);
 }
