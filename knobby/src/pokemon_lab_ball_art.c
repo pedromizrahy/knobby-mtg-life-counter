@@ -2,8 +2,9 @@
 #include <string.h>
 /* Four original 32px pixel balls. Their color schemes are lab previews,
  * not official sprites or graphical promises for the final game. */
-static const uint16_t tops[4]={0xD9E4U,0x294BU,0xFCD2U,0xA17FU};
-static const uint16_t gleams[4]={0xFBCFU,0x9D7FU,0xFF9CU,0xE71FU};
+/* RGB565 tones: Poke red, Great blue, Ultra dark, Master PURPLE. */
+static const uint16_t tops[4]={0xD965U,0x295FU,0x2104U,0x981FU};
+static const uint16_t gleams[4]={0xFBCFU,0xEA29U,0xFEC0U,0xF83FU};
 static void pixel(uint8_t *dst,int x,int y,uint16_t color)
 {
     if(x<0 || x>=32 || y<0 || y>=32)return;
@@ -11,8 +12,9 @@ static void pixel(uint8_t *dst,int x,int y,uint16_t color)
         for(unsigned sx=0;sx<2;sx++){
             const unsigned pos=((unsigned)(2*y+sy)*64U+
                                 (unsigned)(2*x+sx))*3U;
-            dst[pos]=(uint8_t)color;
-            dst[pos+1]=(uint8_t)(color>>8);
+            /* Firmware LV_COLOR_16_SWAP=1: native LVGL color must be swapped. */
+            dst[pos]=(uint8_t)(color>>8);
+            dst[pos+1]=(uint8_t)color;
             dst[pos+2]=255U;
         }
 }
@@ -51,6 +53,12 @@ bool pk_lab_ball_art_render(uint8_t ball,unsigned frame,
             if(y>=15 && frame<=1U)color=0x0841U;
             if(x>=10 && x<=12 && y>=8 && y<=10 && r2<110)
                 color=gleams[ball];
+            if(ball==PK_BALL_GREAT && y>=8 && y<=12 &&
+               ((x>=6 && x<=10)||(x>=22 && x<=26)))color=0xD965U;
+            if(ball==PK_BALL_ULTRA && y>=7 && y<=12 &&
+               (x==12 || x==13 || x==19 || x==20))color=0xFEC0U;
+            if(ball==PK_BALL_MASTER && y>=8 && y<=12 &&
+               ((x>=8 && x<=10)||(x>=22 && x<=24)))color=0xF83FU;
             pixel(dst,x+shake,y-lift,color);
         }
     /* Black hinge/band, central clasp with a crisp pixel border. */
