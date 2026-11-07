@@ -6,6 +6,7 @@
 #include "SPIFFS.h"
 #include "Preferences.h"
 #include "../knobby/src/pokemon_starter_service.h"
+#include "../knobby/src/pokemon_file_store.h"
 MockSPIFFS SPIFFS;
 std::map<std::string,std::vector<uint8_t>> Preferences::data;
 bool Preferences::fail_next_write=false;
