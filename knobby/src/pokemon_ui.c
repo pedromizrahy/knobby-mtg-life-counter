@@ -23,6 +23,9 @@ static lv_obj_t *species_label = NULL;
 static lv_obj_t *species_types = NULL;
 static lv_obj_t *level_label = NULL;
 static uint16_t displayed_species = 0;
+/* Only an ephemeral preview choice, NOT ownership or a profile write. */
+static uint16_t preview_species = 778U;
+static const uint16_t kPreviewCandidates[]={778U,25U,149U,150U};
 static lv_obj_t *header_plate = NULL;
 static lv_obj_t *info_panel = NULL;
 static lv_obj_t *stats_panel = NULL;
@@ -104,7 +107,7 @@ static void update_page(void)
         if (pk_tpk2_idle_frame_count())
             lv_obj_clear_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(mimikyu_image,LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(page_label,"COMPANION");
+        lv_label_set_text(page_label,"PARTNER PREVIEW");
     } else {
         lv_obj_add_flag(info_panel,LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(stats_panel,LV_OBJ_FLAG_HIDDEN);
@@ -126,6 +129,39 @@ static void on_page(lv_event_t *event)
 {
     (void)event;
     pokemon_ui_knob_page(1);
+}
+static void browse_preview(int step)
+{
+    if(lv_scr_act()!=screen_pokemon_companion || companion_page!=0)return;
+    unsigned index=0;
+    for(unsigned i=0;i<4;i++)
+        if(kPreviewCandidates[i]==preview_species)index=i;
+    for(unsigned n=0;n<4;n++){
+        index=(index+(step>0?1U:3U))%4U;
+        const uint16_t candidate=kPreviewCandidates[index];
+        if(pokemon_ui_show_species(candidate)){
+            preview_species=candidate;
+            return;
+        }
+    }
+    /* An SD sprite is required, otherwise no companion is invented. */
+}
+static void on_preview_prev(lv_event_t *event)
+{
+    (void)event;
+    browse_preview(-1);
+}
+static void on_preview_next(lv_event_t *event)
+{
+    (void)event;
+    browse_preview(1);
+}
+void pokemon_ui_restore_preview(void)
+{
+    if(!pokemon_ui_show_species(preview_species)){
+        preview_species=778U;
+        (void)pokemon_ui_show_species(778U);
+    }
 }
 static void on_lab(lv_event_t *event)
 {
@@ -248,8 +284,8 @@ bool pokemon_ui_show_saved_species(uint32_t verified_user_id,
 void pokemon_ui_open_companion(void)
 {
     companion_page=0;
-    /* Keep Mimikyu #778 as the initial, proven working companion. */
-    (void)pokemon_ui_show_species(778U);
+    /* Keep the preview choice in RAM; default to Mimikyu #778. */
+    pokemon_ui_restore_preview();
     update_theme();
     update_page();
     if(screen_pokemon_companion)lv_scr_load(screen_pokemon_companion);
@@ -328,6 +364,27 @@ void pokemon_ui_build(void)
     lv_obj_center(lab_caption);
 
     soft_button(screen_pokemon_companion,"BACK",68,-82,on_back);
+    /* Preview only installed TPK2, never pretend an unowned Pokemon is in team. */
+    lv_obj_t *prev=lv_btn_create(screen_pokemon_companion);
+    lv_obj_set_pos(prev,108,317);
+    lv_obj_set_size(prev,67,28);
+    lv_obj_set_style_radius(prev,14,0);
+    lv_obj_set_style_bg_color(prev,lv_color_hex(0xF6F1DE),0);
+    lv_obj_add_event_cb(prev,on_preview_prev,LV_EVENT_CLICKED,NULL);
+    lv_obj_t *prev_text=lv_label_create(prev);
+    lv_label_set_text(prev_text,"<");
+    lv_obj_set_style_text_color(prev_text,lv_color_hex(0x152735),0);
+    lv_obj_center(prev_text);
+    lv_obj_t *next=lv_btn_create(screen_pokemon_companion);
+    lv_obj_set_pos(next,185,317);
+    lv_obj_set_size(next,67,28);
+    lv_obj_set_style_radius(next,14,0);
+    lv_obj_set_style_bg_color(next,lv_color_hex(0xF6F1DE),0);
+    lv_obj_add_event_cb(next,on_preview_next,LV_EVENT_CLICKED,NULL);
+    lv_obj_t *next_text=lv_label_create(next);
+    lv_label_set_text(next_text,">");
+    lv_obj_set_style_text_color(next_text,lv_color_hex(0x152735),0);
+    lv_obj_center(next_text);
     soft_button(screen_pokemon_companion,"SCENE",74,0,on_theme);
     soft_button(screen_pokemon_companion,"STATS",68,82,on_page);
 
