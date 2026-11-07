@@ -270,3 +270,15 @@ Feedback: ~105 partidas para nível 100 é excessivo em Commander; 100% de vitó
   5. Voltar ao Companion, conferir Mimikyu #778 e suas animações; navegar para a tela inicial. Repetir após abrir diversos resultados.
 - Enviar logs `[Pokemon LAB] DIAG`, `[Pokemon LAB] STATUS`, possíveis mensagens `[Pokemon] TPK2 Idle` e fotos da tela. **Nenhuma conclusão de estabilidade física antes dessa evidência.**
 - Não executar durante partidas Magic/Playgroup ativas, não criar usuário real de teste, não fazer merge da PR. Se houver reset, travamento ou alteração inesperada de dados, interromper testes e manter recompensas reais desligadas.
+
+
+## 25. Correção UX após validação física do usuário (2026-11-06)
+
+**Feedback do aparelho:** menu do LAB confuso, animação inadequada, Master Ball verde, resultado sem sprite grande, impossibilidade de trocar parceiro.
+
+- O `pokemon_lab_ui.c` foi refeito com **dois estados de interface** na mesma tela de 360×360: menu simples (tipo de bola, abrir, quantidade e voltar) e sobreposição **fullscreen** exclusiva para abertura/revelação. Durante a abertura não há estatísticas nem botão de fechar cobrindo a arte; depois surge o sprite central com nome, #Dex, raridade, indicador Shiny e botão CLOSE.
+- O renderer de bolas e emblemas foi corrigido para `LV_COLOR_16_SWAP=1`; Master Ball tem cor superior roxa e detalhe em M. Agora são 12 quadros distintos com tremor, abertura e brilho, em vez de seis quadros quase estáticos. A imagem de bola usa zoom para ocupar mais da tela.
+- Na tela Companion há controles táteis anteriores/próximos para selecionar **previews RAM-only** de espécies entre 778, 25, 149 e 150 **apenas se o TPK2 da espécie existir no SD**. O preview selecionado é restaurado ao voltar do TEST LAB. Essa seleção **não altera os seis slots do time nem comprova posse** e precisa ser estendida ao perfil real após autenticação/integração. Sem assets adicionais, o único sprite atualmente confirmado é Mimikyu #778.
+- O LAB não inventa sprite de Pokémon quando não há TPK2: mostra aviso explícito `SPRITE NOT INSTALLED | LAB ART` e emblema de teste, sem fake ownership. Sprites normais instalados aparecem grandes e Idle animado; Shiny sem asset validado usa fallback explícito.
+- Importante: os 12 frames são **nova implementação provisória**. A qualidade visual precisa de fotos/vídeo após novo upload; a próxima evolução será a arte final e a biblioteca de TPK2 dos Pokémon, e depois a escolha permanente de parceiro atrelada a uma identidade verificada.
+- Recompensas, saldo, perfil Playgroup e NVS permanecem sem alteração. PR #1 draft, sem merge.
