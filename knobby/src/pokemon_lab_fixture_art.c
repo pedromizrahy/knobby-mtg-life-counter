@@ -4,7 +4,8 @@ static void dot(uint8_t *b,int x,int y,uint16_t c)
 {
     if(x<0 || y<0 || x>=40 || y>=40)return;
     size_t i=((size_t)y*40U+(size_t)x)*3U;
-    b[i]=(uint8_t)c;b[i+1]=(uint8_t)(c>>8);b[i+2]=255;
+    /* LV_COLOR_16_SWAP=1 on ESP32 display. */
+    b[i]=(uint8_t)(c>>8);b[i+1]=(uint8_t)c;b[i+2]=255;
 }
 static void line(uint8_t *b,int x0,int y0,int x1,int y1,uint16_t c,int w)
 {
