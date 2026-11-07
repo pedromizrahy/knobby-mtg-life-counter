@@ -78,32 +78,32 @@ class BatchUploadTests(unittest.TestCase):
     def test_resume_skips_existing_valid_file_of_matching_size(self):
         port = MagicMock()
         port.readline.side_effect = [
-            b"[Pokemon] PMD CHECK #25: /mons/p25.bin (read-only)\\n",
-            b"[Pokemon] PMD VALID size=17 actions=1 palette=1 frames=1\\n",
-            b"[Pokemon] PMD CHECK COMPLETE: card unmounted; no files modified.\\n",
+            b"[Pokemon] PMD CHECK #25: /mons/p25.bin (read-only)\n",
+            b"[Pokemon] PMD VALID size=17 actions=1 palette=1 frames=1\n",
+            b"[Pokemon] PMD CHECK COMPLETE: card unmounted; no files modified.\n",
         ]
         self.assertTrue(check_before_upload(port, 25, 17))
-        port.write.assert_called_once_with(b"PK PMD CHECK 25\\n")
+        port.write.assert_called_once_with(b"PK PMD CHECK 25\n")
 
     def test_missing_file_can_be_uploaded(self):
         port = MagicMock()
         port.readline.side_effect = [
-            b"[Pokemon] PMD MISSING: /mons/p25.bin (asset not installed).\\n",
+            b"[Pokemon] PMD MISSING: /mons/p25.bin (asset not installed).\n",
         ]
         self.assertFalse(check_before_upload(port, 25, 17))
 
     def test_conflicting_existing_file_never_overwritten(self):
         port = MagicMock()
         port.readline.side_effect = [
-            b"[Pokemon] PMD VALID size=18 actions=1 palette=1 frames=1\\n",
-            b"[Pokemon] PMD CHECK COMPLETE: card unmounted; no files modified.\\n",
+            b"[Pokemon] PMD VALID size=18 actions=1 palette=1 frames=1\n",
+            b"[Pokemon] PMD CHECK COMPLETE: card unmounted; no files modified.\n",
         ]
         with self.assertRaises(RuntimeError):
             check_before_upload(port, 25, 17)
 
     def test_invalid_existing_file_never_overwritten(self):
         port = MagicMock()
-        port.readline.side_effect = [b"[Pokemon] PMD INVALID size=17\\n"]
+        port.readline.side_effect = [b"[Pokemon] PMD INVALID size=17\n"]
         with self.assertRaises(RuntimeError):
             check_before_upload(port, 25, 17)
 
