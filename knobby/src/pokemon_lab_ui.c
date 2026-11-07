@@ -72,7 +72,8 @@ static void stop_sprite(void)
 static void update_menu(void)
 {
     if(chosen_label)lv_label_set_text(chosen_label,names[ball]);
-    if(count_label)lv_label_set_text(count_label,count==1?"QUANTITY x1":"QUANTITY x100");
+    if(count_label)lv_label_set_text(count_label,
+        count==1?"QUANTITY x1":count==100?"QUANTITY x100":"QUANTITY x1000");
 }
 static void stop_opening(void)
 {
@@ -201,7 +202,7 @@ static void on_quantity(lv_event_t *event)
 {
     (void)event;
     if(opening_active || reveal_active)return;
-    count=count==1?100:1;
+    count=count==1?100:count==100?1000:1;
     update_menu();
 }
 static void on_rates_close(lv_event_t *event)
