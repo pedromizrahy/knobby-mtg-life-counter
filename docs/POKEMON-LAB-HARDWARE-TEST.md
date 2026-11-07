@@ -1,6 +1,6 @@
 # DIAL DOS PRIMOS — TEST LAB: validação física controlada
 
-**Status:** código compilado no CI (último build verificado: `2407de30`); testes reais de touch, SD e PSRAM **ainda pendentes**. Não é requisito conectar Playgroup. Não fazer merge. Não executar durante jogo Magic.
+**Status:** código anterior compilado no CI; confirmar o SHA atual em GitHub Actions antes do upload; testes reais de touch, SD e PSRAM **ainda pendentes**. Não é requisito conectar Playgroup. Não fazer merge. Não executar durante jogo Magic.
 
 ## Pré-requisitos
 - ESP32-S3 compatível conectado por USB à COM4 (confirmar porta no Windows);
@@ -14,19 +14,26 @@ Abrir PowerShell no repositório e **confirmar primeiro** que não há alteraç�
 
 ```powershell
 cd C:\dev\sistema-mz\knobby-mtg-life-counter
-git status --short
+# Abort if the local checkout has any unstaged, staged or untracked changes.
+if ((git status --porcelain).Length -gt 0) {
+    throw "Working tree is not clean. Review local files before switching branches."
+}
 git fetch origin feat/game-events-turn-manager
+if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
 git switch feat/game-events-turn-manager
-git pull --ff-only origin feat/game-events-turn-manager
+if ($LASTEXITCODE -ne 0) { throw "git switch failed" }
+git merge --ff-only origin/feat/game-events-turn-manager
+if ($LASTEXITCODE -ne 0) { throw "Fast-forward failed. Do not force-update branch." }
 git rev-parse --short HEAD
 ```
 
-Se `git status` exibir arquivos modificados, não prosseguir com a troca de branch/pull sem revisar. Sem merge da PR.
+O script interrompe em alterações locais, falhas de Git ou divergências de histórico. O `git merge --ff-only` atualiza **apenas a branch local** com o commit remoto da mesma branch; **não realiza merge da PR no GitHub**.
 
 ```powershell
-$cli = "C:\Program Files\Arduino CLI\arduino-cli.exe"
+$cli = (Get-Command arduino-cli -ErrorAction Stop).Source
 $fqbn = "esp32:esp32:esp32s3:FlashSize=16M,PSRAM=opi,USBMode=hwcdc,CDCOnBoot=cdc,FlashMode=qio,PartitionScheme=custom"
 & $cli compile --fqbn $fqbn .\knobby
+if ($LASTEXITCODE -ne 0) { throw "Compilation failed: do not upload" }
 ```
 
 Inspecionar o resumo: o binário precisa caber na partição app 12,5 MiB, e a compilação precisa terminar com status 0. O upload por USB é **uma ação separada e intencional** do usuário:
