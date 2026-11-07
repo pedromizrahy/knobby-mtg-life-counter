@@ -7,7 +7,7 @@ int main(void){
     memset(buffer,0x77,sizeof(buffer));
     assert(!pk_lab_ball_art_render(4,0,buffer,sizeof(buffer)));
     assert(buffer[0]==0x77);
-    assert(!pk_lab_ball_art_render(0,6,buffer,sizeof(buffer)));
+    assert(!pk_lab_ball_art_render(0,PK_LAB_BALL_FRAMES,buffer,sizeof(buffer)));
     assert(!pk_lab_ball_art_render(0,0,buffer,sizeof(buffer)-1));
     assert(!pk_lab_ball_art_render(0,0,NULL,sizeof(buffer)));
     unsigned total=0;
