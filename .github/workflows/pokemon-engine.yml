@@ -43,6 +43,8 @@ on:
       - 'tests/test_prepare_sprites.py'
       - 'knobby/src/pokemon_pmd_reader.*'
       - 'knobby/src/playgroup_api.cpp'
+      - 'knobby/src/pregame.c'
+      - 'tests/test_playgroup_fast_path.py'
       - 'tools/pokemon/audit_catalog.py'
       - 'tools/pokemon/catalog.json'
       - 'knobby/src/pokemon_achievements.*'
@@ -88,6 +90,8 @@ jobs:
         run: /tmp/pokemon_progress_test
       - name: Audit SD sprite catalog with synthetic TPK2 fixtures
         run: python3 -m unittest discover -s tests -p test_pokemon_catalog.py -v
+      - name: Ensure Playgroup setup never blocks on art or pending-game sync
+        run: python3 -m unittest discover -s tests -p test_playgroup_fast_path.py -v
       - name: Test main-only Playgroup roster and distinct user identities
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_player_identity.c knobby/src/pokemon_playgroup_roster.c tests/pokemon_playgroup_roster_test.c -o /tmp/pokemon_playgroup_roster_test

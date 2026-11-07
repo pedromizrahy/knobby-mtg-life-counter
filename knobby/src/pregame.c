@@ -93,7 +93,7 @@ static volatile int commander_prepare_total = 0;
 static volatile int commander_prepare_failures = 0;
 static bool commander_prepare_from_roster = false;
 
-#define DECK_DECODED_CACHE_SLOTS 8
+#define DECK_DECODED_CACHE_SLOTS 2
 
 typedef struct {
     char scryfall_id[PG_SCRYFALL_ID_LEN];
@@ -1350,6 +1350,8 @@ static void event_member_select(lv_event_t *e)
     deck_picker_seat = member_picker_seat;
     deck_picker_index = 0;
     deck_picker_show_all = false;
+    if (deck_art_timer != NULL) lv_timer_pause(deck_art_timer);
+    clear_deck_art();
     clear_decoded_art_cache();
 
     perf_network_started = lv_tick_get();
@@ -1375,18 +1377,25 @@ static void event_member_select(lv_event_t *e)
         lv_label_set_text(deck_title_label, title);
     }
 
-    /* Prepare in a low-priority worker. The LVGL/main task remains free,
-       so watchdogs and input continue running. The picker opens only after
-       the batch is complete; browsing itself never performs network I/O. */
-    start_commander_prepare(false);
-    printf("[Perf] PG SELECT PLAYER callback=%lu ms (art continues async)\n",
+    /* Text is available NOW. Previously we downloaded + JPEG-decoded
+     * FIVE commander images before opening this screen (73s observed).
+     * The current art is requested on demand by the existing timer. */
+    refresh_deck_picker(false);
+    lv_scr_load(screen_pregame_deck);
+    schedule_deck_art();
+    printf("[Perf] PG SELECT PLAYER picker ready=%lu ms (lazy art)\n",
            (unsigned long)(lv_tick_get() - perf_started));
 }
 
 static void clear_deck_art(void)
 {
-    if (deck_image != NULL)
+    if (deck_image != NULL) {
+        /* Drop the LVGL reference BEFORE the decoded cache can be freed.
+         * Keeping a descriptor to freed PSRAM caused unsafe redraws when
+         * moving between players/decks. */
         lv_obj_add_flag(deck_image, LV_OBJ_FLAG_HIDDEN);
+        lv_img_set_src(deck_image, NULL);
+    }
 }
 
 static void deck_art_timer_cb(lv_timer_t *timer)
@@ -1615,6 +1624,9 @@ static void event_roster_open_decks(lv_event_t *e)
     deck_picker_seat = seat;
     deck_picker_index = 0;
     deck_picker_show_all = false;
+    if (deck_art_timer != NULL) lv_timer_pause(deck_art_timer);
+    clear_deck_art();
+    clear_decoded_art_cache();
 
     if (deck_title_label != NULL) {
         snprintf(title, sizeof(title), "P%d  %s", seat + 1, member->username);
@@ -1634,9 +1646,11 @@ static void event_roster_open_decks(lv_event_t *e)
     printf("[Perf] PG roster decks network=%lu ms seat=%d\n",
            (unsigned long)(lv_tick_get() - perf_network_started), seat + 1);
 
-    /* Same non-blocking preparation path used by normal player setup. */
-    start_commander_prepare(true);
-    printf("[Perf] PG roster decks callback=%lu ms\n",
+    /* Open instantly after GET: do not batch download commander JPEGs. */
+    refresh_deck_picker(false);
+    lv_scr_load(screen_pregame_deck);
+    schedule_deck_art();
+    printf("[Perf] PG roster decks picker ready=%lu ms (lazy art)\n",
            (unsigned long)(lv_tick_get() - perf_started));
 }
 
