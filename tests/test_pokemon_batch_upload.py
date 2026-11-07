@@ -43,6 +43,22 @@ class BatchUploadTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             plan(self.manifest, self.root)
 
+    def test_full_kanto_johto_batch_is_independent_of_gacha_catalog(self):
+        # 251 inventory slots, without changing confirmed Pokémon ownership.
+        for number in range(1, 252):
+            (self.root / f"p{number}.bin").write_bytes(sprite())
+        items = plan(self.manifest, self.root, gen1_2=True)
+        self.assertEqual(len(items), 251)
+        self.assertEqual([number for number, _, _ in items], list(range(1, 252)))
+        self.assertTrue(all(len(data) == len(sprite()) for _, data, _ in items))
+        subset = plan(self.manifest, self.root, gen1_2=True,
+                      species=[1, 151, 152, 251])
+        self.assertEqual([number for number, _, _ in subset],
+                         [1, 151, 152, 251])
+        with self.assertRaises(ValueError):
+            plan(self.manifest, self.root, gen1_2=True, species=[252])
+        self.assertFalse((self.root / "p778.bin").exists())
+
     def test_post_upload_verification_succeeds(self):
         port = MagicMock()
         port.readline.side_effect = [
