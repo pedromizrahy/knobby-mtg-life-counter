@@ -10,11 +10,10 @@ be silently provisioned with the API key of the current device owner.
 - `PK ME` — read-only. Performs a **fresh authenticated GET /me**, checks
   that the global user ID is representable, inspects **both** SPIFFS and
   legacy NVS, and reports linked, legacy, ready, or blocked without writes.
-- `PK STARTER ME` — explicit opt-in. Also authenticates via fresh
-  GET /me; creates **one** Level-1 Mimikyu #778 in SPIFFS **only if
-  both storage backends are genuinely empty**. Read-back verifies it.
-  No auto-start on boot or merely opening the Playgroup selector.
-  No Pokéball draw, fake gacha outcome, XP, wins or rewards.
+- `PK STARTER ME` — currently **PAUSED**, prints an explanation and
+  creates no Pokémon. The former fixed Mimikyu starter is retired.
+  The replacement will be an initial Pokéball roll plus five rerolls,
+  with the chance table of a regular Pokéball for every reveal.
 - Both commands reject during a live tracked game. A different player
   cannot be provisioned by selecting their seat; they must independently
   authenticate with their own Playgroup API key in a safe session.
@@ -36,3 +35,13 @@ Security boundaries: no SD writes, no SPIFFS auto-format, no legacy
 migration, no automatic starter for other players, no Playgroup
 game creation, no automatic credits/rewards. Existing draft PR remains
 unmerged. Arduino CI does not validate the physical UI.
+
+## Starter draw policy (pure engine, not yet enabled for real profiles)
+- One initial Pokéball-tier reveal plus five rerolls (six candidates).
+- Each reveal uses the regular Pokéball tier weights: 75% common,
+  20% rare, 4.5% epic, 0.5% legendary; independent shiny 1/4096.
+- Up to six distinct species, player can choose any rolled candidate.
+- New `pokemon_starter_roll` pure module and tests; **not wired to UI**.
+- Next task: durable generation/selection transaction before showing a
+  reveal so power loss or reboots cannot reset rerolls or swap choices;
+  integrate actual installed SD sprite validation and touch UI.

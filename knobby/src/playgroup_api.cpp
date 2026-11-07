@@ -2847,29 +2847,14 @@ static void pokemon_me_account(bool create_starter)
         return;
     }
     if(!create_starter){
-        Serial.println("[Pokemon] READY: no saved profile; optional PK STARTER ME explicitly creates Mimikyu #778.");
+        Serial.println("[Pokemon] READY: no saved profile. Starter Pokeball draw is being prepared.");
         return;
     }
-    /* Repeat both checks immediately before the opt-in write. No
-     * overwrite, no silent NVS->SPIFFS migration, no reward or capture. */
-    if(pk_onboard_decide(raw,pk_file_inspect(id,NULL),
-                            pk_store_inspect(id,NULL))!=PK_ONBOARD_READY){
-        Serial.println("[Pokemon] BLOCKED: profile changed. Nothing written.");
-        return;
-    }
-    if(!pk_file_create_starter(id)){
-        Serial.println("[Pokemon] FAIL: starter was not created. Inspect storage.");
-        return;
-    }
-    pk_profile_t verify={};
-    if(pk_file_inspect(id,&verify)!=PK_STORE_VALID ||
-       verify.team_count!=1 || verify.team[0].species!=778 ||
-       verify.team[0].level!=1 || verify.active_index!=0){
-        Serial.println("[Pokemon] FAIL: starter readback verification; do not retry until inspected.");
-        return;
-    }
-    Serial.printf("[Pokemon] STARTER CREATED: account %lu / Mimikyu #778 / LV 1.\\n",
-                  (unsigned long)id);
+    /* The old fixed-Mimikyu starter command is intentionally retired.
+     * Never create an irreversible starter before crash-safe, persisted
+     * six-option Pokeball roll and explicit player selection are available. */
+    Serial.println("[Pokemon] STARTER PAUSED: random Pokeball + five rerolls will replace the fixed starter.");
+    Serial.println("[Pokemon] No profile created. Your account remains READY.");
 }
 
 static void print_status(void)
@@ -2893,7 +2878,7 @@ static void print_help(void)
     Serial.println("  PG WIFI <ssid>|<password>");
     Serial.println("  PG KEY <api-key>");
     Serial.println("  PK ME                   (read-only authenticated profile status)");
-    Serial.println("  PK STARTER ME           (explicit starter for logged-in account only)");
+    Serial.println("  PK STARTER ME           (paused; future random starter flow)");
     Serial.println("  PG STATUS");
     Serial.println("  PG PENDING");
     Serial.println("  PG SYNC PENDING");

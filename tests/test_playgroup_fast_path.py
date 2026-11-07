@@ -129,8 +129,9 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn("!pk_player_id_valid(raw)", f)
         self.assertIn("pk_onboard_decide(raw,f,n)", f)
         self.assertIn("if(!create_starter)", f)
-        self.assertIn("pk_file_create_starter(id)", f)
-        self.assertIn("pk_file_inspect(id,&verify)", f)
+        self.assertIn("STARTER PAUSED", f)
+        self.assertNotIn("pk_file_create_starter(", f)
+        self.assertIn("PK_ONBOARD_READY", API)
         self.assertNotIn("pk_store_create_starter(", f)
         self.assertNotIn("pk_file_import_if_missing(", f)
 
