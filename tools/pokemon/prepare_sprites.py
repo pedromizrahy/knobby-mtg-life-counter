@@ -79,7 +79,10 @@ def pack_tpk2(frames, durations):
         atlas.paste(frame.convert("RGB"), (0, SIDE*i))
     indexed = atlas.quantize(colors=COLORS, method=Image.Quantize.MEDIANCUT,
                              dither=Image.Dither.NONE)
-    palette = indexed.getpalette()
+    palette = indexed.getpalette() or []
+    # Pillow can emit only as many entries as the image actually used.
+    # TPK2 uses a fixed 240-entry palette, so pad absent entries safely.
+    palette = (palette + [0] * (COLORS * 3))[:COLORS * 3]
     palette_words = []
     for i in range(COLORS):
         r, g, b = palette[3*i:3*i+3]
