@@ -116,6 +116,27 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn('"LV %u MAIN"',preview)
         self.assertNotIn('pages>1U?"NEXT  >":"BACK"',preview)
 
+    def test_starter_ui_authenticates_seat_and_persists_before_reveal(self):
+        ui = (ROOT / "knobby/src/pokemon_starter_ui.cpp").read_text(encoding="utf-8")
+        preview = (ROOT / "knobby/src/pokemon_playgroup_preview.cpp").read_text(encoding="utf-8")
+        service = (ROOT / "knobby/src/pokemon_starter_service.cpp").read_text(encoding="utf-8")
+        self.assertIn("playgroup_authenticated_user_id(&verified)", ui)
+        self.assertIn("verified!=expected_id", ui)
+        self.assertIn("pk_starter_service_open(", ui)
+        self.assertIn("pk_starter_service_reroll(", ui)
+        self.assertIn("pk_starter_service_keep(", ui)
+        self.assertIn("if(active && sprite_visible)", ui)
+        self.assertIn("pk_starter_service_open(", service)
+        self.assertIn("pk_starter_store_create(", service)
+        self.assertIn("pk_starter_store_update(", service)
+        self.assertIn("pk_file_create_selected_starter(", service)
+        self.assertIn("lv_obj_add_event_cb(c.root,start_card,LV_EVENT_CLICKED,", preview)
+        self.assertIn("original_seats[index].user_id", preview)
+        self.assertIn("pk_pg_preview_resume();", ui)
+        from math import hypot
+        for x in (90,172,188,270):
+            self.assertLess(hypot(x-180,329-180),180)
+
     def test_account_startup_has_no_implicit_starter_creation(self):
         route = between(API, "static void handle_command(char *line)\n{",
                         "\nvoid playgroup_process_serial(void)")

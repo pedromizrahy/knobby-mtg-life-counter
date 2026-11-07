@@ -33,6 +33,7 @@ on:
       - 'knobby/src/pokemon_starter_roll.*'
       - 'knobby/src/pokemon_starter_store.*'
       - 'knobby/src/pokemon_starter_service.*'
+      - 'knobby/src/pokemon_starter_ui.*'
       - 'tests/pokemon_starter_service_test.cpp'
       - 'tests/pokemon_starter_store_test.cpp'
       - 'tests/pokemon_starter_roll_test.c'

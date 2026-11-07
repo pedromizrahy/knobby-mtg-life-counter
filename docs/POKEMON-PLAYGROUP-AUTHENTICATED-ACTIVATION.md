@@ -68,3 +68,16 @@ unmerged. Arduino CI does not validate the physical UI.
   the saved species and shiny flag. No overwrite or reroll restoration.
 - The UI authentication gate, real sprite preflight and touchscreen
   activation are NOT wired yet; no automatic new profile or reward.
+
+## Touchscreen starter activation in Playgroup PARCEIROS
+- Tap a NOT LINKED player card. The preview uses the original numeric
+  Playgroup identity; it refuses guest/duplicate/unmapped IDs.
+- Fresh authenticated `GET /me` must match the tapped ID exactly.
+- The DIAL scans installed SD sprites and constructs a Pokéball rarity
+  catalog from available species, refusing absent rarity tiers.
+- Opening and each reroll are persisted **before** the Pokéball animation.
+- KEEP persists the final choice before creating the selected real profile.
+- After exiting, PARCEIROS re-reads the actual saved profiles and sprites.
+- If sprite decoding fails, KEEP is disabled, and the user can exit safely.
+- This implementation is ready for CI/hardware validation; do not infer
+  success on physical touch/SD/TLS merely from compilation.

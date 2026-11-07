@@ -1,5 +1,7 @@
 #include "pokemon_playgroup_preview.h"
 #include "pokemon_playgroup_roster.h"
+#include "pokemon_starter_ui.h"
+#include "pokemon_player_identity.h"
 #include "pokemon_profile_store.h"
 #include "pokemon_file_store.h"
 #include "pokemon_lab_dex.h"
@@ -28,9 +30,12 @@ struct Card {
 };
 static Card cards[kPage]={};
 static pk_pg_main_t participants[kSeats]={};
+static pk_pg_seat_t original_seats[kSeats]={};
 static size_t participant_count=0U,page=0U;
 static lv_obj_t *screen=NULL,*counter=NULL,*back_button=NULL,*next_button=NULL;
 static bool mounted=false;
+void start_card(lv_event_t *event);
+
 
 bool exact(File &file,void *dst,size_t count){
     return file.read((uint8_t *)dst,count)==count;
@@ -275,6 +280,9 @@ void build(){
         int x=i%2U?185:25,y=i/2U?194:71;
         Card &c=cards[i];
         c.root=lv_obj_create(screen);
+        lv_obj_add_flag(c.root,LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(c.root,start_card,LV_EVENT_CLICKED,
+                            (void *)(uintptr_t)i);
         lv_obj_set_pos(c.root,x,y);
         lv_obj_set_size(c.root,150,112);
         lv_obj_set_style_pad_all(c.root,0,0);
@@ -289,8 +297,23 @@ void build(){
         c.species=make_label(c.root,"-",78,0xE4EFE9);
         c.status=make_label(c.root,"NOT LINKED",94,0x7DC3BB);
     }
+    make_label(screen,"TAP YOUR UNLINKED CARD",53,0x8EABB3);
     back_button=make_button("BACK",93,112,exit_view);
     next_button=make_button("NEXT >",215,85,next_page);
+}
+void start_card(lv_event_t *event){
+    if(lv_scr_act()!=screen)return;
+    unsigned slot=(unsigned)(uintptr_t)lv_event_get_user_data(event);
+    size_t index=page*kPage+slot;
+    if(slot>=kPage || index>=participant_count ||
+       participants[index].has_main)return;
+    uint64_t id=original_seats[index].user_id;
+    if(!pk_player_id_valid(id))return;
+    /* Refuse ambiguous duplicate roster IDs, even if that member has no
+       profile. Authentication is subsequently checked by fresh GET /me. */
+    for(size_t i=0;i<participant_count;i++)
+        if(i!=index && original_seats[i].user_id==id)return;
+    (void)pk_starter_ui_open((uint32_t)id);
 }
 bool load_profile(void *,uint32_t user_id,pk_profile_t *out){
     if(!out)return false;
@@ -310,9 +333,21 @@ extern "C" bool pk_pg_preview_open(const pk_pg_seat_t *seats,size_t count){
                            collected,kSeats))return false;
     build();
     memcpy(participants,collected,count*sizeof(*collected));
+    memcpy(original_seats,seats,count*sizeof(*seats));
     participant_count=count;
     page=0U;
     lv_scr_load(screen);
     render();
     return true;
+}
+
+extern "C" void pk_pg_preview_resume(void){
+    if(!screen || !participant_count)return;
+    pk_pg_main_t reloaded[kSeats]={};
+    if(pk_pg_collect_main(original_seats,participant_count,load_profile,NULL,
+                          reloaded,kSeats))
+        memcpy(participants,reloaded,
+               participant_count*sizeof(*participants));
+    lv_scr_load(screen);
+    render();
 }

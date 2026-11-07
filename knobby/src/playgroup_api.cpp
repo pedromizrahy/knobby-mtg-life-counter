@@ -2798,6 +2798,26 @@ static bool playgroup_full_flow_test(long game_id)
 
 /* USB account onboarding is explicit and limited to the freshly
  * authenticated API-key owner. Never seed other seats from a roster. */
+/* Never trust the selected roster label as an account identity.
+ * Each starter UI entry must authenticate /me with the saved API key. */
+bool playgroup_authenticated_user_id(uint32_t *out)
+{
+    if(!out || playgroup_pending_current_active())return false;
+    String response;
+    int http_status=-1;
+    char id_text[24]={};
+    if(!playgroup_https_get("/me",response,http_status) ||
+       http_status!=HTTP_CODE_OK ||
+       !json_extract_number_token(response,"id",id_text,sizeof(id_text)))
+        return false;
+    char *end=nullptr;
+    unsigned long long raw=strtoull(id_text,&end,10);
+    if(end==id_text || *end!='\0' || !pk_player_id_valid(raw))
+        return false;
+    *out=(uint32_t)raw;
+    return true;
+}
+
 static void pokemon_me_account(bool create_starter)
 {
     if (playgroup_pending_current_active()) {

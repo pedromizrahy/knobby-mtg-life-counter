@@ -51,6 +51,9 @@ typedef struct {
 void playgroup_process_serial(void);
 bool playgroup_credentials_ready(void);
 bool playgroup_prepare_connection(void);
+/* Explicit fresh authenticated /me check for the starter UI.
+ * Returns the global numeric user ID, not a roster seat or nickname. */
+bool playgroup_authenticated_user_id(uint32_t *out);
 
 /* On-demand API cache for pregame UI. Wi-Fi stays connected for the whole
    Playgroup setup session and is explicitly released when setup ends. */
