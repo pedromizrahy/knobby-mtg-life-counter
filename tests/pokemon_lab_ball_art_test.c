@@ -29,6 +29,13 @@ int main(void){
     assert(pk_lab_ball_art_render(0,PK_LAB_BALL_FRAMES-1,other,sizeof(other)));
     assert(memcmp(first,other,sizeof(first))!=0);
     assert(total>5000);
+    /* The pixel-art animation has distinct shake, latch, and reveal poses;
+     * each frame must fit its fixed 64x64 RGB565+alpha buffer. */
+    uint8_t shake[PK_LAB_BALL_BUFFER_BYTES];
+    uint8_t open[PK_LAB_BALL_BUFFER_BYTES];
+    assert(pk_lab_ball_art_render(0,4,shake,sizeof(shake)));
+    assert(pk_lab_ball_art_render(0,15,open,sizeof(open)));
+    assert(memcmp(shake,open,sizeof(shake))!=0);
     puts("Pokemon procedural pixel-ball animation tests passed");
     return 0;
 }

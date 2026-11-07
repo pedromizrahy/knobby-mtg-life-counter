@@ -138,8 +138,11 @@ static void reveal(void)
             if(zoom>512U)zoom=512U;
             if(zoom<1U)zoom=1U;
             lv_img_set_zoom(pokemon_image,(uint16_t)zoom);
-            lv_obj_set_size(pokemon_image,184,184);
-            lv_obj_align(pokemon_image,LV_ALIGN_TOP_MID,0,70);
+            /* LVGL mosaics a source when its image object is larger than
+             * the native source. Keep real source dimensions and let zoom
+             * enlarge the displayed image without repeating 2x2 sprites. */
+            lv_obj_set_size(pokemon_image,LV_SIZE_CONTENT,LV_SIZE_CONTENT);
+            lv_obj_align(pokemon_image,LV_ALIGN_CENTER,0,-30);
             sprite_attached=true;
             sprite_species=r->species;
             sprite_frame=0;
@@ -157,8 +160,8 @@ static void reveal(void)
         lv_img_cache_invalidate_src(&symbol_dsc);
         lv_img_set_src(pokemon_image,&symbol_dsc);
         lv_img_set_zoom(pokemon_image,512);
-        lv_obj_set_size(pokemon_image,96,96);
-        lv_obj_align(pokemon_image,LV_ALIGN_TOP_MID,0,102);
+        lv_obj_set_size(pokemon_image,LV_SIZE_CONTENT,LV_SIZE_CONTENT);
+        lv_obj_align(pokemon_image,LV_ALIGN_CENTER,0,-30);
     }
     lv_label_set_text(missing_label,
         real?(r->shiny?"SHINY ROLL - NORMAL SD ART":"SD SPRITE | TEST ONLY"):
@@ -255,7 +258,7 @@ static void on_draw(lv_event_t *event)
     reveal_active=false;
     stop_sprite();
     paint_ball(0);
-    lv_timer_set_period(ball_timer,220);
+    lv_timer_set_period(ball_timer,110);
     lv_timer_reset(ball_timer);
     lv_timer_resume(ball_timer);
 }
@@ -373,7 +376,7 @@ void pokemon_lab_ui_build(void)
     missing_label=label(opening,"",310,315,&lv_font_montserrat_14,0xA9C0DC);
     close_button=button(opening,"CLOSE",129,321,102,32,on_close,NULL);
     lv_obj_add_flag(opening,LV_OBJ_FLAG_HIDDEN);
-    ball_timer=lv_timer_create(ball_tick,220,NULL);
+    ball_timer=lv_timer_create(ball_tick,110,NULL);
     lv_timer_pause(ball_timer);
     sprite_timer=lv_timer_create(sprite_tick,160,NULL);
     lv_timer_pause(sprite_timer);

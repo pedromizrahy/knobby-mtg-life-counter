@@ -82,3 +82,16 @@ Nenhuma dessas probabilidades ou sprites concede Pokémon, gasta Pokébolas ou a
 - resultado visual de cada um dos sete pontos.
 
 **Limite de validação:** CI e host mocks não demonstram estabilidade real da tela, PSRAM, SD ou touch. LAB continua RAM-only, sem ID Playgroup, recompensas ou inventário real.
+
+## Ajuste visual: mosaico de sprites e abertura das bolas
+
+- Na revelação, o objeto LVGL acompanha agora o **tamanho natural** de cada
+  quadro, com zoom para centralização. Antes, dimensões forçadas (184x184 ou
+  96x96) podiam replicar o sprite como um mosaico de 2x2 imagens.
+- A abertura utiliza 18 quadros de 110 ms (~2 segundos), com nova ilustração
+  pixelada de 64x64, contornos, brilho de botão, tremor e separação da tampa.
+- Comparar POKE, GREAT, ULTRA e MASTER no equipamento. Confirmar que surge
+  **uma única figura** centralizada, tanto com sprite do SD quanto com o
+  marcador de ausência de sprite. Não alterar nem retransferir os 251 pacotes.
+- Em caso de distorção persistente, registrar foto ou vídeo do LAB e do
+  Companion para separar repetição LVGL de problemas no arquivo TPK2.
