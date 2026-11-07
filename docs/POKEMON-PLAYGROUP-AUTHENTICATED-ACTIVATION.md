@@ -45,3 +45,14 @@ unmerged. Arduino CI does not validate the physical UI.
 - Next task: durable generation/selection transaction before showing a
   reveal so power loss or reboots cannot reset rerolls or swap choices;
   integrate actual installed SD sprite validation and touch UI.
+
+## Durable starter state backend (isolated, not activated yet)
+- `pokemon_starter_store.cpp` writes two authenticated-user-ID-keyed SPIFFS
+  records with checksums, generations and full revealed-species history.
+- Explicit create requires exactly the first opening. Explicit update
+  accepts only the next sequential reroll or KEEP of the current result.
+- No silent rollback on corrupt partial writes: returns CORRUPT until
+  diagnosed manually, so rebooting cannot replenish rerolls.
+- The backend never formats SPIFFS, creates no profile, touches no SD,
+  and currently has **no production call site**. Visual KEEP/REROLL
+  and the final profile-creation transaction remain to be implemented.
