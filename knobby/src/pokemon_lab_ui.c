@@ -2,6 +2,7 @@
 #include "pokemon_lab_runtime.h"
 #include "pokemon_lab_ball_art.h"
 #include "pokemon_lab_reveal.h"
+#include "pokemon_lab_dex.h"
 #include "pokemon_lab_fixture_art.h"
 #include "pokemon_tpk2_renderer.h"
 #include "pokemon_ui.h"
@@ -12,7 +13,8 @@
 /* A dedicated single-purpose LAB: choose a ball, then watch a fullscreen
  * opening and fullscreen reveal. No inventory, profile or Playgroup writes.
  * Imported TPK2 frames are a read-only preview of installed artwork. */
-static lv_obj_t *lab_screen=NULL,*opening=NULL;
+static lv_obj_t *lab_screen=NULL,*opening=NULL,*rates_panel=NULL;
+static lv_obj_t *rates_label=NULL;
 static lv_obj_t *chosen_label=NULL,*count_label=NULL,*status_label=NULL;
 static lv_obj_t *ball_image=NULL,*pokemon_image=NULL,*close_button=NULL;
 static lv_obj_t *name_label=NULL,*tier_label=NULL,*missing_label=NULL;
@@ -108,7 +110,7 @@ static void reveal(void)
 {
     if(!captured.has_last)return;
     const pk_gacha_result_t *r=&captured.last;
-    const char *species_name=pk_lab_fixture_name(r->species);
+    const char *species_name=pk_lab_dex_name(r->species);
     const char *tier=pk_lab_tier_name(r->tier);
     if(!species_name || !tier)return;
     char text[64];
@@ -123,7 +125,7 @@ static void reveal(void)
 
     /* Preview only genuine, normal assets installed on the SD. A Shiny
      * without a separately validated sprite must never masquerade as one. */
-    bool real=!r->shiny && pokemon_ui_show_species(r->species);
+    bool real=pokemon_ui_show_species(r->species);
     if(real && pk_tpk2_idle_frame_count()){
         const lv_img_dsc_t *img=pk_tpk2_idle_frame(0);
         if(img){
@@ -147,8 +149,8 @@ static void reveal(void)
         }else real=false;
     }
     if(!real){
-        /* Missing asset is clearly disclosed. No fake Pokemon sprite. */
-        (void)pk_lab_fixture_art(r->species,r->shiny!=0,
+        /* Fallback is explicitly a non-Pokemon LAB marker. */
+        (void)pk_lab_fixture_art(25U,r->shiny!=0,
                                  symbol_pixels,sizeof(symbol_pixels));
         lv_img_cache_invalidate_src(&symbol_dsc);
         lv_img_set_src(pokemon_image,&symbol_dsc);
@@ -156,8 +158,9 @@ static void reveal(void)
         lv_obj_set_size(pokemon_image,96,96);
         lv_obj_align(pokemon_image,LV_ALIGN_TOP_MID,0,102);
     }
-    lv_label_set_text(missing_label,real?"SD SPRITE | TEST ONLY":
-                             "SPRITE NOT INSTALLED | LAB ART");
+    lv_label_set_text(missing_label,
+        real?(r->shiny?"SHINY ROLL - NORMAL SD ART":"SD SPRITE | TEST ONLY"):
+             "SPRITE UNAVAILABLE | TEST ONLY");
     reveal_active=true;
     if(close_button)lv_obj_clear_flag(close_button,LV_OBJ_FLAG_HIDDEN);
 }
@@ -201,6 +204,40 @@ static void on_quantity(lv_event_t *event)
     count=count==1?100:1;
     update_menu();
 }
+static void on_rates_close(lv_event_t *event)
+{
+    (void)event;
+    if(rates_panel)lv_obj_add_flag(rates_panel,LV_OBJ_FLAG_HIDDEN);
+}
+static void on_rates(lv_event_t *event)
+{
+    (void)event;
+    if(!rates_panel || opening_active || reveal_active)return;
+    pk_lab_t snapshot={0};
+    if(!pk_lab_runtime_snapshot(&snapshot))return;
+    const char *const tiers[]={"COMMON","RARE","EPIC","LEGEND"};
+    char msg[310]={0};
+    size_t used=0;
+    for(unsigned i=0;i<PK_TIER_COUNT;i++){
+        unsigned weight=pk_gacha_weight(ball,(uint8_t)i);
+        uint64_t total=snapshot.draws[ball];
+        unsigned observed=total?
+            (unsigned)(snapshot.tiers[ball][i]*10000ULL/total):0U;
+        int n=snprintf(msg+used,sizeof(msg)-used,
+            "%s  %u.%02u%%  |  %u.%02u%%\\n",
+            tiers[i],weight/100U,weight%100U,
+            observed/100U,observed%100U);
+        if(n<0 || (size_t)n>=sizeof(msg)-used)return;
+        used+=(size_t)n;
+    }
+    int n=snprintf(msg+used,sizeof(msg)-used,
+        "\\nTOTAL: %llu draws\\nSHINY: %llu (target 1/4096)",
+        (unsigned long long)snapshot.draws[ball],
+        (unsigned long long)snapshot.shinies[ball]);
+    if(n<0 || (size_t)n>=sizeof(msg)-used)return;
+    lv_label_set_text(rates_label,msg);
+    lv_obj_clear_flag(rates_panel,LV_OBJ_FLAG_HIDDEN);
+}
 static void on_draw(lv_event_t *event)
 {
     (void)event;
@@ -230,6 +267,7 @@ static void on_back(lv_event_t *event)
 {
     (void)event;
     stop_opening();
+    if(rates_panel)lv_obj_add_flag(rates_panel,LV_OBJ_FLAG_HIDDEN);
     if(session_timer)lv_timer_pause(session_timer);
     /* Restore the chosen RAM-only partner preview after LAB cache swaps. */
     pokemon_ui_restore_preview();
@@ -255,6 +293,7 @@ void pokemon_lab_ui_open(void)
     if(!snapshot.active && !pk_lab_runtime_start())return;
     if(!pk_lab_runtime_session_token(&shown_session))return;
     stop_opening();
+    if(rates_panel)lv_obj_add_flag(rates_panel,LV_OBJ_FLAG_HIDDEN);
     ball=PK_BALL_POKE;
     count=1;
     update_menu();
@@ -281,12 +320,28 @@ void pokemon_lab_ui_build(void)
     chosen_label=label(lab_screen,"POKE BALL",159,280,
                        &lv_font_montserrat_22,0xF6DBAA);
     button(lab_screen,"OPEN BALL",92,203,176,49,on_draw,NULL);
-    button(lab_screen,"QTY",119,267,122,32,on_quantity,NULL);
+    button(lab_screen,"QTY",127,267,104,32,on_quantity,NULL);
+    button(lab_screen,"RATES",244,267,101,32,on_rates,NULL);
     count_label=label(lab_screen,"QUANTITY x1",304,250,
                       &lv_font_montserrat_14,0xD3DDEE);
     button(lab_screen,"BACK",26,263,80,34,on_back,NULL);
     status_label=label(lab_screen,"UNLIMITED | TEST ONLY",334,290,
                        &lv_font_montserrat_14,0xB5C4DE);
+
+    rates_panel=lv_obj_create(lab_screen);
+    lv_obj_set_pos(rates_panel,10,10);
+    lv_obj_set_size(rates_panel,340,340);
+    lv_obj_set_style_bg_color(rates_panel,lv_color_hex(0x162B42),0);
+    lv_obj_set_style_border_width(rates_panel,1,0);
+    lv_obj_set_style_border_color(rates_panel,lv_color_hex(0xEAD6A4),0);
+    lv_obj_set_style_radius(rates_panel,16,0);
+    lv_obj_clear_flag(rates_panel,LV_OBJ_FLAG_SCROLLABLE);
+    label(rates_panel,"RATES - TARGET | ACTUAL",15,304,
+          &lv_font_montserrat_16,0xECDAB3);
+    rates_label=label(rates_panel,"",65,314,&lv_font_montserrat_14,0xFFFFFF);
+    lv_label_set_long_mode(rates_label,LV_LABEL_LONG_WRAP);
+    button(rates_panel,"CLOSE",111,284,118,38,on_rates_close,NULL);
+    lv_obj_add_flag(rates_panel,LV_OBJ_FLAG_HIDDEN);
 
     /* This fullscreen scene has NO other menu controls on it. */
     opening=lv_obj_create(lab_screen);
