@@ -15,6 +15,8 @@ void pokemon_ui_open_companion(void);
  * Failure restores the existing Mimikyu default if available.
  * Call only on the LVGL/UI thread, outside active game screens. */
 bool pokemon_ui_show_species(uint16_t species);
+/* Restore RAM-only installed-sprite preview (no team/profile writes). */
+void pokemon_ui_restore_preview(void);
 /* Ownership-gated selection; use a validated, currently authenticated
  * player's loaded profile. Still requires the sprite installed on SD.
  * Explicit call only: does not resolve identity or write any profile. */
