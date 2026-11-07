@@ -54,14 +54,16 @@
 #define LV_MEM_CUSTOM 0
 #if LV_MEM_CUSTOM == 0
     /*Size of the memory available for `lv_mem_alloc()` in bytes (>= 2kB)*/
-    #define LV_MEM_SIZE (128U * 1024U)         /*[bytes]*/
+    #define LV_MEM_SIZE (3U * 1024U * 1024U)   /*[bytes] - PSRAM-backed; headroom for Scryfall art JPEG decode */
 
-    /*Set an address for the memory pool instead of allocating it as a normal array. Can be in external SRAM too.*/
+    /* Keep LVGL's 128 KB arena out of scarce internal DRAM. The board has
+     * OPI PSRAM enabled and LVGL supports an externally allocated pool
+     * natively. This preserves the same arena size while leaving internal
+     * heap headroom for Wi-Fi/TLS and other DMA/internal-only allocations. */
     #define LV_MEM_ADR 0     /*0: unused*/
-    /*Instead of an address give a memory allocator that will be called to get a memory pool for LVGL. E.g. my_malloc*/
     #if LV_MEM_ADR == 0
-        //#define LV_MEM_POOL_INCLUDE your_alloc_library  /* Uncomment if using an external allocator*/
-        //#define LV_MEM_POOL_ALLOC   your_alloc          /* Uncomment if using an external allocator*/
+        #define LV_MEM_POOL_INCLUDE "esp_heap_caps.h"
+        #define LV_MEM_POOL_ALLOC(size) heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
     #endif
 
 #else       /*LV_MEM_CUSTOM*/
@@ -472,7 +474,7 @@
 
 #define LV_USE_DROPDOWN   0   /*Requires: lv_label*/
 
-#define LV_USE_IMG        0   /*Requires: lv_label*/
+#define LV_USE_IMG        1   /*Requires: lv_label*/
 
 #define LV_USE_LABEL      1
 #if LV_USE_LABEL

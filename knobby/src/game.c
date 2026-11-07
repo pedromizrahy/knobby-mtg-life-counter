@@ -1,15 +1,29 @@
 #include "game.h"
 #include "storage.h"
 #include "damage_log.h"
+#include "game_event.h"
+#include "playgroup_pending.h"
 #include "esp_random.h"
 #include "net_sync.h"
+#include "timer.h"
 // Forward declarations for UI refresh (defined in screen modules)
 extern void refresh_player_ui(void);
+extern void refresh_life_preview_ui(void);
+extern void refresh_multiplayer_player_state(int player);
+extern void refresh_multiplayer_player_name(int player);
+extern void refresh_multiplayer_selection_animation(void);
+extern void refresh_multiplayer_selection_step(int previous_player, int current_player);
+extern void refresh_multiplayer_selection_finish(void);
 extern void refresh_select_ui(void);
 extern void refresh_damage_ui(void);
 extern void refresh_all_damage_ui(void);
 extern void refresh_rename_ui(void);
 extern void select_kick_timer(void);
+extern lv_obj_t *screen_1p;
+extern lv_obj_t *screen_multiplayer;
+extern lv_obj_t *screen_select;
+extern lv_obj_t *screen_damage;
+extern lv_obj_t *screen_player_name;
 
 // ---------- state ----------
 int active_enemy_count = 3;
@@ -22,7 +36,7 @@ enemy_state_t enemies[MAX_ENEMY_COUNT] = {
 int selected_enemy = -1;
 int dice_result = 0;
 
-int player_life[MAX_DISPLAY_PLAYERS] = {40, 40, 40, 40};
+int player_life[MAX_DISPLAY_PLAYERS] = {40, 40, 40, 40, 40, 40};
 bool player_selected[MAX_DISPLAY_PLAYERS] = {false};
 char player_names[MAX_GAME_PLAYERS][16] = {
     "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"
@@ -68,6 +82,31 @@ static uint16_t names_version = 0;
 
 static void clear_player_elimination_action(int player);
 
+static void refresh_game_player_state(int player)
+{
+    if (nvs_get_players_to_track() <= 1)
+        refresh_player_ui();
+    else
+        refresh_multiplayer_player_state(player);
+}
+
+static void refresh_game_player_state_if_visible(int player)
+{
+    lv_obj_t *active_screen = lv_scr_act();
+
+    if (active_screen == screen_1p) {
+        refresh_player_ui();
+    } else if (active_screen == screen_multiplayer) {
+        refresh_multiplayer_player_state(player);
+    }
+}
+
+static void refresh_select_if_visible(void)
+{
+    if (lv_scr_act() == screen_select)
+        refresh_select_ui();
+}
+
 static void net_sync_commit_player(int player)
 {
     player_version[player]++;
@@ -105,6 +144,7 @@ void net_sync_reset_versions(void)
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++)
         clear_player_elimination_action(i);
     damage_log_reset();
+    game_event_reset();
 }
 
 #define MANA_ICON_COMMANDER "\xEE\xA7\x86"
@@ -147,11 +187,16 @@ void undo_elimination_action(int player)
     elimination_action_t action = elimination_action[player];
     clear_player_elimination_action(player);
 
-    if (action.event_type == LOG_EVT_LIFE) {
+    if (action.event_type == LOG_EVT_LIFE || action.event_type == LOG_EVT_DAMAGE) {
         undo_life_change(player, action.delta);
     } else if (action.event_type == LOG_EVT_CMD_DAMAGE) {
         undo_life_change(player, action.delta);
         undo_cmd_damage(action.source, player, action.delta);
+    } else if (action.event_type == LOG_EVT_CMD_INFECT) {
+        undo_counter_change(player, COUNTER_TYPE_POISON, action.delta);
+        undo_cmd_damage(action.source, player, -action.delta);
+    } else if (action.event_type == LOG_EVT_POISON) {
+        undo_counter_change(player, COUNTER_TYPE_POISON, action.delta);
     } else if (action.event_type == LOG_EVT_COUNTER) {
         undo_counter_change(player, action.source, action.delta);
     }
@@ -203,7 +248,8 @@ void check_player_elimination(int player)
     }
 
     if (was_eliminated != now_eliminated) {
-        refresh_player_ui();
+        refresh_game_player_state(player);
+        playgroup_pending_reconcile_outcome();
     }
 }
 
@@ -221,7 +267,8 @@ void manual_eliminate_player(int player)
         select_kick_timer();
     }
     net_sync_commit_player(player);
-    refresh_player_ui();
+    refresh_game_player_state(player);
+    playgroup_pending_reconcile_outcome();
 }
 
 void manual_uneliminate_player(int player)
@@ -250,7 +297,8 @@ void manual_uneliminate_player(int player)
         }
     }
     net_sync_commit_player(player);
-    refresh_player_ui();
+    refresh_game_player_state(player);
+    playgroup_pending_reconcile_outcome();
 }
 
 // ---------- player colors ----------
@@ -298,9 +346,9 @@ static const char *custom_color_names[CUSTOM_COLOR_COUNT] = {
 };
 
 // ---------- per-player color state (runtime only, lost on reboot) ----------
-int player_color_index[MAX_DISPLAY_PLAYERS] = {0, 1, 2, 3};
-bool player_life_color[MAX_DISPLAY_PLAYERS] = {false, false, false, false};
-bool player_has_override[MAX_DISPLAY_PLAYERS] = {false, false, false, false};
+int player_color_index[MAX_DISPLAY_PLAYERS] = {0, 1, 2, 3, 4, 5};
+bool player_life_color[MAX_DISPLAY_PLAYERS] = {false, false, false, false, false, false};
+bool player_has_override[MAX_DISPLAY_PLAYERS] = {false, false, false, false, false, false};
 
 lv_color_t get_player_color_vib(int index, int vibrancy)
 {
@@ -364,15 +412,10 @@ lv_color_t get_effective_player_color(int player_i, int color_i, int vibrancy)
         return get_custom_color_vib(player_color_index[player_i], vibrancy);
     }
 
-    /* No override: use global mode */
-    if (nvs_get_color_mode() == COLOR_MODE_LIFE) {
-        int life = player_life[player_i];
-        int max_life = nvs_get_life_total();
-        int tier = get_life_tier(life, max_life);
-        return get_life_color_vib(tier, vibrancy);
-    }
-
-    /* COLOR_MODE_PLAYER: use position color */
+    /* Global Player and Art modes both keep the player's assigned
+       color as the panel/tint color. Art mode changes only the background
+       rendering; if no commander art exists it naturally falls back to the
+       normal player color. */
     return get_player_color_vib(color_i, vibrancy);
 }
 
@@ -534,10 +577,152 @@ void apply_life_delta(int player, int delta)
     net_sync_commit_player(player);
 }
 
+bool apply_sourced_attack(int source, uint8_t target_mask, int amount,
+                          uint8_t effects)
+{
+    int target;
+    int track = nvs_get_players_to_track();
+    int total_lifelink = 0;
+    uint8_t changed_mask = 0;
+    bool applied = false;
+
+    if (source < 0 || source >= MAX_GAME_PLAYERS) return false;
+    if (amount <= 0 || target_mask == 0) return false;
+    if (track < 1) track = 1;
+    if (track > MAX_DISPLAY_PLAYERS) track = MAX_DISPLAY_PLAYERS;
+
+    damage_log_begin_action();
+
+    for (target = 0; target < track; target++) {
+        game_event_t event = {0};
+        bool infect;
+        bool commander;
+
+        if ((target_mask & (1U << target)) == 0) continue;
+        if (target == source) continue;
+        if (player_eliminated[target]) continue;
+
+        infect = (effects & ATTACK_EFFECT_INFECT) != 0;
+        commander = (effects & ATTACK_EFFECT_COMMANDER) != 0;
+
+        event.source_player = (int8_t)source;
+        event.target_player = (int8_t)target;
+        event.target_mask = (uint8_t)(1U << target);
+        event.amount = (int16_t)amount;
+        event.effects = effects;
+
+        if (infect) {
+            player_counters[target][COUNTER_TYPE_POISON] =
+                clamp_counter(player_counters[target][COUNTER_TYPE_POISON] + amount);
+            damage_log_add(target, amount,
+                           commander ? LOG_EVT_CMD_INFECT : LOG_EVT_POISON,
+                           source);
+            event.type = commander ? GAME_EVENT_COMMANDER_DAMAGE
+                                   : GAME_EVENT_COUNTER_CHANGE;
+            event.damage_type = DAMAGE_TYPE_POISON;
+            event.value = (int16_t)player_counters[target][COUNTER_TYPE_POISON];
+
+            if (player_counters[target][COUNTER_TYPE_POISON] >= 10) {
+                set_player_elimination_action(
+                    target,
+                    commander ? LOG_EVT_CMD_INFECT : LOG_EVT_POISON,
+                    source,
+                    amount);
+            }
+        } else {
+            player_life[target] = clamp_life(player_life[target] - amount);
+            event.type = commander ? GAME_EVENT_COMMANDER_DAMAGE : GAME_EVENT_DAMAGE;
+            event.damage_type = commander ? DAMAGE_TYPE_COMMANDER : DAMAGE_TYPE_NORMAL;
+            damage_log_add(target, -amount,
+                           commander ? LOG_EVT_CMD_DAMAGE : LOG_EVT_DAMAGE,
+                           source);
+
+            if (player_life[target] <= 0) {
+                set_player_elimination_action(
+                    target,
+                    commander ? LOG_EVT_CMD_DAMAGE : LOG_EVT_DAMAGE,
+                    source,
+                    -amount);
+            }
+        }
+
+        /* Commander damage tracks the combat damage dealt by that commander
+           even when Infect replaces life loss with poison counters. */
+        if (commander) {
+            cmd_damage_totals[source][target] += amount;
+            if (cmd_damage_totals[source][target] >= 21) {
+                set_player_elimination_action(
+                    target,
+                    infect ? LOG_EVT_CMD_INFECT : LOG_EVT_CMD_DAMAGE,
+                    source,
+                    infect ? amount : -amount);
+            }
+        }
+
+        if (effects & ATTACK_EFFECT_LIFELINK) {
+            total_lifelink += amount;
+        }
+
+        game_event_add(&event);
+        check_player_elimination(target);
+        net_sync_commit_player(target);
+        changed_mask |= (uint8_t)(1U << target);
+        applied = true;
+    }
+
+    if (applied && total_lifelink > 0 &&
+        source >= 0 && source < MAX_DISPLAY_PLAYERS &&
+        !player_eliminated[source]) {
+        apply_life_delta(source, total_lifelink);
+        changed_mask |= (uint8_t)(1U << source);
+    }
+
+    damage_log_end_action();
+
+    /*
+     * A compound attack may end the game and then still mutate the winner
+     * (for example lifelink). Reconcile after the entire logical action so
+     * the persisted final state includes those trailing effects.
+     */
+    if (applied)
+        playgroup_pending_reconcile_outcome();
+
+    if (applied) {
+        if (nvs_get_players_to_track() <= 1) {
+            refresh_player_ui();
+        } else {
+            for (target = 0; target < track; target++) {
+                if (changed_mask & (uint8_t)(1U << target))
+                    refresh_multiplayer_player_state(target);
+            }
+        }
+        refresh_select_if_visible();
+    }
+
+    return applied;
+}
+
+bool apply_sourced_damage(int source, int target, int amount,
+                          game_damage_type_t damage_type)
+{
+    uint8_t effects = 0;
+
+    if (damage_type == DAMAGE_TYPE_COMMANDER) {
+        effects |= ATTACK_EFFECT_COMMANDER;
+    } else if (damage_type == DAMAGE_TYPE_POISON) {
+        effects |= ATTACK_EFFECT_INFECT;
+    } else if (damage_type != DAMAGE_TYPE_NORMAL) {
+        return false;
+    }
+
+    return apply_sourced_attack(source, (uint8_t)(1U << target), amount, effects);
+}
+
 // ---------- life preview ----------
 void life_preview_commit_cb(lv_timer_t *timer)
 {
     int track = nvs_get_players_to_track();
+    uint8_t changed_mask = 0;
     int i;
 
     (void)timer;
@@ -553,6 +738,7 @@ void life_preview_commit_cb(lv_timer_t *timer)
 
     for (i = 0; i < track && i < MAX_DISPLAY_PLAYERS; i++) {
         if (!player_selected[i]) continue;
+        changed_mask |= (uint8_t)(1U << i);
         apply_life_delta(i, pending_life_delta);
     }
     pending_life_delta = 0;
@@ -567,7 +753,15 @@ void life_preview_commit_cb(lv_timer_t *timer)
         selection_clear();
         select_kick_timer();
     }
-    refresh_player_ui();
+
+    if (track <= 1) {
+        refresh_player_ui();
+    } else {
+        for (i = 0; i < track && i < MAX_DISPLAY_PLAYERS; i++) {
+            if (changed_mask & (uint8_t)(1U << i))
+                refresh_multiplayer_player_state(i);
+        }
+    }
 }
 
 // ---------- life changes ----------
@@ -625,7 +819,7 @@ void damage_apply(void)
     check_player_elimination(cmd_damage_target);
     net_sync_commit_player(cmd_damage_target);
 
-    refresh_select_ui();
+    refresh_select_if_visible();
 }
 
 void damage_cancel(void)
@@ -673,7 +867,10 @@ void change_player_life(int delta)
         }
     }
 
-    refresh_player_ui();
+    /* Dialing can arrive much faster than a full Art-mode pizza redraw.
+       Only update the life preview labels here; the full UI refresh still
+       happens when the staged change commits. */
+    refresh_life_preview_ui();
 }
 
 void prepare_cmd_damage_for_player(int target)
@@ -707,8 +904,8 @@ void undo_life_change(int player, int delta)
     player_life[player] = clamp_life(player_life[player] - delta);
     check_player_elimination(player);
     net_sync_commit_player(player);
-    refresh_player_ui();
-    refresh_select_ui();
+    refresh_game_player_state_if_visible(player);
+    refresh_select_if_visible();
 }
 
 void undo_cmd_damage(int source, int target, int delta)
@@ -734,7 +931,7 @@ void undo_counter_change(int player, int counter_type, int delta)
         check_player_elimination(player);
     }
     net_sync_commit_player(player);
-    refresh_player_ui();
+    refresh_game_player_state_if_visible(player);
 }
 
 // ---------- reset ----------
@@ -749,6 +946,7 @@ void knob_life_reset(void)
     if (active_enemy_count > MAX_ENEMY_COUNT) active_enemy_count = MAX_ENEMY_COUNT;
 
     damage_log_reset();
+    game_event_reset();
 
     pending_life_delta = 0;
     selection_clear();
@@ -802,7 +1000,7 @@ void knob_life_init(void)
     counter_edit_type = COUNTER_TYPE_COMMANDER_TAX;
     counter_edit_value = 0;
 
-    life_preview_timer = lv_timer_create(life_preview_commit_cb, 3000, NULL);
+    life_preview_timer = lv_timer_create(life_preview_commit_cb, 1000, NULL);
     if (life_preview_timer != NULL) {
         lv_timer_pause(life_preview_timer);
     }
@@ -813,6 +1011,7 @@ static lv_timer_t *player_select_anim_timer = NULL;
 static int player_select_anim_steps = 0;
 static int player_select_anim_period = 0;
 static int roulette_idx = 0;
+static int last_roulette_winner = -1;
 
 static void player_select_anim_cb(lv_timer_t *timer)
 {
@@ -825,22 +1024,42 @@ static void player_select_anim_cb(lv_timer_t *timer)
     }
 
     // Move to next player (clockwise logic mapping to bottom/left/top/right)
-    roulette_idx = (roulette_idx + 1) % track;
-    selection_set_single(roulette_idx);
-    /* Restart the deselect-timeout countdown like any selection change,
-       so a timer left running from before the reset can't fire mid-spin
-       and blank the selection for a tick. */
-    select_kick_timer();
-    refresh_player_ui();
+    {
+        int previous_idx = roulette_idx;
+        roulette_idx = (roulette_idx + 1) % track;
+        selection_set_single(roulette_idx);
+        /* Only the old and new seats changed visually. */
+        refresh_multiplayer_selection_step(previous_idx, roulette_idx);
+    }
 
     player_select_anim_steps--;
     if (player_select_anim_steps <= 0) {
         lv_timer_pause(player_select_anim_timer);
+        refresh_multiplayer_selection_finish();
         select_kick_timer();
+        if (nvs_get_turn_timer_enabled()) {
+            turn_timer_start_for_player(roulette_idx);
+        }
+        /* The lightweight roulette never mutates pizza geometry/content.
+           finish() restores text opacity, and turn_timer_start_for_player()
+           owns turn emphasis when enabled, so no full pizza redraw is needed. */
     } else {
-        // Linear deceleration
-        player_select_anim_period += (200 / (player_select_anim_steps + 1));
-        if (player_select_anim_period > 600) player_select_anim_period = 600;
+        /*
+         * "Burst + brake" roulette:
+         * - keep almost the whole spin extremely fast;
+         * - spend the visible suspense only on the last six hops.
+         *
+         * This mirrors prize/random selector easing: winner is fixed before
+         * animation, while the visual motion starts fast and eases out near
+         * the target instead of slowing from the very first hop.
+         */
+        static const uint16_t brake_ms[4] = {40, 65, 105, 180};
+
+        if (player_select_anim_steps <= 4) {
+            player_select_anim_period = brake_ms[4 - player_select_anim_steps];
+        } else {
+            player_select_anim_period = 16;
+        }
         lv_timer_set_period(player_select_anim_timer, player_select_anim_period);
     }
 }
@@ -848,7 +1067,17 @@ static void player_select_anim_cb(lv_timer_t *timer)
 void start_player_selection_animation(void)
 {
     int track = nvs_get_players_to_track();
-    int random_stops;
+    int start_player;
+    int winner;
+    int offset;
+    /*
+     * Whole-slice roulette on 3/5/6-player layouts redraws clipped 360x360
+     * wedges, while 2/4-player layouts use cheaper rectangular panels.
+     * Cap full cycles on every wedge layout so the perceived spin duration
+     * stays close to the fast 4-player reference instead of falling into
+     * slow motion as player count/layout complexity changes.
+     */
+    int full_cycles = (track == 3 || track >= 5) ? 2 : 5;
 
     if (track <= 1) return;
     if (!nvs_get_random_first()) return;
@@ -857,16 +1086,30 @@ void start_player_selection_animation(void)
         player_select_anim_timer = lv_timer_create(player_select_anim_cb, 50, NULL);
     }
 
-    // Randomize length to ensure random landing
-    random_stops = (int)(esp_random() % track) + (track * 3);
-    random_stops += esp_random() % (track * 2);
+    /*
+     * Pick the winner independently from the animation, then calculate a
+     * path that is guaranteed to land on it. Avoid repeating the immediately
+     * previous winner when possible so repeated New Game tests don't look
+     * deterministic even when RNG happens to repeat.
+     */
+    start_player = (int)(esp_random() % (uint32_t)track);
+    winner = (int)(esp_random() % (uint32_t)track);
+    if (track > 1 && winner == last_roulette_winner) {
+        winner = (winner + 1 +
+                  (int)(esp_random() % (uint32_t)(track - 1))) % track;
+    }
 
-    player_select_anim_steps = random_stops;
-    player_select_anim_period = 40; // start fast
+    offset = (winner - start_player + track) % track;
+    if (offset == 0) offset = track;
 
-    roulette_idx = 0;
-    selection_set_single(0);
+    player_select_anim_steps = (full_cycles * track) + offset;
+    player_select_anim_period = 16;
+
+    roulette_idx = start_player;
+    last_roulette_winner = winner;
+    selection_set_single(roulette_idx);
     select_kick_timer();
+    refresh_multiplayer_selection_animation();
 
     lv_timer_set_period(player_select_anim_timer, player_select_anim_period);
     lv_timer_resume(player_select_anim_timer);
@@ -874,10 +1117,21 @@ void start_player_selection_animation(void)
 
 void stop_player_selection_animation(void)
 {
+    bool was_active = player_selection_animation_active();
+    int stopped_player = roulette_idx;
+
     player_select_anim_steps = 0;
+    refresh_multiplayer_selection_finish();
     if (player_select_anim_timer != NULL) {
         lv_timer_del(player_select_anim_timer);
         player_select_anim_timer = NULL;
+    }
+
+    /* Stopping the roulette is still a valid first-player decision.
+       If turn tracking is enabled, begin the game on the player where
+       the roulette stopped instead of leaving the game without a turn. */
+    if (was_active && nvs_get_turn_timer_enabled() && !turn_timer_enabled) {
+        turn_timer_start_for_player(stopped_player);
     }
 }
 
@@ -912,6 +1166,8 @@ void net_sync_fill_names(net_sync_names_t *out)
 void net_sync_apply_names(const net_sync_names_t *in, int wins_ties)
 {
     int16_t newer = (int16_t)(in->version - names_version);
+    uint8_t changed_mask = 0;
+    lv_obj_t *active_screen;
     int i;
 
     if (newer < 0) {
@@ -923,15 +1179,40 @@ void net_sync_apply_names(const net_sync_names_t *in, int wins_ties)
     if (newer == 0 && !wins_ties) return;
     names_version = in->version;
     if (memcmp(player_names, in->names, sizeof(player_names)) == 0) return;
+
+    for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
+        if (strncmp(player_names[i], in->names[i],
+                    sizeof(player_names[i])) != 0) {
+            changed_mask |= (uint8_t)(1U << i);
+        }
+    }
+
     memcpy(player_names, in->names, sizeof(player_names));
     /* Wire bytes are untrusted: every name must terminate. */
     for (i = 0; i < MAX_GAME_PLAYERS; i++)
         player_names[i][sizeof(player_names[i]) - 1] = '\0';
-    /* Same refresh set as a local rename (rename.c). */
-    refresh_player_ui();
-    refresh_select_ui();
-    refresh_damage_ui();
-    refresh_rename_ui();
+
+    /*
+     * Remote roster updates should touch only what is visible. Hidden
+     * Select/Damage/Rename screens refresh on entry, so updating all of them
+     * on every sync packet only creates avoidable LVGL invalidation.
+     */
+    active_screen = lv_scr_act();
+    if (active_screen == screen_multiplayer) {
+        for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
+            if ((changed_mask & (1U << i)) != 0)
+                refresh_multiplayer_player_name(i);
+        }
+    } else if (active_screen == screen_1p) {
+        if ((changed_mask & 0x01U) != 0)
+            refresh_player_ui();
+    } else if (active_screen == screen_select) {
+        refresh_select_ui();
+    } else if (active_screen == screen_damage) {
+        refresh_damage_ui();
+    } else if (active_screen == screen_player_name) {
+        refresh_rename_ui();
+    }
 }
 
 void net_sync_fill_state(net_sync_state_t *out)
@@ -972,6 +1253,7 @@ void net_sync_fill_state(net_sync_state_t *out)
 void net_sync_apply_state(const net_sync_state_t *in, int wins_ties)
 {
     bool changed = false;
+    uint8_t changed_mask = 0;
     bool remote_stale = false;
     int16_t epoch_newer = (int16_t)(in->epoch - game_epoch);
     int p, s, c;
@@ -1059,12 +1341,32 @@ void net_sync_apply_state(const net_sync_state_t *in, int wins_ties)
         player_manually_eliminated[p] =
             now_eliminated && (rp->eliminated & NET_SYNC_ELIM_MANUAL) != 0;
         player_version[p] = rp->version;
-        changed = changed || p_changed;
+        if (p_changed) {
+            changed = true;
+            changed_mask |= (uint8_t)(1U << p);
+        }
     }
 
     if (changed) {
-        refresh_player_ui();
-        refresh_select_ui();
+        lv_obj_t *active_screen = lv_scr_act();
+
+        if (active_screen == screen_1p) {
+            refresh_player_ui();
+        } else if (active_screen == screen_multiplayer) {
+            for (p = 0; p < MAX_DISPLAY_PLAYERS; p++) {
+                if (changed_mask & (uint8_t)(1U << p))
+                    refresh_multiplayer_player_state(p);
+            }
+        } else if (active_screen == screen_select) {
+            refresh_select_ui();
+        } else if (active_screen == screen_damage) {
+            refresh_damage_ui();
+        }
+
+        /* A peer can be the device that records the final elimination.
+           Reconcile after applying the complete remote snapshot so a tracked
+           Playgroup game finishes consistently on either Dial. */
+        playgroup_pending_reconcile_outcome();
     }
     /* The sender is behind and we adopted nothing: answer immediately
        so its lost-update window is one exchange, not a 5s beacon. */

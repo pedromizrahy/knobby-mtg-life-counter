@@ -5,6 +5,7 @@
 #include "settings.h"
 #include "storage.h"
 #include "ui_1p.h"
+#include "ui_damage_resolver.h"
 
 // ---------- screens ----------
 lv_obj_t *screen_player_menu = NULL;
@@ -140,6 +141,11 @@ static void event_menu_cmd_damage(lv_event_t *e) {
   open_select_screen();
 }
 
+static void event_menu_deal_damage(lv_event_t *e) {
+  (void)e;
+  open_damage_resolver(menu_player);
+}
+
 static void event_menu_all_damage(lv_event_t *e) {
   (void)e;
   open_all_damage_screen();
@@ -189,21 +195,34 @@ static void event_counter_experience(lv_event_t *e) {
 
 static void event_all_damage_apply(lv_event_t *e) {
   int i;
+  int track = nvs_get_players_to_track();
+  uint8_t target_mask = 0;
   bool include_myself = false;
+
+  (void)e;
+  if (all_damage_value <= 0) return;
 
   if (cb_include_myself != NULL) {
     include_myself = lv_obj_has_state(cb_include_myself, LV_STATE_CHECKED);
   }
 
-  (void)e;
-  for (i = 0; i < nvs_get_players_to_track(); i++) {
-    if (i == menu_player && !include_myself) {
-      continue;
-    }
-    apply_life_delta(i, -all_damage_value);
+  /*
+   * Build one multi-target attack instead of invoking the full resolver once
+   * per opponent. This keeps one logical action/event batch and one UI pass.
+   */
+  for (i = 0; i < track && i < MAX_DISPLAY_PLAYERS; i++) {
+    if (i == menu_player || player_eliminated[i]) continue;
+    target_mask |= (uint8_t)(1U << i);
   }
 
-  refresh_player_ui();
+  damage_log_begin_action();
+  if (target_mask != 0)
+    apply_sourced_attack(menu_player, target_mask, all_damage_value, 0);
+  if (include_myself && !player_eliminated[menu_player])
+    apply_life_delta(menu_player, -all_damage_value);
+  damage_log_end_action();
+
+  /* back_to_main() performs the single final gameplay refresh. */
   back_to_main();
 }
 
@@ -216,7 +235,6 @@ static void event_counter_apply(lv_event_t *e) {
   (void)e;
   apply_counter_edit();
   refresh_counter_edit_ui();
-  refresh_player_ui();
   back_to_main();
 }
 
@@ -237,7 +255,6 @@ static void event_color_default(lv_event_t *e) {
     return;
   player_has_override[menu_player] = false;
   player_life_color[menu_player] = false;
-  refresh_player_ui();
   back_to_main();
 }
 
@@ -247,7 +264,6 @@ static void event_color_life(lv_event_t *e) {
     return;
   player_has_override[menu_player] = true;
   player_life_color[menu_player] = true;
-  refresh_player_ui();
   back_to_main();
 }
 
@@ -294,7 +310,6 @@ void commit_player_color(void) {
   player_has_override[menu_player] = true;
   player_color_index[menu_player] = color_picker_index;
   player_life_color[menu_player] = false;
-  refresh_player_ui();
 }
 
 static void event_color_apply(lv_event_t *e) {
@@ -307,7 +322,7 @@ static void event_color_apply(lv_event_t *e) {
 void build_player_menu_screen(void) {
   quad_item_t items[4] = {
       {"Name/\nColor", event_menu_color, true, LV_EVENT_CLICKED},
-      {"Commander\nDamage", event_menu_cmd_damage, true, LV_EVENT_CLICKED},
+      {"Deal\nDamage", event_menu_deal_damage, true, LV_EVENT_CLICKED},
       {"All\nDamage", event_menu_all_damage, true, LV_EVENT_CLICKED},
       {"Counters", event_menu_counters, true, LV_EVENT_SHORT_CLICKED},
   };

@@ -1,0 +1,198 @@
+name: Pokemon engine checks
+on:
+  push:
+    paths:
+      - 'knobby/src/pokemon_progress.*'
+      - 'knobby/src/pokemon_pc.*'
+      - 'tests/pokemon_pc_test.c'
+      - 'knobby/src/pokemon_gacha.*'
+      - 'knobby/src/pokemon_lab.*'
+      - 'knobby/src/pokemon_lab_dex.*'
+      - 'knobby/src/pokemon_lab_rates.*'
+      - 'tests/pokemon_lab_rates_test.c'
+      - 'tests/pokemon_lab_dex_test.c'
+      - 'knobby/src/pokemon_lab_runtime.*'
+      - 'tests/pokemon_lab_runtime_test.cpp'
+      - 'tests/pokemon_mocks/freertos/**'
+      - 'tests/pokemon_mocks/esp_random.h'
+      - 'knobby/src/pokemon_lab_ui.*'
+      - 'knobby/src/pokemon_lab_ball_art.*'
+      - 'knobby/src/pokemon_lab_reveal.*'
+      - 'knobby/src/pokemon_lab_fixture_art.*'
+      - 'tests/pokemon_lab_fixture_art_test.c'
+      - 'tests/pokemon_lab_reveal_test.c'
+      - 'tests/pokemon_lab_ball_art_test.c'
+      - 'tests/pokemon_lab_test.c'
+      - 'knobby/src/pokemon_sprite_path.*'
+      - 'knobby/src/pokemon_companion_selection.*'
+      - 'knobby/src/pokemon_companion_profile_view.*'
+      - 'knobby/src/pokemon_player_identity.*'
+      - 'tests/pokemon_player_identity_test.c'
+      - 'tests/pokemon_companion_profile_view_test.c'
+      - 'knobby/src/pokemon_ui.*'
+      - 'tests/pokemon_companion_selection_test.c'
+      - 'knobby/src/pokemon_tpk2_renderer.*'
+      - 'tests/pokemon_sprite_path_test.c'
+      - 'tests/pokemon_gacha_test.c'
+      - 'tests/test_pokemon_catalog.py'
+      - 'tests/test_pokemon_batch_upload.py'
+      - 'tools/pokemon/upload_batch.py'
+      - 'tools/pokemon/prepare_sprites.py'
+      - 'tests/test_prepare_sprites.py'
+      - 'knobby/src/pokemon_pmd_reader.*'
+      - 'knobby/src/playgroup_api.cpp'
+      - 'tools/pokemon/audit_catalog.py'
+      - 'tools/pokemon/catalog.json'
+      - 'knobby/src/pokemon_achievements.*'
+      - 'knobby/src/pokemon_master_trainer_store.*'
+      - 'knobby/src/pokemon_master_trainer_intent.*'
+      - 'tests/pokemon_master_trainer_intent_test.cpp'
+      - 'tests/pokemon_master_trainer_store_test.cpp'
+      - 'tests/pokemon_achievements_test.c'
+      - 'tests/pokemon_progress_test.c'
+      - 'tests/pokemon_reward_coordinator_test.c'
+      - 'knobby/src/pokemon_reward_coordinator.*'
+      - 'knobby/src/pokemon_reward_master_coordinator.*'
+      - 'knobby/src/pokemon_reward_master_storage.*'
+      - 'tests/pokemon_reward_master_coordinator_test.c'
+      - 'knobby/src/pokemon_reward_storage.*'
+      - 'tests/pokemon_reward_storage_test.cpp'
+      - 'tests/pokemon_profile_store_test.cpp'
+      - 'tests/pokemon_mocks/Preferences.h'
+      - 'knobby/src/pokemon_profile_store.*'
+      - 'knobby/src/pokemon_file_store.*'
+      - 'tests/pokemon_file_store_test.cpp'
+      - 'knobby/src/pokemon_profile_migration.*'
+      - 'knobby/src/pokemon_spiffs_selftest.*'
+      - 'tests/pokemon_spiffs_selftest_test.cpp'
+      - 'tests/pokemon_profile_migration_test.cpp'
+      - 'tests/pokemon_mocks/SPIFFS.h'
+      - 'tests/pokemon_mocks/Arduino.h'
+      - '.github/workflows/pokemon-engine.yml'
+  pull_request:
+    paths:
+      - 'knobby/src/pokemon_progress.*'
+      - 'tests/pokemon_progress_test.c'
+      - '.github/workflows/pokemon-engine.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile isolated Pokemon engine
+        run: cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c tests/pokemon_progress_test.c -o /tmp/pokemon_progress_test
+      - name: Run reward and collection tests
+        run: /tmp/pokemon_progress_test
+      - name: Audit SD sprite catalog with synthetic TPK2 fixtures
+        run: python3 -m unittest discover -s tests -p test_pokemon_catalog.py -v
+      - name: Test PC storage-independent team and main selection
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_pc.c tests/pokemon_pc_test.c -o /tmp/pokemon_pc_test
+          /tmp/pokemon_pc_test
+      - name: Test owned companion selection and Dex navigation
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_companion_selection.c tests/pokemon_companion_selection_test.c -o /tmp/pokemon_companion_selection_test
+          /tmp/pokemon_companion_selection_test
+      - name: Test strict Playgroup user ID boundaries
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_player_identity.c tests/pokemon_player_identity_test.c -o /tmp/pokemon_player_identity_test
+          /tmp/pokemon_player_identity_test
+      - name: Test read-only authenticated profile companion view
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_companion_selection.c knobby/src/pokemon_companion_profile_view.c knobby/src/pokemon_player_identity.c tests/pokemon_companion_profile_view_test.c -o /tmp/pokemon_companion_profile_view_test
+          /tmp/pokemon_companion_profile_view_test
+      - name: Test safe SD sprite paths for all species
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_sprite_path.c tests/pokemon_sprite_path_test.c -o /tmp/pokemon_sprite_path_test
+          /tmp/pokemon_sprite_path_test
+      - name: Test local PNG/GIF sprite to bounded TPK2 packaging
+        run: |
+          python3 -m pip install Pillow==11.3.0
+          python3 -m unittest discover -s tests -p test_prepare_sprites.py -v
+      - name: Test multi-sprite transfer protocol and dry-run safety
+        run: python3 -m unittest discover -s tests -p test_pokemon_batch_upload.py -v
+      - name: Test synthetic LAB pixel crest transparency and variants
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_lab_fixture_art.c tests/pokemon_lab_fixture_art_test.c -o /tmp/pokemon_lab_fixture_art_test
+          /tmp/pokemon_lab_fixture_art_test
+      - name: Test synthetic Pokemon LAB reveal and Shiny labels
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_lab_reveal.c tests/pokemon_lab_reveal_test.c -o /tmp/pokemon_lab_reveal_test
+          /tmp/pokemon_lab_reveal_test
+      - name: Test original pixel-ball procedural animation frames
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_lab_ball_art.c tests/pokemon_lab_ball_art_test.c -o /tmp/pokemon_lab_ball_art_test
+          /tmp/pokemon_lab_ball_art_test
+      - name: Test isolated unlimited Pokemon laboratory
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c knobby/src/pokemon_lab_dex.c knobby/src/pokemon_lab.c tests/pokemon_lab_test.c -o /tmp/pokemon_lab_test
+          /tmp/pokemon_lab_test
+      - name: Test full Kanto Johto Dex rarity and 1000 simulated draws
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c knobby/src/pokemon_lab_dex.c knobby/src/pokemon_lab.c tests/pokemon_lab_dex_test.c -o /tmp/pokemon_lab_dex_test
+          /tmp/pokemon_lab_dex_test
+      - name: Test LAB target-vs-observed rates formatting
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c knobby/src/pokemon_lab_dex.c knobby/src/pokemon_lab.c knobby/src/pokemon_lab_rates.c tests/pokemon_lab_rates_test.c -o /tmp/pokemon_lab_rates_test
+          /tmp/pokemon_lab_rates_test
+      - name: Test LAB RAM sessions and discard stale reveals after serial reset
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_gacha.c -o /tmp/lab_rt_gacha.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_lab.c -o /tmp/lab_rt_lab.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_lab_dex.c -o /tmp/lab_rt_dex.o
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -pthread -Itests/pokemon_mocks knobby/src/pokemon_lab_runtime.cpp tests/pokemon_lab_runtime_test.cpp /tmp/lab_rt_gacha.o /tmp/lab_rt_lab.o /tmp/lab_rt_dex.o -o /tmp/pokemon_lab_runtime_test
+          /tmp/pokemon_lab_runtime_test
+      - name: Test Poke Ball gacha pure sampler
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c tests/pokemon_gacha_test.c -o /tmp/pokemon_gacha_test
+          /tmp/pokemon_gacha_test
+      - name: Test isolated first-level-100 achievement detection
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_achievements.c tests/pokemon_achievements_test.c -o /tmp/pokemon_achievements_test
+          /tmp/pokemon_achievements_test
+      - name: Test isolated durable Master Trainer wallet
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_progress.c -o /tmp/mt_progress.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_achievements.c -o /tmp/mt_achievements.o
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_master_trainer_store.cpp tests/pokemon_master_trainer_store_test.cpp /tmp/mt_progress.o /tmp/mt_achievements.o -o /tmp/master_trainer_store_test
+          /tmp/master_trainer_store_test
+      - name: Test Master Trainer write-ahead recovery
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_master_trainer_store.cpp knobby/src/pokemon_master_trainer_intent.cpp tests/pokemon_master_trainer_intent_test.cpp /tmp/mt_progress.o /tmp/mt_achievements.o -o /tmp/master_trainer_intent_test
+          /tmp/master_trainer_intent_test
+      - name: Compile isolated reward crash-recovery tests
+        run: cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_reward_coordinator.c tests/pokemon_reward_coordinator_test.c -o /tmp/pokemon_reward_test
+      - name: Verify rewards never duplicate on simulated failures
+        run: /tmp/pokemon_reward_test
+      - name: Test opt-in XP / Master Trainer transactional ordering
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_achievements.c knobby/src/pokemon_reward_master_coordinator.c tests/pokemon_reward_master_coordinator_test.c -o /tmp/pokemon_reward_master_test
+          /tmp/pokemon_reward_master_test
+      - name: Build C transaction objects for C++ storage adapter
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_progress.c -o /tmp/pk_progress.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_reward_coordinator.c -o /tmp/pk_coordinator.o
+      - name: Test storage adapter with simulated persistence
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_reward_storage.cpp tests/pokemon_reward_storage_test.cpp /tmp/pk_progress.o /tmp/pk_coordinator.o -o /tmp/pokemon_storage_test
+          /tmp/pokemon_storage_test
+      - name: Compile explicit Master Trainer real-storage adapter
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_reward_master_storage.cpp -o /tmp/pokemon_reward_master_storage.o
+      - name: Test guarded NVS profile initialization with simulated Preferences
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_profile_store.cpp tests/pokemon_profile_store_test.cpp /tmp/pk_progress.o -o /tmp/pokemon_profile_store_test
+          /tmp/pokemon_profile_store_test
+      - name: Test isolated SPIFFS two-slot profile backend
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_file_store.cpp tests/pokemon_file_store_test.cpp /tmp/pk_progress.o -o /tmp/pokemon_file_store_test
+          /tmp/pokemon_file_store_test
+      - name: Test explicit, non-destructive NVS to SPIFFS migration
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_profile_store.cpp knobby/src/pokemon_file_store.cpp knobby/src/pokemon_profile_migration.cpp tests/pokemon_profile_migration_test.cpp /tmp/pk_progress.o -o /tmp/pokemon_migration_test
+          /tmp/pokemon_migration_test
+      - name: Test manual SPIFFS diagnostic never alters unrelated files
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_spiffs_selftest.cpp tests/pokemon_spiffs_selftest_test.cpp -o /tmp/pokemon_spiffs_diagnostic_test
+          /tmp/pokemon_spiffs_diagnostic_test
