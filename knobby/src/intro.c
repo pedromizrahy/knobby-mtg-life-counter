@@ -1,114 +1,107 @@
 #include "intro.h"
 #include "pregame.h"
-#include "dice_art.h"
-#include "dial_sprite.h"
+#include <stdint.h>
 
+/* Clean 360x360 native-LVGL splash. No old coin bitmap, flip or zoom.
+ * The coin-flip and dice assets are not changed. */
 #define INTRO_FRAME_MS 55U
-#define INTRO_FRAMES 36U
+#define INTRO_FRAMES 35U
 
 lv_obj_t *screen_intro=NULL;
-static lv_obj_t *coin_clip=NULL,*coin_image=NULL,*heading=NULL,*subtitle=NULL,*accent=NULL;
+static lv_obj_t *outer=NULL,*middle=NULL,*core=NULL;
+static lv_obj_t *north=NULL,*south=NULL,*east=NULL,*west=NULL;
+static lv_obj_t *initial=NULL,*heading=NULL,*subheading=NULL,*tagline=NULL;
 static lv_timer_t *intro_timer=NULL;
 static unsigned intro_frame=0;
 
+static lv_obj_t *circle(lv_obj_t *parent,int x,int y,int w,int h,
+                         uint32_t bg,uint32_t border,int border_w)
+{
+    lv_obj_t *o=lv_obj_create(parent);
+    lv_obj_set_pos(o,x,y);
+    lv_obj_set_size(o,w,h);
+    lv_obj_set_style_radius(o,LV_RADIUS_CIRCLE,0);
+    lv_obj_set_style_bg_color(o,lv_color_hex(bg),0);
+    lv_obj_set_style_bg_opa(o,LV_OPA_COVER,0);
+    lv_obj_set_style_border_width(o,border_w,0);
+    lv_obj_set_style_border_color(o,lv_color_hex(border),0);
+    lv_obj_set_style_pad_all(o,0,0);
+    lv_obj_set_style_shadow_width(o,0,0);
+    lv_obj_clear_flag(o,LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_CLICKABLE);
+    return o;
+}
+static lv_obj_t *text(lv_obj_t *parent,const char *msg,int y,
+                       const lv_font_t *font,uint32_t color)
+{
+    lv_obj_t *o=lv_label_create(parent);
+    lv_label_set_text(o,msg);
+    lv_obj_set_style_text_font(o,font,0);
+    lv_obj_set_style_text_color(o,lv_color_hex(color),0);
+    lv_obj_align(o,LV_ALIGN_TOP_MID,0,y);
+    return o;
+}
 void refresh_intro_ui(void)
 {
-    if (!screen_intro || !coin_clip) return;
-    /* The intro uses one pristine HEADS frame. Never resize the viewport
-     * or swap to TAILS: those operations produced the black curtain. */
-    lv_obj_set_width(coin_clip,280);
-    lv_obj_align(coin_clip,LV_ALIGN_CENTER,0,-32);
-    const lv_img_dsc_t *heads=dial_sprite_available(99) ? NULL : dial_art_get(0);
-    if(dial_sprite_available(99)) {
-        lv_obj_add_flag(coin_clip,LV_OBJ_FLAG_HIDDEN);
-        /* Decode the full-quality static image once, not on every intro tick. */
-        if(intro_frame==0U) dial_sprite_show(screen_intro,99,0U,0);
-        dial_sprite_intro_anim(intro_frame);
-    } else if(heads) {
-        lv_img_set_src(coin_image,heads);
-        lv_obj_clear_flag(coin_clip,LV_OBJ_FLAG_HIDDEN);
-        /* LVGL zoom of 256 means native image quality; no repeated resample. */
-        uint32_t natural=heads->header.w;
-        uint16_t zoom=(uint16_t)((256U*270U)/(natural ? natural : 1U));
-        if(zoom>256U) zoom=256U; 
-        lv_img_set_zoom(coin_image,zoom);
-        lv_obj_center(coin_image);
-    }
-    if(intro_frame>=11U) {
-        lv_obj_clear_flag(heading,LV_OBJ_FLAG_HIDDEN);
-    }
-    if(intro_frame>=17U) {
-        lv_obj_clear_flag(subtitle,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(accent,LV_OBJ_FLAG_HIDDEN);
-    }
+    if(!screen_intro)return;
+    unsigned fade=intro_frame>15U?15U:intro_frame;
+    lv_opa_t a=(lv_opa_t)(45U+(210U*fade)/15U);
+    lv_obj_set_style_opa(outer,a,0);
+    lv_obj_set_style_opa(middle,a,0);
+    lv_obj_set_style_opa(core,a,0);
+    lv_obj_set_style_opa(north,a,0);
+    lv_obj_set_style_opa(south,a,0);
+    lv_obj_set_style_opa(east,a,0);
+    lv_obj_set_style_opa(west,a,0);
+    lv_obj_set_style_opa(initial,a,0);
+    unsigned t=intro_frame>24U?24U:intro_frame;
+    lv_obj_set_style_opa(heading,(lv_opa_t)(t<8U?0U:(t-8U)*255U/16U),0);
+    lv_obj_set_style_opa(subheading,(lv_opa_t)(t<11U?0U:(t-11U)*255U/13U),0);
+    lv_obj_set_style_opa(tagline,(lv_opa_t)(t<14U?0U:(t-14U)*255U/10U),0);
 }
-static void intro_tick(lv_timer_t *t)
+static void tick(lv_timer_t *timer)
 {
-    intro_frame++;
+    if(lv_scr_act()!=screen_intro){lv_timer_pause(timer);return;}
+    ++intro_frame;
     refresh_intro_ui();
-    if(intro_frame>=INTRO_FRAMES) {
-        lv_timer_pause(t);
+    if(intro_frame>=INTRO_FRAMES){
+        lv_timer_pause(timer);
         open_pregame_home();
     }
 }
 void build_intro_screen(void)
 {
-    const lv_img_dsc_t *heads;
+    if(screen_intro)return;
     screen_intro=lv_obj_create(NULL);
     lv_obj_set_size(screen_intro,360,360);
-    lv_obj_set_style_bg_color(screen_intro,lv_color_black(),0);
-    lv_obj_set_style_border_width(screen_intro,0,0);
     lv_obj_set_style_pad_all(screen_intro,0,0);
+    lv_obj_set_style_border_width(screen_intro,0,0);
+    lv_obj_set_style_bg_color(screen_intro,lv_color_hex(0x071522),0);
+    lv_obj_set_style_bg_opa(screen_intro,LV_OPA_COVER,0);
+    lv_obj_clear_flag(screen_intro,LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(screen_intro,LV_SCROLLBAR_MODE_OFF);
 
-    coin_clip=lv_obj_create(screen_intro);
-    lv_obj_set_size(coin_clip,280,280);
-    lv_obj_set_style_border_width(coin_clip,0,0);
-    lv_obj_set_style_bg_opa(coin_clip,LV_OPA_TRANSP,0);
-    lv_obj_set_style_pad_all(coin_clip,0,0);
-    lv_obj_set_scrollbar_mode(coin_clip,LV_SCROLLBAR_MODE_OFF);
-    lv_obj_clear_flag(coin_clip,LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(coin_clip,LV_ALIGN_CENTER,0,-32);
-
-    coin_image=lv_img_create(coin_clip);
-    heads=dial_sprite_available(99) ? NULL : dial_art_get(0);
-    if(heads) {
-        lv_img_set_src(coin_image,heads);
-        lv_img_set_zoom(coin_image,256);
-        lv_obj_center(coin_image);
-    } else {
-        lv_obj_add_flag(coin_clip,LV_OBJ_FLAG_HIDDEN);
-    }
-
-    heading=lv_label_create(screen_intro);
-    lv_label_set_text(heading,"DIAL DOS");
-    lv_obj_set_style_text_font(heading,&lv_font_montserrat_32,0);
-    lv_obj_set_style_text_color(heading,lv_color_hex(0xFFE09C),0);
-    lv_obj_align(heading,LV_ALIGN_TOP_MID,0,266);
-    lv_obj_add_flag(heading,LV_OBJ_FLAG_HIDDEN);
-
-    accent=lv_obj_create(screen_intro);
-    lv_obj_set_size(accent,108,3);
-    lv_obj_set_style_border_width(accent,0,0);
-    lv_obj_set_style_bg_color(accent,lv_color_hex(0xE4AE39),0);
-    lv_obj_align(accent,LV_ALIGN_TOP_MID,0,307);
-    lv_obj_add_flag(accent,LV_OBJ_FLAG_HIDDEN);
-
-    subtitle=lv_label_create(screen_intro);
-    lv_label_set_text(subtitle,"P R I M O S");
-    lv_obj_set_style_text_font(subtitle,&lv_font_montserrat_14,0);
-    lv_obj_set_style_text_color(subtitle,lv_color_hex(0xEFE5CE),0);
-    lv_obj_align(subtitle,LV_ALIGN_TOP_MID,0,316);
-    lv_obj_add_flag(subtitle,LV_OBJ_FLAG_HIDDEN);
+    outer=circle(screen_intro,83,24,194,194,0x081D2C,0xD6B16E,3);
+    middle=circle(screen_intro,99,40,162,162,0x0B2A3B,0x4F9397,2);
+    core=circle(screen_intro,126,67,108,108,0x164251,0xEFCB83,3);
+    north=circle(screen_intro,176,29,8,8,0xFFE4A6,0xFFE4A6,0);
+    south=circle(screen_intro,176,205,8,8,0xFFE4A6,0xFFE4A6,0);
+    west=circle(screen_intro,88,117,8,8,0xFFE4A6,0xFFE4A6,0);
+    east=circle(screen_intro,264,117,8,8,0xFFE4A6,0xFFE4A6,0);
+    initial=text(screen_intro,"D",103,&lv_font_montserrat_32,0xFFE3AD);
+    heading=text(screen_intro,"DIAL",238,&lv_font_montserrat_32,0xFCE5B9);
+    subheading=text(screen_intro,"D O S  P R I M O S",279,
+                    &lv_font_montserrat_16,0xC0E0E3);
+    tagline=text(screen_intro,"MAGIC  |  DADOS  |  POKEMON",326,
+                 &lv_font_montserrat_14,0x91B7BF);
+    refresh_intro_ui();
 }
 void knob_intro_init(void)
 {
+    if(!screen_intro)return;
     intro_frame=0;
-    lv_obj_add_flag(heading,LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(subtitle,LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(accent,LV_OBJ_FLAG_HIDDEN);
     refresh_intro_ui();
-    if(!intro_timer) intro_timer=lv_timer_create(intro_tick,INTRO_FRAME_MS,NULL);
+    if(!intro_timer)
+        intro_timer=lv_timer_create(tick,INTRO_FRAME_MS,NULL);
     else {
         lv_timer_set_period(intro_timer,INTRO_FRAME_MS);
         lv_timer_reset(intro_timer);
