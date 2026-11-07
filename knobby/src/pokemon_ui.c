@@ -25,11 +25,19 @@ static lv_obj_t *level_label = NULL;
 static uint16_t displayed_species = 0;
 /* Only an ephemeral preview choice, NOT ownership or a profile write. */
 static uint16_t preview_species = 778U;
-/* Species in candidate_pool.json; selection succeeds only if TPK2 is installed. */
-static const uint16_t kPreviewCandidates[]={
-    778U,1U,4U,7U,16U,25U,133U,6U,94U,149U,144U,145U,146U,150U
-};
-#define PK_PREVIEW_CANDIDATES (sizeof(kPreviewCandidates)/sizeof(kPreviewCandidates[0]))
+/* Read-only installed sprite list, refreshed on Companion entry.
+ * One SD scan avoids 251 mounts every time the user taps NEXT. */
+static uint16_t installed_species[252]={0};
+static size_t installed_count=0;
+static void refresh_installed_sprites(void)
+{
+    installed_count=pk_tpk2_list_installed_gen12(installed_species,
+                          sizeof(installed_species)/sizeof(installed_species[0]));
+    if(!installed_count && pk_tpk2_idle_loaded_species()!=0U){
+        installed_species[0]=pk_tpk2_idle_loaded_species();
+        installed_count=1;
+    }
+}
 static lv_obj_t *header_plate = NULL;
 static lv_obj_t *info_panel = NULL;
 static lv_obj_t *stats_panel = NULL;
@@ -137,19 +145,20 @@ static void on_page(lv_event_t *event)
 static void browse_preview(int step)
 {
     if(lv_scr_act()!=screen_pokemon_companion || companion_page!=0)return;
-    unsigned index=0;
-    for(unsigned i=0;i<PK_PREVIEW_CANDIDATES;i++)
-        if(kPreviewCandidates[i]==preview_species)index=i;
-    for(unsigned n=0;n<PK_PREVIEW_CANDIDATES;n++){
-        index=(index+(step>0?1U:(PK_PREVIEW_CANDIDATES-1U)))%
-              PK_PREVIEW_CANDIDATES;
-        const uint16_t candidate=kPreviewCandidates[index];
+    if(!installed_count)refresh_installed_sprites();
+    if(!installed_count)return;
+    size_t index=0;
+    for(size_t i=0;i<installed_count;i++)
+        if(installed_species[i]==preview_species){index=i;break;}
+    for(size_t n=0;n<installed_count;n++){
+        index=(index+(step>0?1U:installed_count-1U))%installed_count;
+        const uint16_t candidate=installed_species[index];
         if(pokemon_ui_show_species(candidate)){
             preview_species=candidate;
             return;
         }
     }
-    /* An SD sprite is required, otherwise no companion is invented. */
+    /* A file can disappear between discovery and loading; no fake sprite. */
 }
 static void on_preview_prev(lv_event_t *event)
 {
@@ -290,6 +299,7 @@ void pokemon_ui_open_companion(void)
 {
     companion_page=0;
     /* Keep the preview choice in RAM; default to Mimikyu #778. */
+    refresh_installed_sprites();
     pokemon_ui_restore_preview();
     update_theme();
     update_page();
