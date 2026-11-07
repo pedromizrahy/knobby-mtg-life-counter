@@ -1,17 +1,11 @@
 #include "pokemon_lab.h"
+#include "pokemon_lab_dex.h"
 #include <string.h>
 #include <stdint.h>
 
-/* Explicitly synthetic test pool: one sample ID per tier. Do not use
- * these results as a physical sprite-ready collection or real inventory.
- * Actual gacha remains gated on installed art and atomic storage.
- */
-static const pk_gacha_entry_t kSynthetic[PK_TIER_COUNT]={
-    {25,PK_TIER_COMMON,1},
-    {778,PK_TIER_RARE,1},
-    {149,PK_TIER_EPIC,1},
-    {150,PK_TIER_LEGENDARY,1}
-};
+/* Full Kanto+Johto collection is an ISOLATED SIMULATION.
+ * The caller's actual SD sprites, team, wallets and user profile are never
+ * mutated by LAB draws; real gacha remains strictly disabled. */
 void pk_lab_start(pk_lab_t *lab)
 {
     if(!lab)return;
@@ -43,6 +37,9 @@ bool pk_lab_draw(pk_lab_t *lab,uint8_t ball,unsigned count,
        count==0U || count>PK_LAB_MAX_BATCH || !rng)
         return false;
     if(lab->draws[ball]>UINT64_MAX-(uint64_t)count)return false;
+    size_t catalog_count=0;
+    const pk_gacha_entry_t *catalog=pk_lab_dex_catalog(&catalog_count);
+    if(!pk_gacha_catalog_ready(ball,catalog,catalog_count))return false;
     /* Commit stats only after the whole batch succeeds. Errors never
      * decrement currency or leave a partially recorded batch. */
     uint64_t tier_counts[PK_TIER_COUNT]={0};
@@ -50,7 +47,7 @@ bool pk_lab_draw(pk_lab_t *lab,uint8_t ball,unsigned count,
     pk_gacha_result_t last={0};
     for(unsigned i=0;i<count;i++){
         pk_gacha_result_t result={0};
-        if(!pk_gacha_preview(ball,kSynthetic,PK_TIER_COUNT,
+        if(!pk_gacha_preview_prevalidated(ball,catalog,catalog_count,
                              rng,rng_ctx,&result))
             return false;
         tier_counts[result.tier]++;
