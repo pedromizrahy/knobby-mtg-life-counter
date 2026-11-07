@@ -42,6 +42,13 @@ bool pk_gacha_preview(uint8_t ball,
                       const pk_gacha_entry_t *catalog,size_t count,
                       pk_gacha_rng_t rng,void *ctx,
                       pk_gacha_result_t *out);
+/* Internal LAB-only sampler: caller MUST first call
+ * pk_gacha_catalog_ready with this same catalog and ball. No standalone
+ * readiness checks for each draw of a large synthetic batch. */
+bool pk_gacha_preview_prevalidated(uint8_t ball,
+                      const pk_gacha_entry_t *catalog,size_t count,
+                      pk_gacha_rng_t rng,void *ctx,
+                      pk_gacha_result_t *out);
 /* Pure documented weights in basis points, sum 10,000 for each ball. */
 uint16_t pk_gacha_weight(uint8_t ball,uint8_t tier);
 #ifdef __cplusplus
