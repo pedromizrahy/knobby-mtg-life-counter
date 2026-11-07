@@ -29,7 +29,7 @@ struct Card {
 static Card cards[kPage]={};
 static pk_pg_main_t participants[kSeats]={};
 static size_t participant_count=0U,page=0U;
-static lv_obj_t *screen=NULL,*counter=NULL,*next_button=NULL;
+static lv_obj_t *screen=NULL,*counter=NULL,*back_button=NULL,*next_button=NULL;
 static bool mounted=false;
 
 bool exact(File &file,void *dst,size_t count){
@@ -170,12 +170,16 @@ void draw_card(unsigned slot,size_t idx){
         lv_obj_align(card.image,LV_ALIGN_TOP_MID,0,
                      49-(int)card.descriptor.header.h/2);
     }
-    if(view.shiny){
-        lv_label_set_text(card.status,real_shiny?
-                          "SHINY" : "SHINY / ART NORMAL");
-    }else{
-        lv_label_set_text(card.status,success?"MAIN":"NO SD ART");
-    }
+    /* The saved level comes from this player's real active profile.
+     * Label is short enough for a 150px card on the circular display. */
+    char status[48];
+    if(view.shiny)
+        snprintf(status,sizeof(status),real_shiny?"LV %u SHINY":"LV %u SHINY*",
+                 (unsigned)view.level);
+    else
+        snprintf(status,sizeof(status),success?"LV %u MAIN":"LV %u NO ART",
+                 (unsigned)view.level);
+    lv_label_set_text(card.status,status);
 }
 void render(){
     unload_all();
@@ -185,8 +189,20 @@ void render(){
     snprintf(label,sizeof(label),"PARCEIROS %u/%u",
              (unsigned)(page+1U),pages?pages:1U);
     lv_label_set_text(counter,label);
-    lv_obj_t *cap=lv_obj_get_child(next_button,0);
-    if(cap)lv_label_set_text(cap,pages>1U?"NEXT  >":"BACK");
+    /* One page: one centered BACK. Multiple pages: BACK + NEXT.
+     * Both stay within the actual circular glass at y=300..330. */
+    if(next_button){
+        if(pages<=1U)
+            lv_obj_add_flag(next_button,LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_clear_flag(next_button,LV_OBJ_FLAG_HIDDEN);
+    }
+    if(back_button){
+        if(pages<=1U)
+            lv_obj_set_pos(back_button,124,306);
+        else
+            lv_obj_set_pos(back_button,93,306);
+    }
     int clk=-1,cmd=-1,d0=-1;
     if(board==&board_k518){clk=4;cmd=3;d0=5;}
     else if(board==&board_k718){clk=39;cmd=38;d0=40;}
@@ -204,7 +220,7 @@ void exit_view(lv_event_t *){
 }
 void next_page(lv_event_t *){
     unsigned pages=(unsigned)((participant_count+kPage-1U)/kPage);
-    if(pages<=1U){exit_view(NULL);return;}
+    if(pages<=1U)return;
     page=(page+1U)%pages;
     render();
 }
@@ -222,7 +238,7 @@ lv_obj_t *make_label(lv_obj_t *parent,const char *s,int y,uint32_t rgb){
 lv_obj_t *make_button(const char *text,int x,int w,lv_event_cb_t cb){
     lv_obj_t *b=lv_btn_create(screen);
     lv_obj_set_size(b,w,30);
-    lv_obj_set_pos(b,x,316);
+    lv_obj_set_pos(b,x,306);
     lv_obj_set_style_radius(b,15,0);
     lv_obj_set_style_bg_color(b,lv_color_hex(0xDFCC9F),0);
     lv_obj_set_style_shadow_width(b,0,0);
@@ -264,8 +280,8 @@ void build(){
         c.species=make_label(c.root,"-",78,0xE4EFE9);
         c.status=make_label(c.root,"NOT LINKED",94,0x7DC3BB);
     }
-    make_button("BACK",83,88,exit_view);
-    next_button=make_button("NEXT  >",189,100,next_page);
+    back_button=make_button("BACK",93,112,exit_view);
+    next_button=make_button("NEXT >",215,85,next_page);
 }
 bool load_profile(void *,uint32_t user_id,pk_profile_t *out){
     if(!out)return false;

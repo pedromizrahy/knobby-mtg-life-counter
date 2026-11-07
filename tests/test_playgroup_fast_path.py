@@ -98,5 +98,16 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn("Art TLS cleanup deferred", API)
         self.assertIn("art_persistent_store(job->scryfall_id,data,size)", API)
 
+    def test_companion_preview_has_one_back_and_real_level(self):
+        preview = (ROOT / "knobby/src/pokemon_playgroup_preview.cpp").read_text(encoding="utf-8")
+        self.assertIn("lv_obj_add_flag(next_button,LV_OBJ_FLAG_HIDDEN);",preview)
+        self.assertIn("lv_obj_set_pos(back_button,124,306);",preview)
+        self.assertIn('back_button=make_button("BACK",93,112,exit_view);',preview)
+        self.assertIn('next_button=make_button("NEXT >",215,85,next_page);',preview)
+        self.assertIn("view.level",preview)
+        self.assertIn('"LV %u SHINY"',preview)
+        self.assertIn('"LV %u MAIN"',preview)
+        self.assertNotIn('pages>1U?"NEXT  >":"BACK"',preview)
+
 if __name__ == "__main__":
     unittest.main()
