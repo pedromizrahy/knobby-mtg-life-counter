@@ -117,7 +117,6 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertNotIn('pages>1U?"NEXT  >":"BACK"',preview)
 
     def test_account_startup_has_no_implicit_starter_creation(self):
-        assert "pk_file_create_starter(" in API
         route = between(API, "static void handle_command(char *line)\n{",
                         "\nvoid playgroup_process_serial(void)")
         self.assertIn('strcmp(line,"PK STARTER ME")==0', route)

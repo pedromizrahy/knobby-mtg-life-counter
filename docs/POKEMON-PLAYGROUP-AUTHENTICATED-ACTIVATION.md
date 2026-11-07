@@ -40,8 +40,8 @@ unmerged. Arduino CI does not validate the physical UI.
 - One initial Pokéball-tier reveal plus five rerolls (six candidates).
 - Each reveal uses the regular Pokéball tier weights: 75% common,
   20% rare, 4.5% epic, 0.5% legendary; independent shiny 1/4096.
-- Up to six distinct species, player can choose any rolled candidate.
-- New `pokemon_starter_roll` pure module and tests; **not wired to UI**.
+- KEEP or REROLL after each reveal: the current result is the only selectable result.\n- Each reroll permanently discards the preceding Pokémon; no gallery or picking past rolls.\n- On the sixth reveal the only remaining action is KEEP.
+- New `pokemon_starter_roll` pure sequential state machine and tests; **not wired to UI**.
 - Next task: durable generation/selection transaction before showing a
   reveal so power loss or reboots cannot reset rerolls or swap choices;
   integrate actual installed SD sprite validation and touch UI.

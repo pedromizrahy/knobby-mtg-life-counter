@@ -10,31 +10,40 @@ static bool rng(void *ctx,uint32_t *out){
 }
 static bool fail(void *ctx,uint32_t *out){(void)ctx;(void)out;return false;}
 int main(void){
-    /* Two per tier provides full coverage; the regular ball weights are
-     * tested separately by the canonical pokemon_gacha_test. */
     const pk_gacha_entry_t catalog[]={
         {1,PK_TIER_COMMON,1},{4,PK_TIER_COMMON,1},
         {25,PK_TIER_RARE,1},{94,PK_TIER_RARE,1},
         {6,PK_TIER_EPIC,1},{9,PK_TIER_EPIC,1},
         {150,PK_TIER_LEGENDARY,1},{151,PK_TIER_LEGENDARY,1}
     };
-    uint32_t seed=12345U;
-    pk_gacha_result_t out[PK_STARTER_OPTIONS]={0};
-    assert(PK_STARTER_OPTIONS==PK_STARTER_REROLLS+1U);
+    assert(PK_STARTER_TOTAL_REVEALS==6U);
     assert(pk_gacha_weight(PK_BALL_POKE,PK_TIER_COMMON)==7500);
     assert(pk_gacha_weight(PK_BALL_POKE,PK_TIER_RARE)==2000);
     assert(pk_gacha_weight(PK_BALL_POKE,PK_TIER_EPIC)==450);
     assert(pk_gacha_weight(PK_BALL_POKE,PK_TIER_LEGENDARY)==50);
-    assert(pk_starter_roll_six(catalog,8,rng,&seed,out));
-    assert(pk_starter_choice_valid(out,PK_STARTER_OPTIONS,0));
-    assert(pk_starter_choice_valid(out,PK_STARTER_OPTIONS,5));
-    assert(!pk_starter_choice_valid(out,PK_STARTER_OPTIONS,6));
-    assert(!pk_starter_choice_valid(out,0,0));
-    pk_gacha_result_t previous[PK_STARTER_OPTIONS];
-    for(unsigned i=0;i<PK_STARTER_OPTIONS;i++)previous[i]=out[i];
-    assert(!pk_starter_roll_six(catalog,8,fail,NULL,out));
-    for(unsigned i=0;i<PK_STARTER_OPTIONS;i++)
-        assert(previous[i].species==out[i].species);
-    printf("Starter Pokeball-level five rerolls policy PASS\n");
+    uint32_t seed=12345U;
+    pk_starter_state_t s={0};
+    assert(pk_starter_begin(&s,catalog,8,rng,&seed));
+    assert(s.reveal_count==1 && !s.kept && pk_starter_state_valid(&s));
+    uint16_t first=s.current.species;
+    assert(!pk_starter_reroll(&s,catalog,8,fail,NULL));
+    assert(s.reveal_count==1 && s.current.species==first);
+    for(unsigned i=0;i<PK_STARTER_REROLLS;i++){
+        assert(pk_starter_reroll(&s,catalog,8,rng,&seed));
+        assert(s.reveal_count==i+2U);
+        assert(pk_starter_state_valid(&s));
+        assert(s.current.species!=first);
+    }
+    assert(!pk_starter_reroll(&s,catalog,8,rng,&seed));
+    pk_gacha_result_t chosen={0};
+    assert(pk_starter_keep(&s,&chosen));
+    assert(chosen.species==s.current.species && s.kept);
+    assert(!pk_starter_keep(&s,&chosen));
+    assert(!pk_starter_reroll(&s,catalog,8,rng,&seed));
+    pk_starter_state_t early={0};
+    assert(pk_starter_begin(&early,catalog,8,rng,&seed));
+    assert(pk_starter_keep(&early,&chosen));
+    assert(early.reveal_count==1 && !pk_starter_reroll(&early,catalog,8,rng,&seed));
+    puts("KEEP-or-REROLL sequential Pokeball starter policy PASS");
     return 0;
 }
