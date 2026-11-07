@@ -88,6 +88,41 @@ def verify_installed(port, species, timeout=30):
     raise TimeoutError(f"Did not receive completion of PK PMD CHECK {species}")
 
 
+
+def check_before_upload(port, species, local_size, timeout=30):
+    """Return True only for a structurally valid already-installed file.
+
+    Fail closed for an invalid file or ambiguous/timeout response. An existing
+    valid but different-sized file is NOT silently treated as the same asset.
+    """
+    port.reset_input_buffer()
+    port.write(f"PK PMD CHECK {species}\\n".encode("ascii"))
+    port.flush()
+    deadline = time.monotonic() + timeout
+    seen_valid_size = None
+    while time.monotonic() < deadline:
+        line = port.readline().decode("utf-8", errors="replace").strip()
+        if line:
+            print("DIAL:", line)
+        if "PMD MISSING:" in line:
+            return False
+        if any(problem in line for problem in
+               ("PMD INVALID", "PMD FAIL", "SKIPPED", "PMD PUT ERR")):
+            raise RuntimeError(f"Cannot safely upload #{species}: {line}")
+        match = re.search(r"\\[Pokemon\\] PMD VALID size=(\\d+)", line)
+        if match:
+            seen_valid_size = int(match.group(1))
+        if "PMD CHECK COMPLETE" in line:
+            if seen_valid_size is None:
+                raise RuntimeError(f"Ambiguous existing sprite for #{species}")
+            if seen_valid_size != local_size:
+                raise RuntimeError(
+                    f"Existing #{species} size={seen_valid_size}, "
+                    f"local={local_size}. No overwrite; review manually.")
+            return True
+    raise TimeoutError(f"No conclusive preflight for #{species}")
+
+
 def upload(port, species, data, crc):
     port.reset_input_buffer()
     port.write(f"PK PMD PUT {species} {len(data)} {crc:08x}\n".encode("ascii"))
@@ -134,10 +169,19 @@ def main():
         raise SystemExit("Install pyserial: py -3 -m pip install pyserial") from e
     with serial.Serial(args.port, 115200, timeout=1, write_timeout=10) as port:
         time.sleep(1.5)
+        uploaded = 0
+        skipped = 0
         for species, data, crc in batch:
+            print(f"Checking #{species} before transfer...")
+            if check_before_upload(port, species, len(data)):
+                print(f"#{species}: already installed and size verified; skipped")
+                skipped += 1
+                continue
             print(f"Uploading #{species}...")
             upload(port, species, data, crc)
-    print("All uploads confirmed by device. Existing sprites were never overwritten.")
+            uploaded += 1
+        print(f"Complete: {uploaded} uploaded, {skipped} already present; "
+              "no existing files overwritten.")
 
 
 if __name__ == "__main__":
