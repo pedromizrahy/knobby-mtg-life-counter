@@ -8,6 +8,7 @@
 #include "playgroup_pending.h"
 #include "settings.h"
 #include "pokemon_ui.h"
+#include "pokemon_playgroup_preview.h"
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -43,6 +44,7 @@ static lv_obj_t *mode_playgroup_button = NULL;
 static lv_obj_t *play_offline_button = NULL;
 static lv_obj_t *pending_map_button = NULL;
 static lv_obj_t *roster_continue_button = NULL;
+static lv_obj_t *roster_pokemon_button = NULL;
 static int playgroup_connect_failures = 0;
 static bool offline_playgroup_mode = false;
 static bool mapping_offline_game = false;
@@ -1843,6 +1845,42 @@ static void refresh_roster(void)
             lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
         }
     }
+    /* Keep normal Commander setup unchanged. Pokémon is an optional review
+     * beside MULLIGANS, visible only for a mapped Playgroup roster. */
+    if(roster_pokemon_button && roster_continue_button){
+        if(playgroup_roster_active && !mapping_offline_game){
+            lv_obj_clear_flag(roster_pokemon_button,LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_size(roster_continue_button,126,42);
+            lv_obj_align(roster_continue_button,LV_ALIGN_BOTTOM_MID,73,-20);
+        }else{
+            lv_obj_add_flag(roster_pokemon_button,LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_size(roster_continue_button,142,42);
+            lv_obj_align(roster_continue_button,LV_ALIGN_BOTTOM_MID,0,-20);
+        }
+    }
+}
+
+/* A separate opt-in screen: show at most four real, saved primary Pokémon
+ * belonging to the selected Playgroup member IDs. Never infer identity from
+ * seat/name, and never interrupt an active Magic game or alter its counters. */
+static void event_roster_pokemon(lv_event_t *e)
+{
+    (void)e;
+    if(!playgroup_roster_active || mapping_offline_game ||
+       commander_prepare_active || pregame_player_count<=0 ||
+       pregame_player_count>MAX_DISPLAY_PLAYERS)return;
+    pk_pg_seat_t seats[MAX_DISPLAY_PLAYERS]={0};
+    const int members=playgroup_cached_member_count();
+    for(int i=0;i<pregame_player_count;i++){
+        snprintf(seats[i].name,sizeof(seats[i].name),"%s",player_names[i]);
+        if(!selected_member_set[i] || seat_is_guest(i))continue;
+        int selected=selected_member_index[i];
+        if(selected<0 || selected>=members)continue;
+        const playgroup_member_t *member=playgroup_cached_member(selected);
+        if(member && member->user_id>0)
+            seats[i].user_id=(uint64_t)member->user_id;
+    }
+    (void)pk_pg_preview_open(seats,(size_t)pregame_player_count);
 }
 
 static void event_roster_continue(lv_event_t *e)
@@ -2576,8 +2614,15 @@ void build_pregame_screens(void)
             screen_pregame_roster, "MULLIGANS", 142, 42,
             event_roster_continue, LV_EVENT_CLICKED, NULL);
         lv_obj_align(roster_continue_button, LV_ALIGN_BOTTOM_MID, 0, -20);
-        /* Accept touches slightly below the visible button near the round edge. */
-        lv_obj_set_ext_click_area(roster_continue_button, 16);
+        /* Optional roster companion preview, never an in-game overlay. */
+        roster_pokemon_button = pregame_button(
+            screen_pregame_roster, "POKEMON", 126, 42,
+            event_roster_pokemon, LV_EVENT_CLICKED, NULL);
+        lv_obj_align(roster_pokemon_button,LV_ALIGN_BOTTOM_MID,-73,-20);
+        lv_obj_add_flag(roster_pokemon_button,LV_OBJ_FLAG_HIDDEN);
+        /* Accept touches slightly below the visible buttons. */
+        lv_obj_set_ext_click_area(roster_continue_button, 10);
+        lv_obj_set_ext_click_area(roster_pokemon_button, 10);
     }
 
     screen_pregame_deck = lv_obj_create(NULL);

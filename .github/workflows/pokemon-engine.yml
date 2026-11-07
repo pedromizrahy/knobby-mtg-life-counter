@@ -4,6 +4,8 @@ on:
     paths:
       - 'knobby/src/pokemon_progress.*'
       - 'knobby/src/pokemon_pc.*'
+      - 'knobby/src/pokemon_playgroup_*'
+      - 'tests/pokemon_playgroup_roster_test.c'
       - 'tests/pokemon_pc_test.c'
       - 'knobby/src/pokemon_gacha.*'
       - 'knobby/src/pokemon_lab.*'
@@ -86,6 +88,10 @@ jobs:
         run: /tmp/pokemon_progress_test
       - name: Audit SD sprite catalog with synthetic TPK2 fixtures
         run: python3 -m unittest discover -s tests -p test_pokemon_catalog.py -v
+      - name: Test main-only Playgroup roster and distinct user identities
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_player_identity.c knobby/src/pokemon_playgroup_roster.c tests/pokemon_playgroup_roster_test.c -o /tmp/pokemon_playgroup_roster_test
+          /tmp/pokemon_playgroup_roster_test
       - name: Test PC storage-independent team and main selection
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_pc.c tests/pokemon_pc_test.c -o /tmp/pokemon_pc_test
