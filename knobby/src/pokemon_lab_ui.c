@@ -226,10 +226,22 @@ static void on_draw(lv_event_t *event)
 {
     (void)event;
     if(opening_active || reveal_active)return;
+    /* USB RESET ends the current LAB session. Starting a new draw from the
+     * touchscreen should begin a fresh RAM-only simulation, not fail until
+     * the user navigates away or sends START over serial. */
+    pk_lab_t snapshot={0};
+    if(!pk_lab_runtime_snapshot(&snapshot) ||
+       (!snapshot.active && !pk_lab_runtime_start())){
+        lv_label_set_text(status_label,"LAB START FAILED - CHECK USB");
+        return;
+    }
     if(!pk_lab_runtime_draw_snapshot_token(ball,count,&captured,&draw_session)){
         lv_label_set_text(status_label,"DRAW FAILED - CHECK LAB");
         return;
     }
+    /* A restarted session must not be mistaken for a stale draw by the
+     * periodic session watcher on the following LVGL tick. */
+    shown_session=draw_session;
     lv_label_set_text(status_label,"SIMULATED - NO ITEMS SPENT");
     lv_obj_clear_flag(opening,LV_OBJ_FLAG_HIDDEN);
     if(close_button)lv_obj_add_flag(close_button,LV_OBJ_FLAG_HIDDEN);

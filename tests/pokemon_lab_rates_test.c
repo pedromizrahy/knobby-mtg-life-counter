@@ -33,6 +33,16 @@ int main(void)
     state.tiers[PK_BALL_MASTER][PK_TIER_LEGENDARY]=UINT64_MAX;
     assert(pk_lab_rates_format(&state,PK_BALL_MASTER,text,sizeof(text)));
     assert(strstr(text,"LEGEND 100.00% | 100.00%\n"));
+    /* A very large denominator previously overflowed the intermediate
+     * count*10000 term and printed incorrect observed percentages. */
+    state.draws[PK_BALL_POKE]=UINT64_MAX;
+    state.tiers[PK_BALL_POKE][PK_TIER_COMMON]=UINT64_MAX/2U;
+    state.tiers[PK_BALL_POKE][PK_TIER_RARE]=UINT64_MAX-UINT64_MAX/2U;
+    state.tiers[PK_BALL_POKE][PK_TIER_EPIC]=0U;
+    state.tiers[PK_BALL_POKE][PK_TIER_LEGENDARY]=0U;
+    assert(pk_lab_rates_format(&state,PK_BALL_POKE,text,sizeof(text)));
+    assert(strstr(text,"COMMON 75.00% | 49.99%\n"));
+    assert(strstr(text,"RARE 20.00% | 50.00%\n"));
     puts("Pokemon LAB rate formatting tests passed");
     return 0;
 }

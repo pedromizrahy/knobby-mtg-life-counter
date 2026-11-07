@@ -58,7 +58,7 @@ Enviar `PK LAB DIAG` e `PK LAB STATUS` fora de qualquer jogo. Registrar as linha
 2. Abrir POKE, GREAT, ULTRA e MASTER, primeiro `x1`, depois `x100`. Conferir que o contador sobe somente pelo número de draws pedido e que Master revela tier LENDÁRIO.
 3. Verificar rótulo `SD PREVIEW` somente quando a espécie normal sorteada possui Idle TPK2 real; `LAB ART` nos casos não instalados ou Shiny. Quando vier Mimikyu #778 e houver TPK2 instalado, inspecionar a animação e o recorte do card.
 4. Executar `PK LAB DIAG` antes/depois de 20 aberturas; comparar `psram_free` e `psram_largest` sem assumir vazamento por uma amostra única. Não extrapolar para stress de horas.
-5. Com um card revelado, enviar `PK LAB RESET`: resultado e taxas antigas devem sumir. Repetir enviando RESET durante os 6 quadros de abertura e confirmando que não aparece uma revelação de sessão antiga.
+5. Com um card revelado, enviar `PK LAB RESET`: resultado e taxas antigas devem sumir. Repetir enviando RESET durante os quadros de abertura e confirmando que não aparece uma revelação de sessão antiga. **Sem sair da tela LAB**, tocar novamente em `OPEN BALL`: uma nova sessão deve iniciar automaticamente, com contadores zerados antes do novo sorteio. Conferir também o painel RATES atualizado.
 6. Voltar ao Companion: Mimikyu #778 deve aparecer normalmente. Fazer a alternância LAB → Companion várias vezes. Confirmar que Magic funciona como antes.
 7. Se houver travamento, boot loop, falhas de SD ou perda progressiva marcante de PSRAM, interromper e conservar o log serial completo. **Não apagar perfis/SD para diagnosticar.**
 
