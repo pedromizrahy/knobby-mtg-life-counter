@@ -6,6 +6,8 @@ on:
       - 'knobby/src/pokemon_gacha.*'
       - 'knobby/src/pokemon_lab.*'
       - 'knobby/src/pokemon_lab_dex.*'
+      - 'knobby/src/pokemon_lab_rates.*'
+      - 'tests/pokemon_lab_rates_test.c'
       - 'tests/pokemon_lab_dex_test.c'
       - 'knobby/src/pokemon_lab_runtime.*'
       - 'tests/pokemon_lab_runtime_test.cpp'
@@ -124,6 +126,10 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c knobby/src/pokemon_lab_dex.c knobby/src/pokemon_lab.c tests/pokemon_lab_dex_test.c -o /tmp/pokemon_lab_dex_test
           /tmp/pokemon_lab_dex_test
+      - name: Test LAB target-vs-observed rates formatting
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_gacha.c knobby/src/pokemon_lab_dex.c knobby/src/pokemon_lab.c knobby/src/pokemon_lab_rates.c tests/pokemon_lab_rates_test.c -o /tmp/pokemon_lab_rates_test
+          /tmp/pokemon_lab_rates_test
       - name: Test LAB RAM sessions and discard stale reveals after serial reset
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_gacha.c -o /tmp/lab_rt_gacha.o
