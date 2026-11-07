@@ -113,20 +113,31 @@ def main():
                         default=Path(__file__).with_name("candidate_pool.json"))
     parser.add_argument("--species", type=int, nargs="*",
                         help="National Dex IDs; default all candidates except Mimikyu")
+    parser.add_argument("--gen1-2", action="store_true",
+                        help="Prepare all National Dex #1..251; does not imply gacha approval")
     parser.add_argument("--overwrite", action="store_true",
                         help="Overwrite local generated files ONLY (never #778)")
     args = parser.parse_args()
     manifest = json.loads(args.catalog.read_text(encoding="utf-8"))
     allowed = {r["id"] for r in manifest["species"] if r["id"] != 778}
+    if args.gen1_2:
+        allowed.update(range(1, 252))
     selected = set(args.species) if args.species else allowed
     if not selected or not selected.issubset(allowed):
-        parser.error("Unknown or excluded species (Mimikyu #778 cannot be replaced)")
+        parser.error("Invalid species. Use --gen1-2 for IDs #1..251.")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     results = []
+    total_bytes = 0
+    failed = []
     for number in sorted(selected):
         output = args.out_dir / f"p{number}.bin"
         if output.exists() and not args.overwrite:
-            print(f"#{number}: exists, skipped (no overwrite)")
+            try:
+                total_bytes += validate_tpk2(output)
+                print(f"#{number}: exists, validated and skipped")
+            except ValueError as exc:
+                failed.append(number)
+                print(f"#{number}: existing file INVALID: {exc}")
             continue
         try:
             blob, url = fetch_sprite(number)
@@ -140,12 +151,18 @@ def main():
             finally:
                 temp.unlink(missing_ok=True)
             print(f"#{number}: {len(frames)} frames, {len(encoded)} bytes -> {output}")
+            total_bytes += len(encoded)
             results.append({"id": number, "url": url, "frames": len(frames)})
         except (OSError, ValueError, urllib.error.URLError) as exc:
+            failed.append(number)
             print(f"#{number}: FAILED: {exc}")
     # Source metadata only, deliberately no binaries committed to Git.
     report = args.out_dir / "sprite_sources.json"
     report.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    print(f"Selected: {len(selected)} / prepared or valid bytes: {total_bytes:,} "
+          f"({total_bytes / (1024*1024):.2f} MiB) / failed: {len(failed)}")
+    if failed:
+        print("FAILED IDs: " + ", ".join(map(str, failed)))
     print("Local output only. Validate with upload_batch.py before transfer.")
 
 
