@@ -120,7 +120,7 @@ class PlaygroupFastPathTests(unittest.TestCase):
         assert "pk_file_create_starter(" in API
         route = between(API, "static void handle_command(char *line)\n{",
                         "\nvoid playgroup_process_serial(void)")
-        self.assertIn('strcmp(line, "PK STARTER ME")==0', route)
+        self.assertIn('strcmp(line,"PK STARTER ME")==0', route)
         self.assertIn('strcmp(line, "PK ME")', route)
         self.assertIn("pokemon_me_account(", route)
         f = between(API, "static void pokemon_me_account(bool create_starter)\n{",
