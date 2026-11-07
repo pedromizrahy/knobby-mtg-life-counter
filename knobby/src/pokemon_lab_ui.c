@@ -360,7 +360,13 @@ void pokemon_lab_ui_build(void)
     ball_dsc.data=ball_pixels;
     ball_image=lv_img_create(opening);
     lv_img_set_src(ball_image,&ball_dsc);
-    lv_img_set_zoom(ball_image,768);
+    /* Native 96px artwork is zoomed to 192px, with transparent corners.
+     * Fix the object to native dimensions: never tile or crop its content. */
+    lv_obj_set_size(ball_image,PK_LAB_BALL_PIXELS,PK_LAB_BALL_PIXELS);
+    lv_obj_set_style_bg_opa(ball_image,LV_OPA_TRANSP,0);
+    lv_obj_set_style_border_width(ball_image,0,0);
+    lv_obj_set_style_pad_all(ball_image,0,0);
+    lv_img_set_zoom(ball_image,512);
     lv_obj_align(ball_image,LV_ALIGN_CENTER,0,-10);
 
     symbol_dsc.header.w=PK_LAB_FIXTURE_PIXELS;

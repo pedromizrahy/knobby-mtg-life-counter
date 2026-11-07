@@ -29,6 +29,21 @@ int main(void){
     assert(pk_lab_ball_art_render(0,PK_LAB_BALL_FRAMES-1,other,sizeof(other)));
     assert(memcmp(first,other,sizeof(first))!=0);
     assert(total>5000);
+    /* No opaque square around the Pokeball, and the lid never leaves
+     * the 96px image even in the last frame. */
+    for(unsigned ball=0;ball<4;ball++){
+        assert(pk_lab_ball_art_render((uint8_t)ball,
+                    PK_LAB_BALL_FRAMES-1,buffer,sizeof(buffer)));
+        assert(buffer[2]==0U);
+        assert(buffer[((PK_LAB_BALL_PIXELS-1U)*
+                      PK_LAB_BALL_PIXELS+PK_LAB_BALL_PIXELS-1U)*3U+2U]==0U);
+        unsigned lid_pixels=0;
+        for(unsigned y=10;y<24;y++)
+            for(unsigned x=24;x<72;x++)
+                if(buffer[(y*PK_LAB_BALL_PIXELS+x)*3U+2U]==255U)
+                    lid_pixels++;
+        assert(lid_pixels>50U);
+    }
     /* The pixel-art animation has distinct shake, latch, and reveal poses;
      * each frame must fit its fixed 64x64 RGB565+alpha buffer. */
     uint8_t shake[PK_LAB_BALL_BUFFER_BYTES];

@@ -95,3 +95,15 @@ Nenhuma dessas probabilidades ou sprites concede Pokémon, gasta Pokébolas ou a
   marcador de ausência de sprite. Não alterar nem retransferir os 251 pacotes.
 - Em caso de distorção persistente, registrar foto ou vídeo do LAB e do
   Companion para separar repetição LVGL de problemas no arquivo TPK2.
+
+## Redesenho da abertura — tela 360×360 (revisão visual)
+- Quadro RGB565+alpha **96×96**, com transparência real nos cantos;
+  ampliação 2× e objeto LVGL dimensionado à origem para evitar mosaico/quadrado.
+- A tampa só se eleva **13 pixels no máximo**: a borda superior permanece
+  dentro do quadro durante toda a sequência, sem clipping.
+- Contorno, acabamento por sombreamento, detalhes por modelo, botão e feixe
+  luminoso mais limpo. Abertura 18 quadros, 110 ms por quadro (~2 segundos).
+- Testar as quatro bolas em hardware: fundo sem retângulo, tampa inteira,
+  efeito de brilho suave e revelação sem sprite duplicado.
+- Escalas diferentes entre espécies no Companion serão tratadas em revisão
+  separada; não retransferir arquivos SD sem diagnóstico.

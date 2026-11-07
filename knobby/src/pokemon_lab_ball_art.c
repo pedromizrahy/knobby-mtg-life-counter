@@ -1,151 +1,132 @@
 #include "pokemon_lab_ball_art.h"
 #include <string.h>
-
-/* Original hand-coded, 64px RGB565/alpha pixel scene. Single illustration
- * centered on a dark transparent canvas; no sprites or external assets.
- * The larger logical grid avoids the old chunky 32->64->192 upscale. */
-static const uint16_t shell[4]={0xD965U,0x295FU,0x2104U,0x981FU};
-static const uint16_t bright[4]={0xFB4FU,0x7C3FU,0xFEC0U,0xF83FU};
-static const uint16_t dark[4]={0x8802U,0x1095U,0x1082U,0x6017U};
-static const uint16_t halo[4]={0xF3E6U,0x8C5FU,0xFEA6U,0xDE7FU};
-#define SIDE ((int)PK_LAB_BALL_PIXELS)
-
-static void put(uint8_t *dst,int x,int y,uint16_t color)
-{
-    if(x<0 || x>=SIDE || y<0 || y>=SIDE)return;
-    const unsigned offset=((unsigned)y*PK_LAB_BALL_PIXELS+(unsigned)x)*3U;
-    /* LV_COLOR_DEPTH=16, LV_COLOR_16_SWAP=1. */
-    dst[offset]=(uint8_t)(color>>8);
-    dst[offset+1U]=(uint8_t)color;
-    dst[offset+2U]=255U;
+/* Hand-drawn procedural pixel art. One native RGB565+alpha frame, no file
+ * access. Transparent 96px canvas gives the lid space to rise safely. */
+#define S ((int)PK_LAB_BALL_PIXELS)
+static const uint16_t top[4]={0xD965U,0x295FU,0x2104U,0x981FU};
+static const uint16_t lite[4]={0xFA08U,0x6D5FU,0xFEA0U,0xDA3FU};
+static const uint16_t shade[4]={0xA082U,0x10B7U,0x1082U,0x6818U};
+static const uint16_t flare[4]={0xFFDFU,0xB6FFU,0xFFE0U,0xE77FU};
+static void px(uint8_t *buf,int x,int y,uint16_t c) {
+    if(x<0 || x>=S || y<0 || y>=S)return;
+    size_t n=((size_t)y*PK_LAB_BALL_PIXELS+(size_t)x)*3U;
+    /* LV_COLOR_DEPTH=16 and LV_COLOR_16_SWAP=1 on the DIAL. */
+    buf[n]=(uint8_t)(c>>8);buf[n+1]=(uint8_t)c;buf[n+2]=255;
 }
-static void disk(uint8_t *dst,int cx,int cy,int radius,uint16_t color)
-{
-    for(int y=cy-radius;y<=cy+radius;y++)
-        for(int x=cx-radius;x<=cx+radius;x++){
-            const int dx=x-cx,dy=y-cy;
-            if(dx*dx+dy*dy<=radius*radius)put(dst,x,y,color);
-        }
-}
-static void line(uint8_t *dst,int x0,int y0,int x1,int y1,uint16_t color)
-{
-    int dx=x1>x0?x1-x0:x0-x1;
-    int dy=y1>y0?y1-y0:y0-y1;
-    int sx=x0<x1?1:-1, sy=y0<y1?1:-1,err=dx-dy;
-    for(;;){
-        put(dst,x0,y0,color);
-        if(x0==x1 && y0==y1)break;
-        const int e=2*err;
-        if(e> -dy){err-=dy;x0+=sx;}
-        if(e<dx){err+=dx;y0+=sy;}
+static void circle(uint8_t *b,int cx,int cy,int r,uint16_t c) {
+    for(int y=cy-r;y<=cy+r;y++)for(int x=cx-r;x<=cx+r;x++){
+        int dx=x-cx,dy=y-cy;
+        if(dx*dx+dy*dy<=r*r)px(b,x,y,c);
     }
 }
-static void spark(uint8_t *dst,int x,int y,int size,uint16_t color)
-{
-    line(dst,x-size,y,x+size,y,color);
-    line(dst,x,y-size,x,y+size,color);
-    put(dst,x-1,y-1,0xFFFFU);
+static void cross(uint8_t *b,int x,int y,int radius,uint16_t color) {
+    for(int d=-radius;d<=radius;d++){
+        px(b,x+d,y,color); px(b,x,y+d,color);
+    }
+    px(b,x-1,y-1,0xFFFFU);
 }
-bool pk_lab_ball_art_render(uint8_t ball,unsigned frame,
-                            uint8_t *dst,size_t cap)
-{
+static uint16_t shell_top(uint8_t ball,int dx,int dy,int rr){
+    if(rr>=643)return 0x08A2U;
+    if(rr>=585)return shade[ball];
+    if(dx>13 || dy> -2)return shade[ball];
+    if(dx< -12 && dy< -9)return lite[ball];
+    return top[ball];
+}
+static uint16_t shell_bottom(int dx,int dy,int rr){
+    if(rr>=643)return 0x08A2U;
+    if(rr>=585 || (dy>17 && dx>7))return 0xAE34U;
+    if(dy>14)return 0xCE18U;
+    if(dx< -12 && dy<14)return 0xFFFFU;
+    return 0xEF7DU;
+}
+static void insignia(uint8_t *buf,uint8_t ball,int cx,int cy,int lift) {
+    if(ball==1U) {
+        for(int y=cy-13;y<=cy-8;y++)for(int x=cx-21;x<=cx-14;x++)px(buf,x,y-lift,0xE986U);
+        for(int y=cy-13;y<=cy-8;y++)for(int x=cx+14;x<=cx+21;x++)px(buf,x,y-lift,0xE986U);
+    } else if(ball==2U) {
+        for(int a=0;a<11;a++){
+            px(buf,cx-10+a,cy-21+a/3-lift,0xFEA0U);
+            px(buf,cx+10-a,cy-21+a/3-lift,0xFEA0U);
+        }
+    } else if(ball==3U) {
+        circle(buf,cx-15,cy-13-lift,3,0xF81FU);
+        circle(buf,cx+15,cy-13-lift,3,0xF81FU);
+        for(int i=0;i<7;i++){
+            px(buf,cx-7,cy-21+i-lift,0xFFFFU);
+            px(buf,cx+7,cy-21+i-lift,0xFFFFU);
+            px(buf,cx-7+i,cy-21+i/2-lift,0xFFFFU);
+            px(buf,cx+7-i,cy-21+i/2-lift,0xFFFFU);
+        }
+    }
+}
+bool pk_lab_ball_art_render(uint8_t ball,unsigned frame,uint8_t *dst,size_t capacity){
     if(ball>=4U || frame>=PK_LAB_BALL_FRAMES || !dst ||
-       cap<PK_LAB_BALL_BUFFER_BYTES)return false;
+       capacity<PK_LAB_BALL_BUFFER_BYTES)return false;
     memset(dst,0,PK_LAB_BALL_BUFFER_BYTES);
-    const int shakes[4]={-3,3,-2,2};
-    const int cx=32+(frame>=3U && frame<=6U?shakes[frame-3U]:0);
-    const int cy=33;
-    const int lift=frame>=10U?(int)(frame-9U)*3:0;
-    const bool opened=frame>=10U;
-    const uint16_t glow=halo[ball];
-
-    /* Shadow grounds the moving ball. The last few frames create a radiant
-     * opening without a framebuffer-size temporary allocation. */
-    for(int y=54;y<=57;y++)
-        for(int x=15;x<=49;x++){
-            const int dx=x-32,dy=(y-55)*3;
-            if(dx*dx+dy*dy<260)put(dst,x,y,0x2128U);
-        }
-    if(frame>=8U){
-        const int reach=frame>=15U?30:frame>=12U?27:24;
-        if(frame>=11U){
-            line(dst,32,30,32,32-reach,glow);
-            line(dst,32,33,32,33+reach,glow);
-            line(dst,29,33,32-reach,33,glow);
-            line(dst,35,33,32+reach,33,glow);
-            line(dst,29,30,32-reach/2,33-reach/2,glow);
-            line(dst,35,30,32+reach/2,33-reach/2,glow);
-        }
-        spark(dst,10,12,frame>=14U?3:1,glow);
-        spark(dst,54,16,frame>=14U?3:1,glow);
-        if(frame>=14U){
-            spark(dst,12,47,2,bright[ball]);
-            spark(dst,51,48,2,bright[ball]);
-        }
+    static const int shake[8]={0,0,0,-2,3,-3,2,0};
+    static const int lift[18]={0,0,0,0,0,0,0,0,0,0,0,0,0,2,4,7,10,13};
+    int cx=48+shake[frame<8U?frame:7U],cy=52,hinge=lift[frame];
+    bool opening=frame>=13U;
+    /* Ground shadow is oval; outside the drawing stays transparent. */
+    for(int y=79;y<=81;y++)for(int x=24;x<=72;x++){
+        int dx=x-48,dy=(y-80)*5;
+        if(dx*dx+dy*dy<485)px(dst,x,y,0x2128U);
     }
-    /* Lower ivory hemisphere: outlined arc, warm inner core, darker lower
-     * shading. The cap moves independently rather than a sudden jump. */
-    for(int y=cy;y<=cy+21;y++)
-        for(int x=cx-21;x<=cx+21;x++){
-            const int dx=x-cx,dy=y-cy,r2=dx*dx+dy*dy;
-            if(r2>441)continue;
-            uint16_t color=r2>=382?0x1082U:y>=48?0xC5D5U:0xF7DEU;
-            if(dx< -10 && y<46)color=0xFFFFU;
-            put(dst,x,y,color);
+    /* Restrained outline glow BEHIND the ball, never a solid square. */
+    if(frame>=11U){
+        unsigned r=frame>=15U?31U:28U;
+        for(int y=cy-(int)r;y<=cy+(int)r;y++)for(int x=cx-(int)r;x<=cx+(int)r;x++){
+            int dx=x-cx,dy=y-cy,d=dx*dx+dy*dy;
+            if(d>=(int)(r-2)*(int)(r-2) && d<=(int)r*(int)r && ((x+y)&1)==0)
+                px(dst,x,y,flare[ball]);
         }
-    if(opened){
-        /* Interior light shining between the separated upper and lower
-         * shells; only visible after the latch disengages. */
-        for(int y=cy-lift+3;y<cy+1;y++)
-            for(int x=29;x<=35;x++)
-                put(dst,x,y,(x==32)?0xFFFFU:glow);
+        cross(dst,19,24,frame>=15U?3:1,flare[ball]);
+        cross(dst,77,25,frame>=15U?3:1,flare[ball]);
+        if(frame>=15U){cross(dst,15,64,2,lite[ball]);cross(dst,81,65,2,lite[ball]);}
     }
-    for(int y=cy-21;y<=cy;y++)
-        for(int x=cx-21;x<=cx+21;x++){
-            const int dx=x-cx,dy=y-cy,r2=dx*dx+dy*dy;
-            if(r2>441)continue;
-            uint16_t color=r2>=382?0x1082U:
-                           (dx>=10 || dy> -2)?dark[ball]:shell[ball];
-            if(dy< -7 && dx< -6 && r2<300)color=shell[ball];
-            put(dst,x,y-lift,color);
-        }
-    /* Pale glint and signature accents unique to each type of ball. */
-    for(int y=17;y<=20;y++)
-        for(int x=22;x<=27;x++)
-            if((x-22)*(x-22)+(y-20)*(y-20)<33)
-                put(dst,x+(cx-32),y-lift,bright[ball]);
-    if(ball==1U){
-        for(int y=23;y<=28;y++){
-            for(int x=16;x<=21;x++)put(dst,x+(cx-32),y-lift,0xE986U);
-            for(int x=43;x<=48;x++)put(dst,x+(cx-32),y-lift,0xE986U);
-        }
-    }else if(ball==2U){
-        for(int i=0;i<9;i++){
-            put(dst,24+i+(cx-32),19+i/2-lift,0xFEC0U);
-            put(dst,40-i+(cx-32),19+i/2-lift,0xFEC0U);
-        }
-    }else if(ball==3U){
-        disk(dst,21+(cx-32),23-lift,3,0xF83FU);
-        disk(dst,43+(cx-32),23-lift,3,0xF83FU);
-        line(dst,28+(cx-32),19-lift,28+(cx-32),25-lift,0xFFFFU);
-        line(dst,28+(cx-32),19-lift,32+(cx-32),23-lift,0xFFFFU);
-        line(dst,32+(cx-32),23-lift,36+(cx-32),19-lift,0xFFFFU);
-        line(dst,36+(cx-32),19-lift,36+(cx-32),25-lift,0xFFFFU);
+    /* Ivory bowl with shaded underside and outlined perimeter. */
+    for(int y=cy;y<=cy+26;y++)for(int x=cx-26;x<=cx+26;x++){
+        int dx=x-cx,dy=y-cy,rr=dx*dx+dy*dy;
+        if(rr<=676)px(dst,x,y,shell_bottom(dx,dy,rr));
     }
-    if(!opened){
-        for(int y=31;y<=35;y++)
-            for(int x=cx-19;x<=cx+19;x++){
-                const int dx=x-cx,dy=y-cy;
-                if(dx*dx+dy*dy<=420)put(dst,x,y,0x1082U);
+    for(int x=cx-23;x<=cx+23;x++){
+        int dx=x-cx;
+        if(dx*dx<=529){px(dst,x,cy,0x08A2U);if(opening)px(dst,x,cy+1,0x67BFU);}
+    }
+    if(opening){
+        /* Light leaks through the growing gap; a clean tapered beam rather
+         * than the old checkerboard fills the space between both halves. */
+        for(int y=cy-hinge+2;y<cy;y++){
+            int reach=12-(y-(cy-hinge+2))/4;
+            for(int x=cx-reach;x<=cx+reach;x++){
+                int dx=x-cx;
+                px(dst,x,y,dx>=-2 && dx<=2?0xFFFFU:flare[ball]);
             }
-        disk(dst,cx,cy,7,0x1082U);
-        disk(dst,cx,cy,5,frame>=7U?glow:0xD69AU);
-        disk(dst,cx,cy,3,frame>=8U?0xFFFFU:0xF7DEU);
-        put(dst,cx-2,cy-2,0xFFFFU);
+        }
+    }
+    /* The cap remains fully inside the canvas through the final frame:
+     * at the maximum lift its highest visible pixel is at y=13. */
+    for(int y=cy-26;y<=cy;y++)for(int x=cx-26;x<=cx+26;x++){
+        int dx=x-cx,dy=y-cy,rr=dx*dx+dy*dy;
+        if(rr<=676)px(dst,x,y-hinge,shell_top(ball,dx,dy,rr));
+    }
+    for(int y=cy-19;y<=cy-16;y++)for(int x=cx-17;x<=cx-10;x++){
+        int dx=x-cx,dy=y-cy;
+        if(dx*dx+dy*dy<580)px(dst,x,y-hinge,lite[ball]);
+    }
+    insignia(dst,ball,cx,cy,hinge);
+    if(!opening){
+        for(int y=cy-3;y<=cy+3;y++)for(int x=cx-24;x<=cx+24;x++){
+            int dx=x-cx,dy=y-cy;
+            if(dx*dx+dy*dy<=660)px(dst,x,y,0x08A2U);
+        }
+        circle(dst,cx,cy,8,0x08A2U);
+        circle(dst,cx,cy,6,0xAD75U);
+        circle(dst,cx,cy,4,frame>=9U?flare[ball]:0xF7DEU);
+        px(dst,cx-2,cy-2,0xFFFFU);
     }else{
-        line(dst,22,33,42,33,0x1082U);
-        disk(dst,32,34,4,0x1082U);
-        disk(dst,32,34,2,0xFFFFU);
+        circle(dst,cx,cy+1,5,0x08A2U);
+        circle(dst,cx,cy+1,3,flare[ball]);
     }
     return true;
 }
