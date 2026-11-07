@@ -60,7 +60,7 @@ def frames_from_image(data):
             original.thumbnail((SIDE, SIDE), Image.Resampling.NEAREST)
             canvas = Image.new("RGBA", (SIDE, SIDE), (0, 0, 0, 0))
             canvas.alpha_composite(original, ((SIDE-original.width)//2,
-                                               SIDE-original.height)//2))
+                                              (SIDE-original.height)//2))
             frames.append(canvas)
             duration = image.info.get("duration", 150)
             durations.append(max(70, min(800, int(duration or 150))))
