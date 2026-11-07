@@ -5,6 +5,7 @@
 #include "pokemon_companion_profile_view.h"
 #include "pokemon_profile_store.h"
 #include "pokemon_biomes.h"
+#include "pokemon_lab_dex.h"
 #include <stdio.h>
 #include <stdint.h>
 
@@ -244,12 +245,12 @@ bool pokemon_ui_show_species(uint16_t species)
         } else displayed_species=species;
     }
     if(species_label) {
-        if(displayed_species==778U)lv_label_set_text(species_label,"MIMIKYU  #778");
-        else {
-            char label[32];
-            snprintf(label,sizeof(label),"POKEMON  #%u",(unsigned)displayed_species);
-            lv_label_set_text(species_label,label);
-        }
+        char name[42];
+        const char *dex_name=pk_lab_dex_name(displayed_species);
+        if(!dex_name)dex_name="POKEMON";
+        snprintf(name,sizeof(name),"%s  #%03u",
+                 dex_name,(unsigned)displayed_species);
+        lv_label_set_text(species_label,name);
     }
     if(species_types)
         lv_label_set_text(species_types,
