@@ -54,13 +54,25 @@ Depois do upload e boot:
 Enviar `PK LAB DIAG` e `PK LAB STATUS` fora de qualquer jogo. Registrar as linhas do terminal. `PK LAB DIAG` não escreve em flash nem monta SD: lê apenas contadores da sessão e metadados de RAM/cache.
 
 ## Roteiro touch + SD
-1. Abrir **Pokémon → STATS → TEST LAB**. Confirmar que nível, badge e contadores são simulados.
+1. Abrir **Pokémon → STATS → TEST LAB**. Confirmar que níveis/contadores continuam simulados e testar RATES antes e depois de lotes de 100 aberturas.
 2. Abrir POKE, GREAT, ULTRA e MASTER, primeiro `x1`, depois `x100`. Conferir que o contador sobe somente pelo número de draws pedido e que Master revela tier LENDÁRIO.
 3. Verificar rótulo `SD PREVIEW` somente quando a espécie normal sorteada possui Idle TPK2 real; `LAB ART` nos casos não instalados ou Shiny. Quando vier Mimikyu #778 e houver TPK2 instalado, inspecionar a animação e o recorte do card.
 4. Executar `PK LAB DIAG` antes/depois de 20 aberturas; comparar `psram_free` e `psram_largest` sem assumir vazamento por uma amostra única. Não extrapolar para stress de horas.
 5. Com um card revelado, enviar `PK LAB RESET`: resultado e taxas antigas devem sumir. Repetir enviando RESET durante os 6 quadros de abertura e confirmando que não aparece uma revelação de sessão antiga.
 6. Voltar ao Companion: Mimikyu #778 deve aparecer normalmente. Fazer a alternância LAB → Companion várias vezes. Confirmar que Magic funciona como antes.
 7. Se houver travamento, boot loop, falhas de SD ou perda progressiva marcante de PSRAM, interromper e conservar o log serial completo. **Não apagar perfis/SD para diagnosticar.**
+
+## TEST LAB ampliado — 251 Pokémon (simulação)
+
+O LAB agora usa as espécies #001–#251, com **nomes da National Dex** e sprites Idle TPK2 que já estiverem no cartão SD. As probabilidades gerais de cada bola não mudaram: POKE 75/20/4,5/0,5%; GREAT 55/30/13/2%; ULTRA 30/40/24/6%; MASTER 0/0/0/100% (comum/raro/épico/lendário).
+
+A tela `RATES` mostra duas colunas de percentuais: **TARGET** (probabilidade configurada) e **ACTUAL** (frequência observada nos sorteios desde o último START/RESET de sessão). Mostra também o total de sorteios e quantos foram marcados Shiny no simulador, cuja probabilidade-alvo é 1/4096. O resultado pode divergir bastante nos primeiros lotes; os percentuais referem-se às **raridades**, não à chance individual de cada espécie.
+
+As 251 espécies estão classificadas **provisoriamente** para testar distribuição: 114 comuns, 103 raras, 23 épicas e 11 lendárias/míticas. Não são probabilidades oficiais de captura. Dentro de cada categoria, os Pokémon são escolhidos uniformemente; por isso a chance individual de uma espécie depende do número de espécies daquele grupo.
+
+**Shiny**: o LAB pode sortear o marcador Shiny mas os pacotes instalados são versões normais. A tela revelará o sprite normal, identificado como `SHINY ROLL - NORMAL SD ART`; não afirma exibir um sprite Shiny real.
+
+Nenhuma dessas probabilidades ou sprites concede Pokémon, gasta Pokébolas ou altera as contas reais do Playgroup. A seleção de parceiro continua sendo uma prévia em RAM, não uma mudança persistente de equipe.
 
 ## O que registrar
 - SHA instalado (`git rev-parse --short HEAD`);
