@@ -42,8 +42,8 @@ bool pk_lab_ball_art_render(uint8_t ball,unsigned frame,
             if(r2<=144)
                 pixel(dst,x,y,r2>=110?0x0841U:0xF7BEU);
         }
-    int lift=frame>=2U?(int)(frame-1U)*2:0;
-    int shake=frame==1U?1:0;
+    const int lift=frame>=6U?(int)(frame-5U)*3:0;
+    const int shake=frame>=1U && frame<=4U?(frame%2U?2:-2):0;
     /* Top half rises, exposing the open lower shell. */
     for(int y=0;y<=17;y++)
         for(int x=0;x<32;x++){
@@ -51,7 +51,7 @@ bool pk_lab_ball_art_render(uint8_t ball,unsigned frame,
             int r2=dx*dx+dy*dy;
             if(r2>144)continue;
             uint16_t color=r2>=110?0x0841U:tops[ball];
-            if(y>=15 && frame<=1U)color=0x0841U;
+            if(y>=15 && frame<=5U)color=0x0841U;
             if(x>=10 && x<=12 && y>=8 && y<=10 && r2<110)
                 color=gleams[ball];
             if(ball==PK_BALL_GREAT && y>=8 && y<=12 &&
@@ -60,10 +60,14 @@ bool pk_lab_ball_art_render(uint8_t ball,unsigned frame,
                (x==12 || x==13 || x==19 || x==20))color=0xFEC0U;
             if(ball==PK_BALL_MASTER && y>=8 && y<=12 &&
                ((x>=8 && x<=10)||(x>=22 && x<=24)))color=0xF83FU;
+            if(ball==PK_BALL_MASTER && y>=9 && y<=13 &&
+               ((x==11 || x==21)||(x==12 && y==10)||
+                (x==20 && y==10)||(x==15 && y==12)||
+                (x==16 && y==13)||(x==17 && y==12)))color=0xF7DFU;
             pixel(dst,x+shake,y-lift,color);
         }
     /* Black hinge/band, central clasp with a crisp pixel border. */
-    if(frame<=1U){
+    if(frame<=5U){
         for(int y=16;y<=18;y++)
             for(int x=5;x<=27;x++)
                 if((x-16)*(x-16)+(y-17)*(y-17)<=144)
@@ -76,15 +80,21 @@ bool pk_lab_ball_art_render(uint8_t ball,unsigned frame,
             pixel(dst,x,17,0x0841U);
         disc(dst,16,18,3,0x0841U);
         disc(dst,16,18,1,0xFFDFU);
-        if(frame>=3U){
+        if(frame>=8U){
             /* Simple pixel sparkles, no allocations per frame. */
             pixel(dst,16,10,0xFFFFU);
             pixel(dst,15,11,0xFFFFU);
             pixel(dst,17,11,0xFFFFU);
-            if(frame>=4U){
+            if(frame>=9U){
                 pixel(dst,7,10,gleams[ball]);
                 pixel(dst,25,7,gleams[ball]);
                 pixel(dst,24,15,0xFFFFU);
+                pixel(dst,6,22,0xFFFFU);
+                pixel(dst,27,21,gleams[ball]);
+                if(frame>=10U){
+                    for(int x=12;x<=20;x++)pixel(dst,x,15,0xFFFFU);
+                    for(int y=9;y<=25;y++)pixel(dst,16,y,0xFFFFU);
+                }
             }
         }
     }
