@@ -31,6 +31,8 @@ on:
       - 'tests/test_pokemon_catalog.py'
       - 'tests/test_pokemon_batch_upload.py'
       - 'tools/pokemon/upload_batch.py'
+      - 'tools/pokemon/prepare_sprites.py'
+      - 'tests/test_prepare_sprites.py'
       - 'knobby/src/pokemon_pmd_reader.*'
       - 'knobby/src/playgroup_api.cpp'
       - 'tools/pokemon/audit_catalog.py'
@@ -94,6 +96,10 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_sprite_path.c tests/pokemon_sprite_path_test.c -o /tmp/pokemon_sprite_path_test
           /tmp/pokemon_sprite_path_test
+      - name: Test local PNG/GIF sprite to bounded TPK2 packaging
+        run: |
+          python3 -m pip install Pillow==11.3.0
+          python3 -m unittest discover -s tests -p test_prepare_sprites.py -v
       - name: Test multi-sprite transfer protocol and dry-run safety
         run: python3 -m unittest discover -s tests -p test_pokemon_batch_upload.py -v
       - name: Test synthetic LAB pixel crest transparency and variants
