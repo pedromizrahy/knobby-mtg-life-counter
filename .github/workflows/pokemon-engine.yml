@@ -32,6 +32,8 @@ on:
       - 'knobby/src/pokemon_account_onboarding.*'
       - 'knobby/src/pokemon_starter_roll.*'
       - 'knobby/src/pokemon_starter_store.*'
+      - 'knobby/src/pokemon_starter_service.*'
+      - 'tests/pokemon_starter_service_test.cpp'
       - 'tests/pokemon_starter_store_test.cpp'
       - 'tests/pokemon_starter_roll_test.c'
       - 'tests/pokemon_account_onboarding_test.c'
@@ -125,6 +127,14 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_player_identity.c -o /tmp/starter_id.o
           c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_starter_store.cpp tests/pokemon_starter_store_test.cpp /tmp/starter_gacha.o /tmp/starter_roll.o /tmp/starter_id.o -o /tmp/pokemon_starter_store_test
           /tmp/pokemon_starter_store_test
+      - name: Test durable starter KEEP to selected Pokemon profile
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_progress.c -o /tmp/svc_progress.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_gacha.c -o /tmp/svc_gacha.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_starter_roll.c -o /tmp/svc_roll.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_player_identity.c -o /tmp/svc_id.o
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_starter_store.cpp knobby/src/pokemon_starter_service.cpp knobby/src/pokemon_file_store.cpp knobby/src/pokemon_profile_store.cpp tests/pokemon_starter_service_test.cpp /tmp/svc_progress.o /tmp/svc_gacha.o /tmp/svc_roll.o /tmp/svc_id.o -o /tmp/pokemon_starter_service_test
+          /tmp/pokemon_starter_service_test
       - name: Test strict Playgroup user ID boundaries
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_player_identity.c tests/pokemon_player_identity_test.c -o /tmp/pokemon_player_identity_test

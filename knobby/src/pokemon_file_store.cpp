@@ -102,7 +102,8 @@ extern "C" pk_store_status_t pk_file_inspect(uint32_t id,pk_profile_t *out)
     if(status==PK_STORE_VALID && out)*out=record.profile;
     return status;
 }
-extern "C" bool pk_file_create_starter(uint32_t id)
+extern "C" bool pk_file_create_selected_starter(uint32_t id,
+                                                      uint16_t species,bool shiny)
 {
     if(!id || reserved_id(id) || !SPIFFS.begin(false))return false;
     file_record_t existing={};unsigned slot=0;
@@ -110,9 +111,15 @@ extern "C" bool pk_file_create_starter(uint32_t id)
     file_record_t record={};
     record.magic=MAGIC;record.user_id=id;record.generation=1;
     pk_profile_init(&record.profile);
-    if(!pk_team_add(&record.profile,778,false))return false;
+    if(!pk_team_add(&record.profile,species,shiny))return false;
     record.checksum=record_checksum(&record);
     return write_slot(id,0,&record);
+}
+extern "C" bool pk_file_create_starter(uint32_t id)
+{
+    /* Legacy entry for isolated tests. Production starter onboarding uses
+       the strictly-selected candidate, never this fixed-species helper. */
+    return pk_file_create_selected_starter(id,778U,false);
 }
 extern "C" bool pk_file_save(uint32_t id,const pk_profile_t *profile)
 {

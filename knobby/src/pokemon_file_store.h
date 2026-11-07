@@ -11,6 +11,10 @@ extern "C" {
  * Two independently validated file slots per Playgroup user ID.
  */
 pk_store_status_t pk_file_inspect(uint32_t user_id,pk_profile_t *out);
+/* Explicit selected starter: only after a durable KEEP decision and
+ * authenticated, empty Playgroup account. Fails if any slot already exists. */
+bool pk_file_create_selected_starter(uint32_t user_id,
+                                      uint16_t species,bool shiny);
 bool pk_file_create_starter(uint32_t user_id);
 bool pk_file_save(uint32_t user_id,const pk_profile_t *profile);
 /* Explicit hardware-only diagnostic: reserved isolated profile, verifies

@@ -56,3 +56,15 @@ unmerged. Arduino CI does not validate the physical UI.
 - The backend never formats SPIFFS, creates no profile, touches no SD,
   and currently has **no production call site**. Visual KEEP/REROLL
   and the final profile-creation transaction remain to be implemented.
+
+## Selected-starter transaction (opt-in integration, not yet hooked to UI)
+- `pk_starter_service_open` reads an interrupted reveal or creates exactly
+  one initial stored roll when BOTH NVS and SPIFFS profile stores are empty.
+- `pk_starter_service_reroll` generates the next candidate only after the
+  previously committed roll is loaded and profile stores are still empty.
+- `pk_starter_service_keep` writes the KEEP decision before making the
+  selected Pokémon's real level-1 profile, and verifies the new profile.
+- Retrying after an interrupted KEEP checks the existing profile against
+  the saved species and shiny flag. No overwrite or reroll restoration.
+- The UI authentication gate, real sprite preflight and touchscreen
+  activation are NOT wired yet; no automatic new profile or reward.
