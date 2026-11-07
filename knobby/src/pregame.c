@@ -1864,8 +1864,12 @@ static void refresh_roster(void)
     if(roster_pokemon_button && roster_continue_button){
         if(playgroup_roster_active && !mapping_offline_game){
             lv_obj_clear_flag(roster_pokemon_button,LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_size(roster_continue_button,126,42);
-            lv_obj_align(roster_continue_button,LV_ALIGN_BOTTOM_MID,73,-20);
+            /* 360px circular screen: bottom row y=284..320, safe x=75..285.
+             * Last roster row ends at y=279 even for six players. */
+            lv_obj_set_size(roster_pokemon_button,92,36);
+            lv_obj_align(roster_pokemon_button,LV_ALIGN_BOTTOM_MID,-59,-40);
+            lv_obj_set_size(roster_continue_button,106,36);
+            lv_obj_align(roster_continue_button,LV_ALIGN_BOTTOM_MID,52,-40);
         }else{
             lv_obj_add_flag(roster_pokemon_button,LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_size(roster_continue_button,142,42);
@@ -2628,15 +2632,20 @@ void build_pregame_screens(void)
             screen_pregame_roster, "MULLIGANS", 142, 42,
             event_roster_continue, LV_EVENT_CLICKED, NULL);
         lv_obj_align(roster_continue_button, LV_ALIGN_BOTTOM_MID, 0, -20);
-        /* Optional roster companion preview, never an in-game overlay. */
+        /* Optional second action, compact and positioned for round glass.
+         * Refresh_roster() arranges the pair only for real Playgroup mode. */
         roster_pokemon_button = pregame_button(
-            screen_pregame_roster, "POKEMON", 126, 42,
+            screen_pregame_roster, "POKEMON", 92, 36,
             event_roster_pokemon, LV_EVENT_CLICKED, NULL);
-        lv_obj_align(roster_pokemon_button,LV_ALIGN_BOTTOM_MID,-73,-20);
+        lv_obj_align(roster_pokemon_button,LV_ALIGN_BOTTOM_MID,-59,-40);
         lv_obj_add_flag(roster_pokemon_button,LV_OBJ_FLAG_HIDDEN);
-        /* Accept touches slightly below the visible buttons. */
-        lv_obj_set_ext_click_area(roster_continue_button, 10);
-        lv_obj_set_ext_click_area(roster_pokemon_button, 10);
+        lv_obj_set_style_text_font(lv_obj_get_child(roster_continue_button,0),
+                                   &lv_font_montserrat_14,0);
+        lv_obj_set_style_text_font(lv_obj_get_child(roster_pokemon_button,0),
+                                   &lv_font_montserrat_14,0);
+        /* Compact hit area: avoid overlap between two adjacent buttons. */
+        lv_obj_set_ext_click_area(roster_continue_button, 4);
+        lv_obj_set_ext_click_area(roster_pokemon_button, 4);
     }
 
     screen_pregame_deck = lv_obj_create(NULL);

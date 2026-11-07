@@ -47,6 +47,27 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertLess(member.index("clear_deck_art();"),
                         member.index("clear_decoded_art_cache();"))
 
+    def test_round_360_roster_buttons_fit_without_covering_last_player(self):
+        # Physical 360x360 dial, center 180,180, R=180. Restrict each
+        # corner to R-5 to avoid cutting off the curved display edge.
+        from math import hypot
+        buttons = [(75, 167, 284, 320), (179, 285, 284, 320)]
+        for x1,x2,y1,y2 in buttons:
+            for x in (x1,x2):
+                for y in (y1,y2):
+                    self.assertLessEqual(hypot(x-180, y-180), 175.01)
+        self.assertEqual(buttons[1][0]-buttons[0][1],12)
+        # For 4 and 6 seats, the final roster card ends at y=279.
+        for seats,h,g in ((4,46,4),(6,30,3)):
+            total = seats*h+(seats-1)*g
+            top=max(80,84+(194-total)//2)
+            last_bottom=top+(seats-1)*(h+g)+h
+            self.assertLess(last_bottom,284)
+        self.assertIn("lv_obj_set_size(roster_pokemon_button,92,36);",PREGAME)
+        self.assertIn("lv_obj_set_size(roster_continue_button,106,36);",PREGAME)
+        self.assertIn("lv_obj_align(roster_continue_button,LV_ALIGN_BOTTOM_MID,52,-40);",PREGAME)
+        self.assertIn("lv_obj_align(roster_pokemon_button,LV_ALIGN_BOTTOM_MID,-59,-40);",PREGAME)
+
     def test_five_popular_decks_and_more_decks(self):
         self.assertIn("#define INITIAL_DECK_LIMIT 5", PREGAME)
         self.assertIn("return initial_deck_count() + 1;", PREGAME)
