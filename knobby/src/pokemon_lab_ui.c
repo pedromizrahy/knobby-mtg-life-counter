@@ -3,6 +3,7 @@
 #include "pokemon_lab_ball_art.h"
 #include "pokemon_lab_reveal.h"
 #include "pokemon_lab_dex.h"
+#include "pokemon_lab_rates.h"
 #include "pokemon_lab_fixture_art.h"
 #include "pokemon_tpk2_renderer.h"
 #include "pokemon_ui.h"
@@ -216,26 +217,8 @@ static void on_rates(lv_event_t *event)
     if(!rates_panel || opening_active || reveal_active)return;
     pk_lab_t snapshot={0};
     if(!pk_lab_runtime_snapshot(&snapshot))return;
-    const char *const tiers[]={"COMMON","RARE","EPIC","LEGEND"};
-    char msg[310]={0};
-    size_t used=0;
-    for(unsigned i=0;i<PK_TIER_COUNT;i++){
-        unsigned weight=pk_gacha_weight(ball,(uint8_t)i);
-        uint64_t total=snapshot.draws[ball];
-        unsigned observed=total?
-            (unsigned)(snapshot.tiers[ball][i]*10000ULL/total):0U;
-        int n=snprintf(msg+used,sizeof(msg)-used,
-            "%s  %u.%02u%%  |  %u.%02u%%\n",
-            tiers[i],weight/100U,weight%100U,
-            observed/100U,observed%100U);
-        if(n<0 || (size_t)n>=sizeof(msg)-used)return;
-        used+=(size_t)n;
-    }
-    int n=snprintf(msg+used,sizeof(msg)-used,
-        "\nTOTAL: %llu draws\nSHINY: %llu (target 1/4096)",
-        (unsigned long long)snapshot.draws[ball],
-        (unsigned long long)snapshot.shinies[ball]);
-    if(n<0 || (size_t)n>=sizeof(msg)-used)return;
+    char msg[320]={0};
+    if(!pk_lab_rates_format(&snapshot,ball,msg,sizeof(msg)))return;
     lv_label_set_text(rates_label,msg);
     lv_obj_clear_flag(rates_panel,LV_OBJ_FLAG_HIDDEN);
 }
