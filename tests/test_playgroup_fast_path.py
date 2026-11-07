@@ -137,6 +137,31 @@ class PlaygroupFastPathTests(unittest.TestCase):
         for x in (90,172,188,270):
             self.assertLess(hypot(x-180,329-180),180)
 
+    def test_starter_round_layout_and_rarity_colors(self):
+        ui = (ROOT / "knobby/src/pokemon_starter_ui.cpp").read_text(encoding="utf-8")
+        self.assertIn('label("STARTER POKEMON",27,22', ui)
+        self.assertIn('label("POKE BALL  |  REROLLS 5/5",59,14', ui)
+        self.assertIn('button("BACK",144,85,72,28', ui)
+        self.assertIn('species=label("",231,22', ui)
+        self.assertIn('tier=label("",260,14', ui)
+        self.assertIn('status=label("VERIFYING PLAYGROUP ACCOUNT...",283,14', ui)
+        self.assertIn('keep_btn=button("KEEP",100,307,76,26', ui)
+        self.assertIn('reroll_btn=button("REROLL",184,307,76,26', ui)
+        self.assertIn('lv_obj_set_height(o,size==22?29:21)', ui)
+        self.assertIn('animate_rarity();', ui)
+        self.assertIn('lv_anim_set_ready_cb(&fade,reveal_done)', ui)
+        self.assertIn('0xFFFFFF', ui)
+        self.assertIn('0x4CBAFF', ui)
+        self.assertIn('0xC784FF', ui)
+        self.assertIn('0xFF9C40', ui)
+        self.assertIn('lv_obj_set_style_text_color(tier,lv_color_hex(rarity_color', ui)
+        self.assertIn('lv_anim_set_values(&pop,170,sprite_zoom_target)', ui)
+        self.assertIn('if(!ready || animating || reveal_fx || state.kept', ui)
+        from math import hypot
+        for x in (100,176,184,260):
+            self.assertLess(hypot(x-180,333-180),180)
+        self.assertLess(85+28,118)
+
     def test_account_startup_has_no_implicit_starter_creation(self):
         route = between(API, "static void handle_command(char *line)\n{",
                         "\nvoid playgroup_process_serial(void)")

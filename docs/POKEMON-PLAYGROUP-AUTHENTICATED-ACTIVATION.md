@@ -81,3 +81,16 @@ unmerged. Arduino CI does not validate the physical UI.
 - If sprite decoding fails, KEEP is disabled, and the user can exit safely.
 - This implementation is ready for CI/hardware validation; do not infer
   success on physical touch/SD/TLS merely from compilation.
+
+## Physical round-display fix (2026-11-07)
+- Photo of the physical DIAL confirmed header/counter overlap, BACK over
+  the sprite, and name/status touching action buttons.
+- The layout now reserves separate one-line rows for title, counter,
+  BACK, sprite, species, tier, status, and KEEP/REROLL.
+- Rarity styling: COMMON white, RARE blue, EPIC purple,
+  LEGENDARY orange. Rarity fades in and the sprite pops to full size
+  before KEEP and REROLL become interactive.
+- These are presentation-only changes. Existing revealed Furret #162
+  and its saved 5 rerolls must persist unchanged on upgrade.
+- TODO: evolution chains and gacha base-form-only restriction; preserve
+  any pre-existing roll, including evolved species from the old catalog.

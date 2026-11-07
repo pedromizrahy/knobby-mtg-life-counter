@@ -28,7 +28,8 @@ static size_t installed_count=0;
 static uint8_t ball_pixels[PK_LAB_BALL_BUFFER_BYTES]={};
 static lv_img_dsc_t ball_desc={};
 static unsigned frame=0;
-static bool animating=false,ready=false,sprite_visible=false;
+static bool animating=false,ready=false,sprite_visible=false,reveal_fx=false;
+static uint16_t sprite_zoom_target=256;
 
 bool rng_secure(void *,uint32_t *out){
     if(!out)return false;
@@ -39,6 +40,8 @@ lv_obj_t *label(const char *str,int y,unsigned size,uint32_t color){
     lv_obj_t *o=lv_label_create(screen);
     lv_label_set_text(o,str);
     lv_obj_set_width(o,280);
+    /* One fixed text row: LVGL must not wrap onto adjacent controls. */
+    lv_obj_set_height(o,size==22?29:21);
     lv_label_set_long_mode(o,LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(o,LV_TEXT_ALIGN_CENTER,0);
     lv_obj_set_style_text_font(o,size==22?&lv_font_montserrat_22:&lv_font_montserrat_14,0);
@@ -67,7 +70,7 @@ void detach_sprite(){
     pk_tpk2_idle_release();
 }
 void update_buttons(){
-    const bool active=ready && !animating && !state.kept;
+    const bool active=ready && !animating && !reveal_fx && !state.kept;
     if(keep_btn){
         if(active && sprite_visible)lv_obj_clear_flag(keep_btn,LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(keep_btn,LV_OBJ_FLAG_HIDDEN);
@@ -76,6 +79,48 @@ void update_buttons(){
         if(active && state.reveal_count<PK_STARTER_TOTAL_REVEALS)
             lv_obj_clear_flag(reroll_btn,LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(reroll_btn,LV_OBJ_FLAG_HIDDEN);
+    }
+}
+static uint32_t rarity_color(uint8_t value){
+    switch(value){
+    case PK_TIER_COMMON:return 0xFFFFFF;   /* white */
+    case PK_TIER_RARE:return 0x4CBAFF;     /* blue */
+    case PK_TIER_EPIC:return 0xC784FF;     /* purple */
+    case PK_TIER_LEGENDARY:return 0xFF9C40;/* orange */
+    default:return 0xFFFFFF;
+    }
+}
+static void rarity_fade(void *obj,int32_t value){
+    if(obj)lv_obj_set_style_text_opa((lv_obj_t*)obj,(lv_opa_t)value,0);
+}
+static void sprite_zoom(void *obj,int32_t value){
+    if(obj)lv_img_set_zoom((lv_obj_t*)obj,(uint16_t)value);
+}
+static void reveal_done(lv_anim_t *){
+    reveal_fx=false;
+    if(lv_scr_act()==screen)update_buttons();
+}
+static void animate_rarity(){
+    if(!tier || !sprite_img)return;
+    reveal_fx=true;
+    update_buttons();
+    lv_obj_set_style_text_opa(tier,LV_OPA_TRANSP,0);
+    lv_anim_t fade;
+    lv_anim_init(&fade);
+    lv_anim_set_var(&fade,tier);
+    lv_anim_set_exec_cb(&fade,rarity_fade);
+    lv_anim_set_values(&fade,0,255);
+    lv_anim_set_time(&fade,850);
+    lv_anim_set_ready_cb(&fade,reveal_done);
+    lv_anim_start(&fade);
+    if(sprite_visible){
+        lv_anim_t pop;
+        lv_anim_init(&pop);
+        lv_anim_set_var(&pop,sprite_img);
+        lv_anim_set_exec_cb(&pop,sprite_zoom);
+        lv_anim_set_values(&pop,170,sprite_zoom_target);
+        lv_anim_set_time(&pop,550);
+        lv_anim_start(&pop);
     }
 }
 void show_current(){
@@ -93,7 +138,12 @@ void show_current(){
     lv_label_set_text(species,buf);
     snprintf(buf,sizeof(buf),"%s%s",kind,state.current.shiny?"  SHINY":"");
     lv_label_set_text(tier,buf);
-    snprintf(buf,sizeof(buf),"POKE BALL   |   REROLLS LEFT %u/5",
+    lv_obj_set_style_text_color(tier,lv_color_hex(rarity_color(state.current.tier)),0);
+    lv_obj_set_style_bg_color(tier,lv_color_hex(rarity_color(state.current.tier)),0);
+    lv_obj_set_style_bg_opa(tier,LV_OPA_20,0);
+    lv_obj_set_style_radius(tier,11,0);
+    lv_obj_set_style_text_opa(tier,LV_OPA_COVER,0);
+    snprintf(buf,sizeof(buf),"POKE BALL    |    REROLLS %u/5",
              (unsigned)(PK_STARTER_TOTAL_REVEALS-state.reveal_count));
     lv_label_set_text(counter,buf);
     bool art=pk_tpk2_idle_load_species(state.current.species);
@@ -104,16 +154,18 @@ void show_current(){
             lv_obj_set_size(sprite_img,LV_SIZE_CONTENT,LV_SIZE_CONTENT);
             unsigned width=image->header.w>image->header.h?
                            image->header.w:image->header.h;
-            unsigned zoom=width?256U*140U/width:256U;
+            unsigned zoom=width?256U*112U/width:256U;
             if(zoom>512U)zoom=512U;
-            lv_img_set_zoom(sprite_img,(uint16_t)zoom);
-            lv_obj_align(sprite_img,LV_ALIGN_CENTER,0,-10);
+            sprite_zoom_target=(uint16_t)zoom;
+            lv_img_set_zoom(sprite_img,sprite_zoom_target);
+            /* Sprite zone is between BACK (y=90..114) and name (y=232). */
+            lv_obj_align(sprite_img,LV_ALIGN_CENTER,0,-6);
             lv_obj_clear_flag(sprite_img,LV_OBJ_FLAG_HIDDEN);
             sprite_visible=true;
         }
     }
-    lv_label_set_text(status,state.kept?"SAVED TO YOUR TEAM":
-                     art?"KEEP OR REROLL":"SPRITE MISSING - NO KEEP");
+    lv_label_set_text(status,state.kept?"POKEMON SAVED! TAP BACK":
+                     art?"CHOOSE: KEEP / REROLL":"SPRITE MISSING - NO KEEP");
     update_buttons();
 }
 void paint_ball(){
@@ -128,8 +180,12 @@ void ball_tick(lv_timer_t *){
     animating=false;
     lv_timer_pause(ball_timer);
     show_current();
+    animate_rarity();
 }
 void animate_reveal(){
+    lv_anim_del(tier,NULL);
+    lv_anim_del(sprite_img,NULL);
+    reveal_fx=false;
     detach_sprite();
     lv_label_set_text(species,"");
     lv_label_set_text(tier,"");
@@ -147,13 +203,16 @@ void animate_reveal(){
 void on_back(lv_event_t *){
     if(ball_timer)lv_timer_pause(ball_timer);
     animating=false;
+    reveal_fx=false;
+    lv_anim_del(tier,NULL);
+    lv_anim_del(sprite_img,NULL);
     detach_sprite();
     ready=false;
     user_id=0;
     pk_pg_preview_resume();
 }
 void on_keep(lv_event_t *){
-    if(!ready || animating || state.kept || !sprite_visible)return;
+    if(!ready || animating || reveal_fx || state.kept || !sprite_visible)return;
     pk_starter_result_t outcome=pk_starter_service_keep(user_id,&state);
     if(outcome==PK_STARTER_ACCEPTED ||
        outcome==PK_STARTER_ALREADY_OWNED){
@@ -170,7 +229,7 @@ void on_keep(lv_event_t *){
     }
 }
 void on_reroll(lv_event_t *){
-    if(!ready || animating || state.kept ||
+    if(!ready || animating || reveal_fx || state.kept ||
        state.reveal_count>=PK_STARTER_TOTAL_REVEALS)return;
     pk_starter_result_t outcome=pk_starter_service_reroll(
         user_id,installed,installed_count,rng_secure,NULL,&state);
@@ -192,20 +251,25 @@ void build(){
     lv_obj_set_style_border_width(screen,0,0);
     lv_obj_set_style_bg_color(screen,lv_color_hex(0x0A1C2B),0);
     lv_obj_clear_flag(screen,LV_OBJ_FLAG_SCROLLABLE);
-    title=label("YOUR STARTER POKEMON",26,22,0xEEDBA5);
-    counter=label("POKE BALL | REROLLS LEFT 5/5",55,14,0xA9C4C4);
-    button("BACK",137,84,86,28,on_back);
+    /* Nonoverlapping zones on circular 360x360 display:
+     * title y=27..56; counter 59..80; BACK 85..113;
+     * sprite y~118..226; name 231..260; rarity 260..281;
+     * status 283..304; actions 307..333. */
+    title=label("STARTER POKEMON",27,22,0xEEDBA5);
+    counter=label("POKE BALL  |  REROLLS 5/5",59,14,0xA9C4C4);
+    button("BACK",144,85,72,28,on_back);
     ball_img=lv_img_create(screen);
-    lv_obj_align(ball_img,LV_ALIGN_CENTER,0,-10);
+    lv_obj_align(ball_img,LV_ALIGN_CENTER,0,-6);
     lv_obj_add_flag(ball_img,LV_OBJ_FLAG_HIDDEN);
     sprite_img=lv_img_create(screen);
     lv_obj_add_flag(sprite_img,LV_OBJ_FLAG_HIDDEN);
-    species=label("",233,22,0xF4E5C2);
-    tier=label("",261,14,0xD5A96B);
-    status=label("VERIFYING PLAYGROUP ACCOUNT...",280,14,0x96BCB4);
-    keep_btn=button("KEEP",90,295,82,34,on_keep);
-    reroll_btn=button("REROLL",188,295,82,34,on_reroll);
-    /* Both button corners remain inside round glass at y=329. */
+    species=label("",231,22,0xF4E5C2);
+    tier=label("",260,14,0xFFFFFF);
+    lv_obj_set_width(tier,176);
+    status=label("VERIFYING PLAYGROUP ACCOUNT...",283,14,0x96BCB4);
+    keep_btn=button("KEEP",100,307,76,26,on_keep);
+    reroll_btn=button("REROLL",184,307,76,26,on_reroll);
+    /* The 4 action corners remain inside the round glass at y=333. */
     lv_obj_add_flag(keep_btn,LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(reroll_btn,LV_OBJ_FLAG_HIDDEN);
     ball_desc.header.always_zero=0;
@@ -236,7 +300,9 @@ extern "C" bool pk_starter_ui_open(uint32_t expected_id)
     if(!expected_id || !pk_player_id_valid(expected_id))return false;
     build();
     if(!screen || lv_scr_act()==screen)return false;
-    ready=false;animating=false;user_id=0;
+    ready=false;animating=false;reveal_fx=false;user_id=0;
+    lv_anim_del(tier,NULL);
+    lv_anim_del(sprite_img,NULL);
     detach_sprite();
     if(ball_timer)lv_timer_pause(ball_timer);
     lv_label_set_text(counter,"POKE BALL  |  5 REROLLS");
