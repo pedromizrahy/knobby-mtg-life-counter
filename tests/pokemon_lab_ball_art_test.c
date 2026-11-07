@@ -26,7 +26,7 @@ int main(void){
     assert(pk_lab_ball_art_render(0,0,first,sizeof(first)));
     assert(pk_lab_ball_art_render(1,0,other,sizeof(other)));
     assert(memcmp(first,other,sizeof(first))!=0);
-    assert(pk_lab_ball_art_render(0,5,other,sizeof(other)));
+    assert(pk_lab_ball_art_render(0,PK_LAB_BALL_FRAMES-1,other,sizeof(other)));
     assert(memcmp(first,other,sizeof(first))!=0);
     assert(total>5000);
     puts("Pokemon procedural pixel-ball animation tests passed");
