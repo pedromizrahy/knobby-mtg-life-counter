@@ -82,3 +82,6 @@ emsdk/
 
 # DIAL local compiled firmware and asset integrity report
 .dial-build/
+
+# Third-party Pokemon sprites are prepared locally; do not commit assets.
+assets/pokemon/
