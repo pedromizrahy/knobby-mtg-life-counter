@@ -198,10 +198,19 @@ void render(){
             lv_obj_clear_flag(next_button,LV_OBJ_FLAG_HIDDEN);
     }
     if(back_button){
-        if(pages<=1U)
+        /* At y=336 the round glass permits only about x=90..270.
+         * Compact buttons on multi-page screens remain fully inside. */
+        if(pages<=1U){
+            lv_obj_set_size(back_button,112,30);
             lv_obj_set_pos(back_button,124,306);
-        else
-            lv_obj_set_pos(back_button,93,306);
+        }else{
+            lv_obj_set_size(back_button,80,30);
+            lv_obj_set_pos(back_button,90,306);
+        }
+    }
+    if(next_button && pages>1U){
+        lv_obj_set_size(next_button,80,30);
+        lv_obj_set_pos(next_button,190,306);
     }
     int clk=-1,cmd=-1,d0=-1;
     if(board==&board_k518){clk=4;cmd=3;d0=5;}
