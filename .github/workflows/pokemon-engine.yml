@@ -116,7 +116,7 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_gacha.c -o /tmp/lab_rt_gacha.o
           cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_lab.c -o /tmp/lab_rt_lab.o
-          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_lab_runtime.cpp tests/pokemon_lab_runtime_test.cpp /tmp/lab_rt_gacha.o /tmp/lab_rt_lab.o -o /tmp/pokemon_lab_runtime_test
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -pthread -Itests/pokemon_mocks knobby/src/pokemon_lab_runtime.cpp tests/pokemon_lab_runtime_test.cpp /tmp/lab_rt_gacha.o /tmp/lab_rt_lab.o -o /tmp/pokemon_lab_runtime_test
           /tmp/pokemon_lab_runtime_test
       - name: Test Poke Ball gacha pure sampler
         run: |
