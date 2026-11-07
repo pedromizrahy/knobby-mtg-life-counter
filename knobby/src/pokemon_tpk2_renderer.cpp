@@ -180,3 +180,29 @@ extern "C" unsigned pk_tpk2_idle_frame_count(void) { return frame_count; }
 extern "C" uint16_t pk_tpk2_idle_duration_ms(unsigned i) {
     return loaded && i<frame_count ? frames[i].ms : 200;
 }
+
+/* Read-only discovery for the companion preview. The loader's Idle cache
+ * remains untouched; only file existence is examined in one SD session. */
+extern "C" size_t pk_tpk2_list_installed_gen12(uint16_t *out,size_t capacity)
+{
+    if(!out || capacity<252U)return 0;
+    int clk=-1,cmd=-1,d0=-1;
+    if(board==&board_k518){clk=4;cmd=3;d0=5;}
+    else if(board==&board_k718){clk=39;cmd=38;d0=40;}
+    else return 0;
+    if(!SD_MMC.setPins(clk,cmd,d0) ||
+       !SD_MMC.begin("/sdcard",true,false))return 0;
+    size_t count=0;
+    if(SD_MMC.cardType()!=CARD_NONE){
+        char path[24];
+        /* Include default Mimikyu for continuity even though it is #778. */
+        if(pk_sprite_path(778U,path,sizeof(path)) && SD_MMC.exists(path))
+            out[count++]=778U;
+        for(unsigned id=1U;id<=251U;id++){
+            if(pk_sprite_path((uint16_t)id,path,sizeof(path)) &&
+               SD_MMC.exists(path))out[count++]=(uint16_t)id;
+        }
+    }
+    SD_MMC.end();
+    return count;
+}
