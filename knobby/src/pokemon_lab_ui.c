@@ -9,410 +9,256 @@
 #include <stdio.h>
 #include <stdint.h>
 
-/* All buttons operate on the isolated, synthetic shared RAM lab.
- * No asset writes, SD access, Playgroup IDs, or actual Pokeball debit.
- * The plain text reveal intentionally does not impersonate installed art.
- */
-static lv_obj_t *lab_screen=NULL;
-static lv_obj_t *badge_label=NULL;
-static lv_obj_t *ball_label=NULL;
-static lv_obj_t *reveal_label=NULL;
-static lv_obj_t *rates_label=NULL;
-static lv_obj_t *count_label=NULL;
-static lv_obj_t *reveal_card=NULL;
-static lv_obj_t *reveal_title=NULL;
-static lv_obj_t *reveal_detail=NULL;
-static lv_obj_t *fixture_icon=NULL;
-static uint8_t fixture_pixels[PK_LAB_FIXTURE_BUFFER_BYTES];
-static lv_img_dsc_t fixture_descriptor={0};
-static bool lab_sprite_attached=false;
-static lv_timer_t *sprite_timer=NULL;
-static lv_timer_t *session_watchdog=NULL;
-static uint32_t visible_session=0;
-static unsigned sprite_frame=0;
-static uint16_t sprite_species=0;
-static pk_lab_t captured_draw={0};
-static bool captured_valid=false;
-static uint32_t captured_session=0;
-static lv_obj_t *ball_image=NULL;
-static lv_timer_t *ball_timer=NULL;
-static unsigned animation_frame=0;
-static bool animating=false;
+/* A dedicated single-purpose LAB: choose a ball, then watch a fullscreen
+ * opening and fullscreen reveal. No inventory, profile or Playgroup writes.
+ * Imported TPK2 frames are a read-only preview of installed artwork. */
+static lv_obj_t *lab_screen=NULL,*opening=NULL;
+static lv_obj_t *chosen_label=NULL,*count_label=NULL,*status_label=NULL;
+static lv_obj_t *ball_image=NULL,*pokemon_image=NULL;
+static lv_obj_t *name_label=NULL,*tier_label=NULL,*missing_label=NULL;
+static lv_timer_t *ball_timer=NULL,*sprite_timer=NULL,*session_timer=NULL;
 static uint8_t ball_pixels[PK_LAB_BALL_BUFFER_BYTES];
-static lv_img_dsc_t ball_descriptor={0};
-static uint8_t active_ball=PK_BALL_POKE;
-static unsigned batch=1;
-static const char *const ball_names[]={"POKE","GREAT","ULTRA","MASTER"};
-static const char *const tier_names[]={"COMMON","RARE","EPIC","LEGENDARY"};
+static lv_img_dsc_t ball_dsc={0};
+static uint8_t symbol_pixels[PK_LAB_FIXTURE_BUFFER_BYTES];
+static lv_img_dsc_t symbol_dsc={0};
+static pk_lab_t captured={0};
+static uint32_t draw_session=0,shown_session=0;
+static uint16_t sprite_species=0;
+static unsigned frame=0,sprite_frame=0;
+static uint8_t ball=PK_BALL_POKE;
+static unsigned count=1;
+static bool opening_active=false,reveal_active=false,sprite_attached=false;
+static const char *const names[]={"POKE BALL","GREAT BALL","ULTRA BALL","MASTER BALL"};
 
-static lv_obj_t *lab_text(lv_obj_t *parent,const char *text,
-                           int y,int width,uint32_t color,const lv_font_t *font)
+static lv_obj_t *label(lv_obj_t *parent,const char *value,int y,int w,
+                       const lv_font_t *font,uint32_t color)
 {
-    lv_obj_t *label=lv_label_create(parent);
-    lv_obj_set_width(label,width);
-    lv_label_set_long_mode(label,LV_LABEL_LONG_CLIP);
-    lv_label_set_text(label,text);
-    lv_obj_set_style_text_align(label,LV_TEXT_ALIGN_CENTER,0);
-    lv_obj_set_style_text_color(label,lv_color_hex(color),0);
-    lv_obj_set_style_text_font(label,font,0);
-    lv_obj_align(label,LV_ALIGN_TOP_MID,0,y);
-    return label;
+    lv_obj_t *o=lv_label_create(parent);
+    lv_label_set_text(o,value);
+    lv_obj_set_width(o,w);
+    lv_obj_set_style_text_align(o,LV_TEXT_ALIGN_CENTER,0);
+    lv_obj_set_style_text_font(o,font,0);
+    lv_obj_set_style_text_color(o,lv_color_hex(color),0);
+    lv_obj_align(o,LV_ALIGN_TOP_MID,0,y);
+    return o;
 }
-static lv_obj_t *lab_panel(int x,int y,int w,int h)
+static lv_obj_t *button(lv_obj_t *parent,const char *title,int x,int y,
+                        int w,int h,lv_event_cb_t cb,void *data)
 {
-    lv_obj_t *panel=lv_obj_create(lab_screen);
-    lv_obj_set_pos(panel,x,y);
-    lv_obj_set_size(panel,w,h);
-    lv_obj_set_style_radius(panel,14,0);
-    lv_obj_set_style_bg_color(panel,lv_color_hex(0x19303A),0);
-    lv_obj_set_style_border_color(panel,lv_color_hex(0x446070),0);
-    lv_obj_set_style_border_width(panel,1,0);
-    lv_obj_set_style_pad_all(panel,0,0);
-    lv_obj_set_scrollbar_mode(panel,LV_SCROLLBAR_MODE_OFF);
-    lv_obj_clear_flag(panel,LV_OBJ_FLAG_SCROLLABLE);
-    return panel;
+    lv_obj_t *o=lv_btn_create(parent);
+    lv_obj_set_pos(o,x,y);
+    lv_obj_set_size(o,w,h);
+    lv_obj_set_style_radius(o,16,0);
+    lv_obj_set_style_bg_color(o,lv_color_hex(0xECDAB3),0);
+    lv_obj_set_style_shadow_width(o,0,0);
+    lv_obj_add_event_cb(o,cb,LV_EVENT_CLICKED,data);
+    lv_obj_t *txt=lv_label_create(o);
+    lv_label_set_text(txt,title);
+    lv_obj_set_style_text_font(txt,&lv_font_montserrat_14,0);
+    lv_obj_set_style_text_color(txt,lv_color_hex(0x152735),0);
+    lv_obj_center(txt);
+    return o;
 }
-static lv_obj_t *lab_btn(lv_obj_t *parent,const char *title,
-                           int x,int y,int w,int h,lv_event_cb_t callback,
-                           void *user_data)
+static void stop_sprite(void)
 {
-    lv_obj_t *btn=lv_btn_create(parent);
-    lv_obj_set_pos(btn,x,y);
-    lv_obj_set_size(btn,w,h);
-    lv_obj_set_style_radius(btn,12,0);
-    lv_obj_set_style_bg_color(btn,lv_color_hex(0xEAD6A4),0);
-    lv_obj_set_style_shadow_width(btn,0,0);
-    lv_obj_add_event_cb(btn,callback,LV_EVENT_CLICKED,user_data);
-    lv_obj_t *label=lv_label_create(btn);
-    lv_label_set_text(label,title);
-    lv_obj_set_style_text_font(label,&lv_font_montserrat_14,0);
-    lv_obj_set_style_text_color(label,lv_color_hex(0x183039),0);
-    lv_obj_center(label);
-    return btn;
-}
-static void lab_refresh(void)
-{
-    if(!lab_screen)return;
-    pk_lab_t state={0};
-    if(!pk_lab_runtime_snapshot(&state) || !state.active){
-        if(badge_label)lv_label_set_text(badge_label,"RAM LAB NOT STARTED");
-        if(reveal_label)lv_label_set_text(reveal_label,"START LAB TO TEST");
-        if(rates_label)lv_label_set_text(rates_label,"NO DATA");
-        return;
-    }
-    char msg[160];
-    if(badge_label){
-        snprintf(msg,sizeof(msg),"LV %u  |  MASTER BADGE: %s",
-                 (unsigned)state.simulated_level,
-                 state.master_trainer_badge?"YES":"NO");
-        lv_label_set_text(badge_label,msg);
-    }
-    if(ball_label)lv_label_set_text(ball_label,ball_names[active_ball]);
-    if(count_label)lv_label_set_text(count_label,batch==1?"x100":"x1");
-    if(reveal_label){
-        if(state.has_last){
-            snprintf(msg,sizeof(msg),"LAST #%u  %s%s (SIM)",
-                     (unsigned)state.last.species,
-                     tier_names[state.last.tier],
-                     state.last.shiny?" SHINY":"");
-        }else snprintf(msg,sizeof(msg),"NO DRAWS YET - SIMULATION");
-        lv_label_set_text(reveal_label,msg);
-    }
-    if(rates_label){
-        const uint64_t total=state.draws[active_ball];
-        const uint64_t common=state.tiers[active_ball][PK_TIER_COMMON];
-        const uint64_t rare=state.tiers[active_ball][PK_TIER_RARE];
-        const uint64_t epic=state.tiers[active_ball][PK_TIER_EPIC];
-        const uint64_t legendary=state.tiers[active_ball][PK_TIER_LEGENDARY];
-        unsigned a=total?(unsigned)(common*10000ULL/total):0U;
-        unsigned b=total?(unsigned)(rare*10000ULL/total):0U;
-        unsigned c=total?(unsigned)(epic*10000ULL/total):0U;
-        unsigned d=total?(unsigned)(legendary*10000ULL/total):0U;
-        snprintf(msg,sizeof(msg),
-                 "DRAWS: %llu  SHINY: %llu\n"
-                 "COMMON %u.%02u%%  RARE %u.%02u%%\n"
-                 "EPIC %u.%02u%%  LEGEND %u.%02u%%",
-                 (unsigned long long)total,
-                 (unsigned long long)state.shinies[active_ball],
-                 a/100U,a%100U,b/100U,b%100U,
-                 c/100U,c%100U,d/100U,d%100U);
-        lv_label_set_text(rates_label,msg);
-    }
-}
-/* Redraw the same persistent descriptor; invalidate LVGL's decoded
- * image before mutating pixels. The animation never consumes currency. */
-static void ball_paint(unsigned frame)
-{
-    if(!ball_image || !pk_lab_ball_art_render(active_ball,frame,
-                                              ball_pixels,sizeof(ball_pixels)))
-        return;
-    lv_img_cache_invalidate_src(&ball_descriptor);
-    lv_img_set_src(ball_image,&ball_descriptor);
-}
-/* Detach LAB's references before the companion renderer frees its
- * shared PSRAM frame cache. No Playgroup data and no SD writes. */
-static void lab_detach_sprite(void)
-{
-    /* Never let an LVGL timer retain or redraw a freed TPK2 descriptor. */
     if(sprite_timer)lv_timer_pause(sprite_timer);
-    if(fixture_icon && lab_sprite_attached)
-        lv_img_set_src(fixture_icon,NULL);
-    lab_sprite_attached=false;
+    if(sprite_attached && pokemon_image)lv_img_set_src(pokemon_image,NULL);
+    sprite_attached=false;
     sprite_species=0;
     sprite_frame=0;
 }
-static void lab_sprite_tick(lv_timer_t *timer)
+static void update_menu(void)
+{
+    if(chosen_label)lv_label_set_text(chosen_label,names[ball]);
+    if(count_label)lv_label_set_text(count_label,count==1?"QUANTITY x1":"QUANTITY x100");
+}
+static void stop_opening(void)
+{
+    opening_active=false;
+    reveal_active=false;
+    if(ball_timer)lv_timer_pause(ball_timer);
+    stop_sprite();
+    if(opening)lv_obj_add_flag(opening,LV_OBJ_FLAG_HIDDEN);
+    if(pokemon_image)lv_obj_add_flag(pokemon_image,LV_OBJ_FLAG_HIDDEN);
+    if(ball_image)lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
+}
+static void paint_ball(unsigned step)
+{
+    if(!pk_lab_ball_art_render(ball,step,ball_pixels,sizeof(ball_pixels)))return;
+    lv_img_cache_invalidate_src(&ball_dsc);
+    lv_img_set_src(ball_image,&ball_dsc);
+}
+static void sprite_tick(lv_timer_t *timer)
 {
     (void)timer;
-    if(!lab_sprite_attached || lv_scr_act()!=lab_screen ||
-       !reveal_card || lv_obj_has_flag(reveal_card,LV_OBJ_FLAG_HIDDEN)){
+    if(!reveal_active || !sprite_attached ||
+       lv_scr_act()!=lab_screen ||
+       pk_tpk2_idle_loaded_species()!=sprite_species ||
+       pk_tpk2_idle_frame_count()==0){
         if(sprite_timer)lv_timer_pause(sprite_timer);
         return;
     }
-    if(pk_tpk2_idle_loaded_species()!=sprite_species ||
-       pk_tpk2_idle_frame_count()==0){
-        /* Fail closed: an external renderer change invalidated our cache. */
-        lab_detach_sprite();
-        if(fixture_icon)lv_obj_add_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
     sprite_frame=(sprite_frame+1U)%pk_tpk2_idle_frame_count();
-    const lv_img_dsc_t *frame=pk_tpk2_idle_frame(sprite_frame);
-    if(!frame){lab_detach_sprite();return;}
-    lv_img_set_src(fixture_icon,frame);
-    lv_timer_set_period(sprite_timer,
-                        pk_tpk2_idle_duration_ms(sprite_frame));
+    const lv_img_dsc_t *img=pk_tpk2_idle_frame(sprite_frame);
+    if(!img){stop_sprite();return;}
+    lv_img_set_src(pokemon_image,img);
+    lv_timer_set_period(sprite_timer,pk_tpk2_idle_duration_ms(sprite_frame));
 }
-static void lab_restore_companion(void)
+static void reveal(void)
 {
-    lab_detach_sprite();
-    /* The companion page must not inherit a laboratory-only selection. */
-    (void)pokemon_ui_show_species(778U);
-}
-/* A USB START/RESET can happen even after the reveal animation.
- * Clear any already-visible stale card, sprite and counters next UI tick.
- * UI-only timer; never calls Playgroup, reward or persistent storage. */
-static void lab_session_tick(lv_timer_t *timer)
-{
-    (void)timer;
-    if(lv_scr_act()!=lab_screen)return;
-    uint32_t now=0;
-    if(!pk_lab_runtime_session_token(&now) || now==visible_session)return;
-    visible_session=now;
-    captured_valid=false;
-    animating=false;
-    if(ball_timer)lv_timer_pause(ball_timer);
-    lab_detach_sprite();
-    if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
-    if(ball_image)lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
-    if(reveal_label)lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
-    if(rates_label)lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
-    lab_refresh();
-}
-static void show_reveal_card(void)
-{
-    if(!reveal_card || !captured_valid || !captured_draw.has_last)return;
-    uint32_t session=0;
-    if(!pk_lab_runtime_session_token(&session) ||
-       session!=captured_session)return;
-    const pk_gacha_result_t *r=&captured_draw.last;
-    char details[80];
-    if(!pk_lab_reveal_text(r,details,sizeof(details)))return;
-    const char *name=pk_lab_fixture_name(r->species);
-    static const uint32_t accent[]={
-        0xA5D7B9,0x7CBCE7,0xB9A2F3,0xE9C26D
-    };
-    if(!name || r->tier>=PK_TIER_COUNT)return;
-    char label[48];
-    snprintf(label,sizeof(label),"%s  #%u",name,(unsigned)r->species);
-    lv_label_set_text(reveal_title,label);
-    snprintf(label,sizeof(label),"%s%s | SIM ONLY",
-             pk_lab_tier_name(r->tier),r->shiny?" *SHINY*":"");
-    /* Preview the user's installed Idle sprite when available. Failed
-     * read-only SD lookups fall back to our original LAB emblem. The
-     * companion sprite cache is shared, so release LAB references FIRST. */
-    lab_detach_sprite();
-    /* A normal TPK2 does not prove a shiny variant exists. Never
-     * mislabel ordinary art as shiny; use the shiny LAB emblem instead. */
-    bool real_sprite=!r->shiny && pokemon_ui_show_species(r->species);
-    if(fixture_icon && real_sprite && pk_tpk2_idle_frame_count()>0){
-        const lv_img_dsc_t *frame=pk_tpk2_idle_frame(0);
-        if(frame){
-            lv_img_set_src(fixture_icon,frame);
-            const unsigned max_dimension=
-                frame->header.w>frame->header.h?
-                frame->header.w:frame->header.h;
-            unsigned zoom=max_dimension?
-                (256U*38U)/max_dimension:256U;
+    if(!captured.has_last)return;
+    const pk_gacha_result_t *r=&captured.last;
+    const char *species_name=pk_lab_fixture_name(r->species);
+    const char *tier=pk_lab_tier_name(r->tier);
+    if(!species_name || !tier)return;
+    char text[64];
+    snprintf(text,sizeof(text),"%s",species_name);
+    lv_label_set_text(name_label,text);
+    snprintf(text,sizeof(text),"#%04u  |  %s%s",(unsigned)r->species,
+             tier,r->shiny?"  SHINY":"");
+    lv_label_set_text(tier_label,text);
+    lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(pokemon_image,LV_OBJ_FLAG_HIDDEN);
+    stop_sprite();
+
+    /* Preview only genuine, normal assets installed on the SD. A Shiny
+     * without a separately validated sprite must never masquerade as one. */
+    bool real=!r->shiny && pokemon_ui_show_species(r->species);
+    if(real && pk_tpk2_idle_frame_count()){
+        const lv_img_dsc_t *img=pk_tpk2_idle_frame(0);
+        if(img){
+            lv_img_set_src(pokemon_image,img);
+            unsigned m=img->header.w>img->header.h?
+                       img->header.w:img->header.h;
+            unsigned zoom=m?256U*180U/m:256U;
+            if(zoom>512U)zoom=512U;
             if(zoom<1U)zoom=1U;
-            if(zoom>256U)zoom=256U;
-            lv_img_set_zoom(fixture_icon,(uint16_t)zoom);
-            lv_obj_set_size(fixture_icon,40,40);
-            lv_obj_align(fixture_icon,LV_ALIGN_LEFT_MID,7,0);
-            lab_sprite_attached=true;
+            lv_img_set_zoom(pokemon_image,(uint16_t)zoom);
+            lv_obj_set_size(pokemon_image,184,184);
+            lv_obj_align(pokemon_image,LV_ALIGN_TOP_MID,0,70);
+            sprite_attached=true;
             sprite_species=r->species;
             sprite_frame=0;
-            lv_obj_clear_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
-            if(sprite_timer && pk_tpk2_idle_frame_count()>1U){
+            if(sprite_timer && pk_tpk2_idle_frame_count()>1){
                 lv_timer_set_period(sprite_timer,pk_tpk2_idle_duration_ms(0));
                 lv_timer_reset(sprite_timer);
                 lv_timer_resume(sprite_timer);
             }
-        } else real_sprite=false;
+        }else real=false;
     }
-    if(!real_sprite && fixture_icon &&
-       pk_lab_fixture_art(r->species,r->shiny!=0,
-                          fixture_pixels,sizeof(fixture_pixels))){
-        lv_img_cache_invalidate_src(&fixture_descriptor);
-        lv_img_set_zoom(fixture_icon,256);
-        lv_img_set_src(fixture_icon,&fixture_descriptor);
-        lv_obj_set_size(fixture_icon,40,40);
-        lv_obj_align(fixture_icon,LV_ALIGN_LEFT_MID,7,0);
-        lv_obj_clear_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
+    if(!real){
+        /* Missing asset is clearly disclosed. No fake Pokemon sprite. */
+        (void)pk_lab_fixture_art(r->species,r->shiny!=0,
+                                 symbol_pixels,sizeof(symbol_pixels));
+        lv_img_cache_invalidate_src(&symbol_dsc);
+        lv_img_set_src(pokemon_image,&symbol_dsc);
+        lv_img_set_zoom(pokemon_image,512);
+        lv_obj_set_size(pokemon_image,96,96);
+        lv_obj_align(pokemon_image,LV_ALIGN_TOP_MID,0,102);
     }
-    snprintf(label,sizeof(label),"%s%s | %s",
-             pk_lab_tier_name(r->tier),r->shiny?" SHINY":"",
-             real_sprite?"SD PREVIEW":"LAB ART");
-    lv_label_set_text(reveal_detail,label);
-    lv_obj_set_style_border_color(reveal_card,lv_color_hex(accent[r->tier]),0);
-    lv_obj_set_style_text_color(reveal_title,
-                    lv_color_hex(r->shiny?0xFDEBA4:accent[r->tier]),0);
-    lv_obj_clear_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(missing_label,real?"SD SPRITE | TEST ONLY":
+                             "SPRITE NOT INSTALLED | LAB ART");
+    reveal_active=true;
 }
 static void ball_tick(lv_timer_t *timer)
 {
     (void)timer;
-    if(!animating)return;
-    uint32_t current_session=0;
-    if(!pk_lab_runtime_session_token(&current_session) ||
-       !captured_valid || current_session!=captured_session){
-        /* USB START/RESET invalidates the pending reveal. Do not present
-         * an old result in a newly reset LAB session. */
-        animating=false;
-        if(ball_timer)lv_timer_pause(ball_timer);
-        if(ball_image)lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
-        if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
-        if(reveal_label)lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
-        if(rates_label)lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
-        captured_valid=false;
-        lab_refresh();
+    if(!opening_active)return;
+    uint32_t now=0;
+    if(lv_scr_act()!=lab_screen ||
+       !pk_lab_runtime_session_token(&now) || now!=draw_session){
+        stop_opening();
         return;
     }
-    if(lv_scr_act()!=lab_screen){
-        animating=false;
-        lv_timer_pause(ball_timer);
-        lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
+    frame++;
+    if(frame<PK_LAB_BALL_FRAMES){
+        paint_ball(frame);
         return;
     }
-    animation_frame++;
-    if(animation_frame>=PK_LAB_BALL_FRAMES){
-        animating=false;
-        lv_timer_pause(ball_timer);
-        lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
-        /* The card shows this DRAW's frozen result, not a concurrent
-         * serial draw. Statistics may reflect newer serial activity. */
-        lab_refresh();
-        show_reveal_card();
-        return;
-    }
-    ball_paint(animation_frame);
+    opening_active=false;
+    lv_timer_pause(ball_timer);
+    reveal();
 }
-static void ball_begin(void)
+static void on_close(lv_event_t *event)
 {
-    if(!ball_timer || !ball_image)return;
-    animation_frame=0;
-    animating=true;
-    if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
-    lab_detach_sprite();
-    lv_obj_add_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
-    ball_paint(0);
-    lv_timer_set_period(ball_timer,140);
-    lv_timer_reset(ball_timer);
-    lv_timer_resume(ball_timer);
+    (void)event;
+    stop_opening();
+    update_menu();
 }
 static void on_ball(lv_event_t *event)
 {
-    unsigned chosen=(unsigned)(uintptr_t)lv_event_get_user_data(event);
-    if(animating || chosen>=PK_BALL_COUNT)return;
-    active_ball=(uint8_t)chosen;
-    if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
-    lab_detach_sprite();
-    lab_refresh();
+    if(opening_active || reveal_active)return;
+    unsigned i=(unsigned)(uintptr_t)lv_event_get_user_data(event);
+    if(i>=PK_BALL_COUNT)return;
+    ball=(uint8_t)i;
+    update_menu();
+}
+static void on_quantity(lv_event_t *event)
+{
+    (void)event;
+    if(opening_active || reveal_active)return;
+    count=count==1?100:1;
+    update_menu();
 }
 static void on_draw(lv_event_t *event)
 {
     (void)event;
-    if(animating)return;
-    if(!pk_lab_runtime_draw_snapshot_token(active_ball,batch,
-                                            &captured_draw,&captured_session)) {
-        if(reveal_label)lv_label_set_text(reveal_label,"DRAW FAILED (SIM)");
-    } else {
-        captured_valid=true;
-        ball_begin();
+    if(opening_active || reveal_active)return;
+    if(!pk_lab_runtime_draw_snapshot_token(ball,count,&captured,&draw_session)){
+        lv_label_set_text(status_label,"DRAW FAILED - CHECK LAB");
+        return;
     }
-}
-static void on_batch(lv_event_t *event)
-{
-    (void)event;
-    if(animating)return;
-    batch=batch==1?100:1;
-    lab_refresh();
-}
-static void on_badge(lv_event_t *event)
-{
-    (void)event;
-    if(!animating && pk_lab_runtime_level(100))lab_refresh();
-}
-static void on_reset(lv_event_t *event)
-{
-    (void)event;
-    if(animating || !pk_lab_runtime_start())return;
-    (void)pk_lab_runtime_session_token(&visible_session);
-    /* A reset must never leave an old result or sprite on screen. */
-    captured_valid=false;
-    lab_detach_sprite();
-    if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
-    lab_refresh();
+    lv_label_set_text(status_label,"SIMULATED - NO ITEMS SPENT");
+    lv_obj_clear_flag(opening,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(pokemon_image,LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_text(name_label,"");
+    lv_label_set_text(tier_label,"");
+    lv_label_set_text(missing_label,"");
+    frame=0;
+    opening_active=true;
+    reveal_active=false;
+    stop_sprite();
+    paint_ball(0);
+    lv_timer_set_period(ball_timer,220);
+    lv_timer_reset(ball_timer);
+    lv_timer_resume(ball_timer);
 }
 static void on_back(lv_event_t *event)
 {
     (void)event;
-    if(ball_timer)lv_timer_pause(ball_timer);
-    if(session_watchdog)lv_timer_pause(session_watchdog);
-    animating=false;
-    if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
-    lab_restore_companion();
-    if(ball_image)lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
-    if(reveal_label)lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
-    if(rates_label)lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
-    /* Returning to existing companion does not restart or clear LAB. */
+    stop_opening();
+    if(session_timer)lv_timer_pause(session_timer);
+    /* Companion defaults to Mimikyu when returning from isolated LAB. */
+    (void)pokemon_ui_show_species(778U);
     if(screen_pokemon_companion)lv_scr_load(screen_pokemon_companion);
+}
+static void session_tick(lv_timer_t *timer)
+{
+    (void)timer;
+    if(lv_scr_act()!=lab_screen)return;
+    uint32_t now=0;
+    if(!pk_lab_runtime_session_token(&now))return;
+    if(now!=shown_session){
+        shown_session=now;
+        stop_opening();
+        lv_label_set_text(status_label,"LAB SESSION RESET VIA USB");
+    }
 }
 void pokemon_lab_ui_open(void)
 {
-    if(!lab_screen || !screen_pokemon_companion ||
-       lv_scr_act()!=screen_pokemon_companion)return;
-    pk_lab_t state={0};
-    if(!pk_lab_runtime_snapshot(&state))return;
-    if(!state.active && !pk_lab_runtime_start())return;
-    if(!pk_lab_runtime_session_token(&visible_session))return;
-    active_ball=PK_BALL_POKE;
-    batch=1;
-    captured_valid=false;
-    lab_detach_sprite();
-    if(reveal_card)lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
-    animating=false;
-    if(ball_timer)lv_timer_pause(ball_timer);
-    if(ball_image)lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
-    if(reveal_label)lv_obj_clear_flag(reveal_label,LV_OBJ_FLAG_HIDDEN);
-    if(rates_label)lv_obj_clear_flag(rates_label,LV_OBJ_FLAG_HIDDEN);
-    lab_refresh();
+    if(!lab_screen || lv_scr_act()!=screen_pokemon_companion)return;
+    pk_lab_t snapshot={0};
+    if(!pk_lab_runtime_snapshot(&snapshot))return;
+    if(!snapshot.active && !pk_lab_runtime_start())return;
+    if(!pk_lab_runtime_session_token(&shown_session))return;
+    stop_opening();
+    ball=PK_BALL_POKE;
+    count=1;
+    update_menu();
+    lv_label_set_text(status_label,"RAM LAB - UNLIMITED TEST BALLS");
     lv_scr_load(lab_screen);
-    if(session_watchdog)lv_timer_resume(session_watchdog);
+    if(session_timer)lv_timer_resume(session_timer);
 }
 void pokemon_lab_ui_build(void)
 {
@@ -421,84 +267,60 @@ void pokemon_lab_ui_build(void)
     lv_obj_set_size(lab_screen,360,360);
     lv_obj_set_style_pad_all(lab_screen,0,0);
     lv_obj_set_style_border_width(lab_screen,0,0);
-    lv_obj_set_style_bg_color(lab_screen,lv_color_hex(0x0D1D28),0);
+    lv_obj_set_style_bg_color(lab_screen,lv_color_hex(0x111E31),0);
     lv_obj_clear_flag(lab_screen,LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scrollbar_mode(lab_screen,LV_SCROLLBAR_MODE_OFF);
 
-    lab_text(lab_screen,"TEST LAB",22,220,0xF4DEAD,&lv_font_montserrat_22);
-    lab_text(lab_screen,"UNLIMITED BALLS - SIM ONLY",52,275,
-             0x9CC8D0,&lv_font_montserrat_14);
-    badge_label=lab_text(lab_screen,"LV 1 | MASTER BADGE: NO",68,275,
-                         0xFFFFFF,&lv_font_montserrat_14);
-    const int x[]={30,107,184,261};
+    label(lab_screen,"POKEBALL LAB",24,250,&lv_font_montserrat_22,0xFFFFFF);
+    label(lab_screen,"CHOOSE A BALL",66,235,&lv_font_montserrat_14,0xB5C4DE);
+    const char *const short_names[]={"POKE","GREAT","ULTRA","MASTER"};
     for(unsigned i=0;i<PK_BALL_COUNT;i++)
-        lab_btn(lab_screen,ball_names[i],x[i],93,69,32,on_ball,
-                (void *)(uintptr_t)i);
+        button(lab_screen,short_names[i],22+(int)i*80,104,76,37,
+               on_ball,(void *)(uintptr_t)i);
+    chosen_label=label(lab_screen,"POKE BALL",159,280,
+                       &lv_font_montserrat_22,0xF6DBAA);
+    button(lab_screen,"OPEN BALL",92,203,176,49,on_draw,NULL);
+    button(lab_screen,"QTY",119,267,122,32,on_quantity,NULL);
+    count_label=label(lab_screen,"QUANTITY x1",304,250,
+                      &lv_font_montserrat_14,0xD3DDEE);
+    button(lab_screen,"BACK",26,263,80,34,on_back,NULL);
+    status_label=label(lab_screen,"RAM LAB - UNLIMITED TEST BALLS",338,290,
+                       &lv_font_montserrat_14,0xB5C4DE);
 
-    lv_obj_t *open_panel=lab_panel(40,136,280,64);
-    ball_label=lab_text(open_panel,"POKE",2,88,0xF4DEAD,
-                        &lv_font_montserrat_14);
-    lab_btn(open_panel,"DRAW",9,22,108,29,on_draw,NULL);
-    count_label=lab_text(open_panel,"x100",2,72,0xF4DEAD,
-                         &lv_font_montserrat_14);
-    lab_btn(open_panel,"QTY",164,22,105,29,on_batch,NULL);
-    reveal_label=lab_text(lab_screen,"NO DRAWS YET - SIMULATION",201,294,
-                           0xFFFFFF,&lv_font_montserrat_14);
-    lv_obj_t *stats=lab_panel(43,222,274,68);
-    rates_label=lab_text(stats,"NO DATA",4,264,0xE8F1EB,
-                          &lv_font_montserrat_14);
-    lv_obj_set_style_text_line_space(rates_label,3,0);
-    lab_btn(lab_screen,"BACK",34,298,83,33,on_back,NULL);
-    lab_btn(lab_screen,"LV100",137,298,84,33,on_badge,NULL);
-    lab_btn(lab_screen,"RESET",241,298,84,33,on_reset,NULL);
+    /* This fullscreen scene has NO other menu controls on it. */
+    opening=lv_obj_create(lab_screen);
+    lv_obj_set_size(opening,360,360);
+    lv_obj_set_pos(opening,0,0);
+    lv_obj_set_style_pad_all(opening,0,0);
+    lv_obj_set_style_border_width(opening,0,0);
+    lv_obj_set_style_bg_color(opening,lv_color_hex(0x101728),0);
+    lv_obj_clear_flag(opening,LV_OBJ_FLAG_SCROLLABLE);
+    ball_dsc.header.w=PK_LAB_BALL_PIXELS;
+    ball_dsc.header.h=PK_LAB_BALL_PIXELS;
+    ball_dsc.header.cf=LV_IMG_CF_TRUE_COLOR_ALPHA;
+    ball_dsc.data_size=sizeof(ball_pixels);
+    ball_dsc.data=ball_pixels;
+    ball_image=lv_img_create(opening);
+    lv_img_set_src(ball_image,&ball_dsc);
+    lv_img_set_zoom(ball_image,512);
+    lv_obj_align(ball_image,LV_ALIGN_CENTER,0,-10);
 
-    /* Persistent 64x64 RGB565+A image of original 2x pixel artwork.
-     * No external sprites and no allocations on animation ticks. */
-    ball_descriptor.header.always_zero=0;
-    ball_descriptor.header.w=PK_LAB_BALL_PIXELS;
-    ball_descriptor.header.h=PK_LAB_BALL_PIXELS;
-    ball_descriptor.header.cf=LV_IMG_CF_TRUE_COLOR_ALPHA;
-    ball_descriptor.data_size=sizeof(ball_pixels);
-    ball_descriptor.data=ball_pixels;
-    ball_image=lv_img_create(lab_screen);
-    lv_img_set_src(ball_image,&ball_descriptor);
-    lv_obj_align(ball_image,LV_ALIGN_TOP_MID,0,207);
-    lv_obj_add_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
-    ball_timer=lv_timer_create(ball_tick,140,NULL);
+    symbol_dsc.header.w=PK_LAB_FIXTURE_PIXELS;
+    symbol_dsc.header.h=PK_LAB_FIXTURE_PIXELS;
+    symbol_dsc.header.cf=LV_IMG_CF_TRUE_COLOR_ALPHA;
+    symbol_dsc.data_size=sizeof(symbol_pixels);
+    symbol_dsc.data=symbol_pixels;
+    pokemon_image=lv_img_create(opening);
+    lv_img_set_src(pokemon_image,&symbol_dsc);
+    lv_obj_add_flag(pokemon_image,LV_OBJ_FLAG_HIDDEN);
+    name_label=label(opening,"",250,315,&lv_font_montserrat_22,0xFFFFFF);
+    tier_label=label(opening,"",284,315,&lv_font_montserrat_14,0xF4DEB0);
+    missing_label=label(opening,"",310,315,&lv_font_montserrat_14,0xA9C0DC);
+    button(opening,"CLOSE",129,324,102,34,on_close,NULL);
+    lv_obj_add_flag(opening,LV_OBJ_FLAG_HIDDEN);
+    ball_timer=lv_timer_create(ball_tick,220,NULL);
     lv_timer_pause(ball_timer);
-    /* Non-interactive reveal layer above statistics, still strictly a
-     * simulated fixture. Original 64x64 ball remains separately animated. */
-    reveal_card=lv_obj_create(lab_screen);
-    lv_obj_set_size(reveal_card,278,70);
-    lv_obj_align(reveal_card,LV_ALIGN_TOP_MID,0,214);
-    lv_obj_set_style_radius(reveal_card,15,0);
-    lv_obj_set_style_bg_color(reveal_card,lv_color_hex(0x132733),0);
-    lv_obj_set_style_bg_opa(reveal_card,LV_OPA_COVER,0);
-    lv_obj_set_style_border_width(reveal_card,2,0);
-    lv_obj_set_style_pad_all(reveal_card,0,0);
-    lv_obj_set_style_shadow_width(reveal_card,0,0);
-    lv_obj_clear_flag(reveal_card,LV_OBJ_FLAG_CLICKABLE |
-                                      LV_OBJ_FLAG_SCROLLABLE);
-    fixture_descriptor.header.always_zero=0;
-    fixture_descriptor.header.w=PK_LAB_FIXTURE_PIXELS;
-    fixture_descriptor.header.h=PK_LAB_FIXTURE_PIXELS;
-    fixture_descriptor.header.cf=LV_IMG_CF_TRUE_COLOR_ALPHA;
-    fixture_descriptor.data_size=sizeof(fixture_pixels);
-    fixture_descriptor.data=fixture_pixels;
-    fixture_icon=lv_img_create(reveal_card);
-    lv_img_set_src(fixture_icon,&fixture_descriptor);
-    lv_obj_align(fixture_icon,LV_ALIGN_LEFT_MID,7,0);
-    lv_obj_add_flag(fixture_icon,LV_OBJ_FLAG_HIDDEN);
-    reveal_title=lab_text(reveal_card,"",10,210,0xFDEBA4,
-                           &lv_font_montserrat_22);
-    lv_obj_align(reveal_title,LV_ALIGN_TOP_LEFT,53,10);
-    reveal_detail=lab_text(reveal_card,"",43,210,0xFFFFFF,
-                            &lv_font_montserrat_14);
-    lv_obj_align(reveal_detail,LV_ALIGN_TOP_LEFT,53,43);
-    lv_obj_add_flag(reveal_card,LV_OBJ_FLAG_HIDDEN);
-    sprite_timer=lv_timer_create(lab_sprite_tick,200,NULL);
+    sprite_timer=lv_timer_create(sprite_tick,160,NULL);
     lv_timer_pause(sprite_timer);
-    session_watchdog=lv_timer_create(lab_session_tick,250,NULL);
-    /* Never run watchdog logic while the lab screen is inactive. */
-    lv_timer_pause(session_watchdog);
+    session_timer=lv_timer_create(session_tick,250,NULL);
+    lv_timer_pause(session_timer);
 }
