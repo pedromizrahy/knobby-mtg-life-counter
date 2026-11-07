@@ -37,8 +37,11 @@ extern "C" void knob_print_reset_diagnostics(void);
 #define PG_PASSWORD_MAX 65
 #define PG_API_KEY_MAX 192
 #define PG_SERIAL_LINE_MAX 320
-#define PG_ART_CACHE_SLOTS 8
+#define PG_ART_CACHE_SLOTS 3
 #define PG_ART_CACHE_MAX_BYTES (256U * 1024U)
+#define PG_ART_PERSIST_RESERVE (512U * 1024U)
+#define PG_ART_PREFETCH_TOP_DECKS 5U
+#define PG_ART_PREFETCH_QUEUE 4U
 
 static char serial_line[PG_SERIAL_LINE_MAX];
 static size_t serial_line_len = 0;
@@ -60,8 +63,15 @@ typedef struct {
 typedef struct {
     uint32_t generation;
     int count;
-    char ids[PG_MAX_DECKS][PG_SCRYFALL_ID_LEN];
+    char ids[PG_ART_PREFETCH_TOP_DECKS][PG_SCRYFALL_ID_LEN];
+    char urls[PG_ART_PREFETCH_TOP_DECKS][PG_IMAGE_URL_LEN];
 } pg_art_prefetch_job_t;
+/* One low-priority worker, bounded queue. Avoid simultaneous requests
+ * when several players each open their own deck lists. */
+static SemaphoreHandle_t art_prefetch_queue_mutex = NULL;
+static pg_art_prefetch_job_t *art_prefetch_queue[PG_ART_PREFETCH_QUEUE] = {};
+static unsigned art_prefetch_queue_count = 0;
+static bool art_prefetch_worker_running = false;
 
 typedef struct {
     char scryfall_id[PG_SCRYFALL_ID_LEN];
@@ -162,9 +172,10 @@ static bool art_fs_begin_write(void)
         art_fs_ready = SPIFFS.begin(false);
     }
 
+    /* Never format SPIFFS: it contains profiles, pending games and user data. */
     if (!art_fs_ready) {
-        Serial.println("[Playgroup] Initializing persistent art cache...");
-        art_fs_ready = SPIFFS.begin(true);
+        Serial.println("[Playgroup] Art cache unavailable; no format attempted.");
+        return false;
     }
 
     if (art_fs_ready) {
@@ -266,6 +277,26 @@ static bool art_persistent_load(const char *id,
     return true;
 }
 
+/* Metadata-only test, avoiding a 100+ KiB PSRAM copy for cached JPEGs. */
+static bool art_persistent_valid(const char *id)
+{
+    if (!id || !*id || !art_fs_begin_read()) return false;
+    char path[32];
+    art_file_path(id, path, sizeof(path));
+    File f = SPIFFS.open(path, FILE_READ);
+    if (!f) return false;
+    pg_art_file_header_t head = {};
+    bool ok = f.read((uint8_t *)&head, sizeof(head)) == sizeof(head) &&
+              head.magic == PG_ART_FILE_MAGIC &&
+              head.version == PG_ART_FILE_VERSION &&
+              head.jpeg_size > 0U &&
+              head.jpeg_size <= PG_ART_CACHE_MAX_BYTES &&
+              strncmp(head.scryfall_id, id, sizeof(head.scryfall_id)) == 0 &&
+              f.size() == sizeof(head) + head.jpeg_size;
+    f.close();
+    return ok;
+}
+
 static void art_persistent_store(const char *id,
                                  const uint8_t *data,
                                  size_t size)
@@ -282,8 +313,17 @@ static void art_persistent_store(const char *id,
         return;
 
     art_file_path(id, path, sizeof(path));
-    if (SPIFFS.exists(path))
+    if (art_persistent_valid(id))
         return;
+
+    /* The flash partition is 3.375 MiB, not the SD's 300+ MiB.
+     * Never fill its last 512 KiB; profiles/game snapshots need room. */
+    const size_t total = SPIFFS.totalBytes(), used = SPIFFS.usedBytes();
+    const size_t needed = size + sizeof(header) + PG_ART_PERSIST_RESERVE;
+    if (total < used || total - used < needed) {
+        Serial.println("[Playgroup] Art not persisted: reserved flash space.");
+        return;
+    }
 
     snprintf(temp_path, sizeof(temp_path), "/pgt_%08lx.tmp",
              (unsigned long)(art_id_hash(id) & 0xffffffffUL));
@@ -624,9 +664,29 @@ bool playgroup_network_active(void)
 
 void playgroup_end_session(void)
 {
+    /* Invalidate all pending JPEG jobs before disconnecting. Never free
+     * an in-flight job; its worker observes the generation and exits. */
     ++art_prefetch_generation;
+    if (art_prefetch_queue_mutex &&
+        xSemaphoreTake(art_prefetch_queue_mutex,pdMS_TO_TICKS(10))==pdTRUE) {
+        for(unsigned i=0;i<art_prefetch_queue_count;i++){
+            heap_caps_free(art_prefetch_queue[i]);
+            art_prefetch_queue[i]=NULL;
+        }
+        art_prefetch_queue_count=0;
+        xSemaphoreGive(art_prefetch_queue_mutex);
+    }
     art_cache_clear();
-    art_http_reset();
+    /* Do not destroy a TLS client while a low-priority fetch uses it:
+     * that race can reset the ESP32 when ending the setup session. */
+    if (!art_http_mutex) {
+        art_http_reset();
+    } else if (xSemaphoreTake(art_http_mutex,0)==pdTRUE) {
+        art_http_reset();
+        xSemaphoreGive(art_http_mutex);
+    } else {
+        Serial.println("[Playgroup] Art TLS cleanup deferred until background request finishes.");
+    }
     api_http_reset();
 
     if (wifi_manager_is_active()) {
@@ -1367,6 +1427,8 @@ bool playgroup_refresh_decks(long user_id)
 
     json_for_each_top_level_object(response, parse_deck_object, NULL, PG_MAX_DECKS);
     sort_cached_decks_by_usage();
+    if (cached_deck_count > 0)
+        playgroup_prefetch_deck_images(); /* JPEG only, five popular decks */
     Serial.printf("[Perf] PG decks list=%d, internal free=%u, largest=%u, PSRAM free=%u bytes\n",
                   cached_deck_count,
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
@@ -1682,51 +1744,60 @@ bool playgroup_download_image(const char *scryfall_id, uint8_t **out_data, size_
 
 static void playgroup_art_prefetch_task(void *param)
 {
-    pg_art_prefetch_job_t *job = (pg_art_prefetch_job_t *)param;
-
-    if (job == NULL) {
-        vTaskDelete(NULL);
-        return;
-    }
-
-    Serial.print("[Playgroup] Art prefetch started for ");
-    Serial.print(job->count);
-    Serial.println(" decks.");
-
-    for (int i = 0; i < job->count; i++) {
-        uint8_t *data = NULL;
-        size_t size = 0;
-
-        if (job->generation != art_prefetch_generation)
+    (void)param;
+    /* Give the visible first card time to request its art before fetching
+     * any secondary deck. The screen itself is already interactive. */
+    vTaskDelay(pdMS_TO_TICKS(1100));
+    for (;;) {
+        pg_art_prefetch_job_t *job = NULL;
+        xSemaphoreTake(art_prefetch_queue_mutex, portMAX_DELAY);
+        if (art_prefetch_queue_count == 0U) {
+            art_prefetch_worker_running = false;
+            xSemaphoreGive(art_prefetch_queue_mutex);
             break;
-        if (job->ids[i][0] == '\0')
-            continue;
-
-        if (art_cache_copy(job->ids[i], &data, &size)) {
-            playgroup_free_image(data);
-            continue;
         }
+        job = art_prefetch_queue[0];
+        --art_prefetch_queue_count;
+        for (unsigned q=0;q<art_prefetch_queue_count;q++)
+            art_prefetch_queue[q]=art_prefetch_queue[q+1U];
+        art_prefetch_queue[art_prefetch_queue_count]=NULL;
+        xSemaphoreGive(art_prefetch_queue_mutex);
 
-        Serial.print("[Playgroup] Prefetch art ");
-        Serial.print(i + 1);
-        Serial.print("/");
-        Serial.print(job->count);
-        Serial.print(": ");
-        Serial.println(job->ids[i]);
+        if (!job)continue;
+        Serial.printf("[Playgroup] Background top-five JPEG cache: %d decks.\\n",job->count);
+        for (int i=0;i<job->count;i++) {
+            if (job->generation != art_prefetch_generation)break;
+            if (!job->ids[i][0])continue;
 
-        art_background_prefetch_active = true;
-        if (playgroup_download_image(job->ids[i], &data, &size))
+            /* Never steal the network from the currently displayed card.
+             * All waits happen in this low-priority task, not in LVGL. */
+            if (art_single_prefetch_active) {
+                vTaskDelay(pdMS_TO_TICKS(250));
+                --i;
+                continue;
+            }
+            if (art_persistent_valid(job->ids[i]))continue;
+
+            uint8_t *data = NULL;
+            size_t bytes = 0;
+            bool ok = art_cache_copy(job->ids[i],&data,&bytes);
+            if (!ok) {
+                Serial.printf("[Playgroup] Background compressed JPEG %d/%d: %s\\n",
+                              i+1,job->count,job->ids[i]);
+                art_background_prefetch_active=true;
+                ok=playgroup_download_deck_image(job->urls[i],
+                                                 job->ids[i],&data,&bytes);
+                art_background_prefetch_active=false;
+            }
+            if (ok && data && job->generation == art_prefetch_generation)
+                art_persistent_store(job->ids[i],data,bytes);
             playgroup_free_image(data);
-        art_background_prefetch_active = false;
-
-        /* Prefetch is opportunistic; never compete with UI/system tasks. */
-        vTaskDelay(pdMS_TO_TICKS(25));
+            vTaskDelay(pdMS_TO_TICKS(120));
+        }
+        if (job->generation == art_prefetch_generation)
+            Serial.println("[Playgroup] Top-five JPEG predownload complete.");
+        heap_caps_free(job);
     }
-
-    if (job->generation == art_prefetch_generation)
-        Serial.println("[Playgroup] Art prefetch finished.");
-
-    heap_caps_free(job);
     vTaskDelete(NULL);
 }
 
@@ -1743,6 +1814,10 @@ static void playgroup_single_art_prefetch_task(void *param)
         if (playgroup_download_deck_image(job->art_crop_url,
                                           job->scryfall_id,
                                           &data, &size)) {
+            /* Also retain the actively chosen art, including MORE DECKS.
+             * Never attempt flash formatting or overwrite game snapshots. */
+            if(data && job->scryfall_id[0])
+                art_persistent_store(job->scryfall_id,data,size);
             playgroup_free_image(data);
             Serial.print("[Playgroup] Async commander art ready: ");
             Serial.println(job->scryfall_id);
@@ -1799,36 +1874,44 @@ bool playgroup_prefetch_deck_image_async(const char *art_crop_url,
 
 void playgroup_prefetch_deck_images(void)
 {
-    pg_art_prefetch_job_t *job;
-    uint32_t generation = ++art_prefetch_generation;
-
-    if (cached_deck_count <= 0)
-        return;
-
-    job = (pg_art_prefetch_job_t *)heap_caps_calloc(1, sizeof(*job),
-                                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (job == NULL) {
-        Serial.println("[Playgroup] Could not allocate art prefetch job.");
-        return;
+    if (cached_deck_count<=0)return;
+    pg_art_prefetch_job_t *job=(pg_art_prefetch_job_t *)heap_caps_calloc(
+        1,sizeof(*job),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!job)return;
+    job->generation=art_prefetch_generation;
+    job->count=cached_deck_count;
+    if(job->count>(int)PG_ART_PREFETCH_TOP_DECKS)
+        job->count=PG_ART_PREFETCH_TOP_DECKS;
+    for(int i=0;i<job->count;i++){
+        strlcpy(job->ids[i],cached_decks[i].scryfall_id,sizeof(job->ids[i]));
+        strlcpy(job->urls[i],cached_decks[i].art_crop_url,sizeof(job->urls[i]));
     }
 
-    job->generation = generation;
-    job->count = cached_deck_count;
-    if (job->count > PG_ART_CACHE_SLOTS)
-        job->count = PG_ART_CACHE_SLOTS;
-
-    for (int i = 0; i < job->count; i++)
-        strlcpy(job->ids[i], cached_decks[i].scryfall_id, sizeof(job->ids[i]));
-
-    /* Keep HTTPS prefetch off CPU0. Wi-Fi/system work and IDLE0 are
-       watchdog-sensitive there on this board. CPU1 is also where the
-       previously stable foreground HTTPS path ran; priority 0 keeps UI/game
-       work ahead of opportunistic art downloads. */
-    if (xTaskCreatePinnedToCore(playgroup_art_prefetch_task, "pg_art_prefetch",
-                                6144, job, 0, NULL, 1) != pdPASS) {
-        Serial.println("[Playgroup] Could not start art prefetch task.");
-        heap_caps_free(job);
+    if(!art_prefetch_queue_mutex)
+        art_prefetch_queue_mutex=xSemaphoreCreateMutex();
+    if(!art_prefetch_queue_mutex){heap_caps_free(job);return;}
+    xSemaphoreTake(art_prefetch_queue_mutex,portMAX_DELAY);
+    if(art_prefetch_queue_count>=PG_ART_PREFETCH_QUEUE){
+        /* Keep the most recent member's top five if browsing rapidly. */
+        heap_caps_free(art_prefetch_queue[0]);
+        for(unsigned q=1;q<art_prefetch_queue_count;q++)
+            art_prefetch_queue[q-1U]=art_prefetch_queue[q];
+        --art_prefetch_queue_count;
     }
+    art_prefetch_queue[art_prefetch_queue_count++]=job;
+    if(!art_prefetch_worker_running){
+        art_prefetch_worker_running=true;
+        /* Low-priority CPU1; never block the interface on JPEG downloads. */
+        if(xTaskCreatePinnedToCore(playgroup_art_prefetch_task,"pg_art_prefetch",
+                                   7168,NULL,0,NULL,1)!=pdPASS){
+            art_prefetch_worker_running=false;
+            for(unsigned i=0;i<art_prefetch_queue_count;i++)
+                heap_caps_free(art_prefetch_queue[i]);
+            art_prefetch_queue_count=0;
+            Serial.println("[Playgroup] Background JPEG cache worker unavailable.");
+        }
+    }
+    xSemaphoreGive(art_prefetch_queue_mutex);
 }
 
 void playgroup_free_image(uint8_t *data)
