@@ -231,8 +231,8 @@ static void on_back(lv_event_t *event)
     (void)event;
     stop_opening();
     if(session_timer)lv_timer_pause(session_timer);
-    /* Companion defaults to Mimikyu when returning from isolated LAB. */
-    (void)pokemon_ui_show_species(778U);
+    /* Restore the chosen RAM-only partner preview after LAB cache swaps. */
+    pokemon_ui_restore_preview();
     if(screen_pokemon_companion)lv_scr_load(screen_pokemon_companion);
 }
 static void session_tick(lv_timer_t *timer)
