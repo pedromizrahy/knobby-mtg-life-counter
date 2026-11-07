@@ -13,6 +13,8 @@
 #include "wifi_manager.h"
 #include "playgroup_pending.h"
 #include "pokemon_profile_store.h"
+#include "pokemon_account_onboarding.h"
+#include "pokemon_player_identity.h"
 #include "pokemon_spiffs_selftest.h"
 #include "pokemon_file_store.h"
 #include "pokemon_sd_diagnostic.h"
@@ -2794,6 +2796,82 @@ static bool playgroup_full_flow_test(long game_id)
     return status == HTTP_CODE_CREATED;
 }
 
+/* USB account onboarding is explicit and limited to the freshly
+ * authenticated API-key owner. Never seed other seats from a roster. */
+static void pokemon_me_account(bool create_starter)
+{
+    if (playgroup_pending_current_active()) {
+        Serial.println("[Pokemon] BLOCKED: exit the active game first.");
+        return;
+    }
+    String response;
+    int http_status=-1;
+    char id_token[24]={};
+    if(!playgroup_https_get("/me",response,http_status) ||
+       http_status!=HTTP_CODE_OK ||
+       !json_extract_number_token(response,"id",id_token,sizeof(id_token))) {
+        Serial.println("[Pokemon] FAIL: fresh /me authentication required.");
+        return;
+    }
+    /* The API identity is numeric and must fit the current profile format.
+     * No hard-coded user, seat index, display name or trust in /playgroups. */
+    char *end=nullptr;
+    unsigned long long raw=strtoull(id_token,&end,10);
+    if(end==id_token || *end!=0 || !pk_player_id_valid(raw)) {
+        Serial.println("[Pokemon] FAIL: unsupported Playgroup user ID.");
+        return;
+    }
+    uint32_t id=(uint32_t)raw;
+    pk_profile_t from_file={},from_nvs={};
+    pk_store_status_t f=pk_file_inspect(id,&from_file);
+    pk_store_status_t n=pk_store_inspect(id,&from_nvs);
+    pk_onboard_state_t state=pk_onboard_decide(raw,f,n);
+    Serial.printf("[Pokemon] Authenticated profile %lu: SPIFFS=%d NVS=%d\\n",
+                  (unsigned long)id,(int)f,(int)n);
+    if(state==PK_ONBOARD_ALREADY_FILE){
+        Serial.printf("[Pokemon] LINKED: main #%u, level %u, team=%u (SPIFFS).\\n",
+                      from_file.team_count?from_file.team[from_file.active_index].species:0,
+                      from_file.team_count?from_file.team[from_file.active_index].level:0,
+                      from_file.team_count);
+        return;
+    }
+    if(state==PK_ONBOARD_LEGACY_NVS){
+        Serial.printf("[Pokemon] LEGACY: main #%u, level %u, team=%u (NVS). No migration.\\n",
+                      from_nvs.team_count?from_nvs.team[from_nvs.active_index].species:0,
+                      from_nvs.team_count?from_nvs.team[from_nvs.active_index].level:0,
+                      from_nvs.team_count);
+        return;
+    }
+    if(state!=PK_ONBOARD_READY){
+        Serial.println("[Pokemon] BLOCKED: invalid/corrupt/unreadable profile or ID. Nothing written.");
+        return;
+    }
+    if(!create_starter){
+        Serial.println("[Pokemon] READY: no saved profile; optional PK STARTER ME explicitly creates Mimikyu #778.");
+        return;
+    }
+    /* Repeat both checks immediately before the opt-in write. No
+     * overwrite, no silent NVS->SPIFFS migration, no reward or capture. */
+    if(pk_onboard_decide(raw,pk_file_inspect(id,NULL),
+                            pk_store_inspect(id,NULL))!=PK_ONBOARD_READY){
+        Serial.println("[Pokemon] BLOCKED: profile changed. Nothing written.");
+        return;
+    }
+    if(!pk_file_create_starter(id)){
+        Serial.println("[Pokemon] FAIL: starter was not created. Inspect storage.");
+        return;
+    }
+    pk_profile_t verify={};
+    if(pk_file_inspect(id,&verify)!=PK_STORE_VALID ||
+       verify.team_count!=1 || verify.team[0].species!=778 ||
+       verify.team[0].level!=1 || verify.active_index!=0){
+        Serial.println("[Pokemon] FAIL: starter readback verification; do not retry until inspected.");
+        return;
+    }
+    Serial.printf("[Pokemon] STARTER CREATED: account %lu / Mimikyu #778 / LV 1.\\n",
+                  (unsigned long)id);
+}
+
 static void print_status(void)
 {
     char tmp[PG_API_KEY_MAX];
@@ -2814,6 +2892,8 @@ static void print_help(void)
     Serial.println("[Playgroup] USB commands:");
     Serial.println("  PG WIFI <ssid>|<password>");
     Serial.println("  PG KEY <api-key>");
+    Serial.println("  PK ME                   (read-only authenticated profile status)");
+    Serial.println("  PK STARTER ME           (explicit starter for logged-in account only)");
     Serial.println("  PG STATUS");
     Serial.println("  PG PENDING");
     Serial.println("  PG SYNC PENDING");
@@ -3182,6 +3262,12 @@ static void handle_command(char *line)
         bool ok = pk_store_selftest();
         Serial.println(ok ? "[Pokemon] SELFTEST PASS" :
                             "[Pokemon] SELFTEST FAIL");
+        return;
+    }
+
+    if (strcmp(line, "PK ME") == 0 ||
+        strcmp(line, "PK STARTER ME") == 0) {
+        pokemon_me_account(strcmp(line,"PK STARTER ME")==0);
         return;
     }
 

@@ -29,6 +29,8 @@ on:
       - 'knobby/src/pokemon_companion_selection.*'
       - 'knobby/src/pokemon_companion_profile_view.*'
       - 'knobby/src/pokemon_player_identity.*'
+      - 'knobby/src/pokemon_account_onboarding.*'
+      - 'tests/pokemon_account_onboarding_test.c'
       - 'tests/pokemon_player_identity_test.c'
       - 'tests/pokemon_companion_profile_view_test.c'
       - 'knobby/src/pokemon_ui.*'
@@ -104,6 +106,10 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_companion_selection.c tests/pokemon_companion_selection_test.c -o /tmp/pokemon_companion_selection_test
           /tmp/pokemon_companion_selection_test
+      - name: Test explicit account onboarding and no-overwrite policy
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_player_identity.c knobby/src/pokemon_account_onboarding.c tests/pokemon_account_onboarding_test.c -o /tmp/pokemon_account_onboarding_test
+          /tmp/pokemon_account_onboarding_test
       - name: Test strict Playgroup user ID boundaries
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_player_identity.c tests/pokemon_player_identity_test.c -o /tmp/pokemon_player_identity_test

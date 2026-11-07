@@ -116,5 +116,23 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn('"LV %u MAIN"',preview)
         self.assertNotIn('pages>1U?"NEXT  >":"BACK"',preview)
 
+    def test_account_startup_has_no_implicit_starter_creation(self):
+        assert "pk_file_create_starter(" in API
+        route = between(API, "static void handle_command(char *line)\n{",
+                        "\nvoid playgroup_process_serial(void)")
+        self.assertIn('strcmp(line, "PK STARTER ME")==0', route)
+        self.assertIn('strcmp(line, "PK ME")', route)
+        self.assertIn("pokemon_me_account(", route)
+        f = between(API, "static void pokemon_me_account(bool create_starter)\n{",
+                    "\nstatic void print_status(void)")
+        self.assertIn('playgroup_https_get("/me",response,http_status)', f)
+        self.assertIn("!pk_player_id_valid(raw)", f)
+        self.assertIn("pk_onboard_decide(raw,f,n)", f)
+        self.assertIn("if(!create_starter)", f)
+        self.assertIn("pk_file_create_starter(id)", f)
+        self.assertIn("pk_file_inspect(id,&verify)", f)
+        self.assertNotIn("pk_store_create_starter(", f)
+        self.assertNotIn("pk_file_import_if_missing(", f)
+
 if __name__ == "__main__":
     unittest.main()
