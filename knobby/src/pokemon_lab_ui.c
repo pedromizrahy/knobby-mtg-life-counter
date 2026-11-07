@@ -14,7 +14,7 @@
  * Imported TPK2 frames are a read-only preview of installed artwork. */
 static lv_obj_t *lab_screen=NULL,*opening=NULL;
 static lv_obj_t *chosen_label=NULL,*count_label=NULL,*status_label=NULL;
-static lv_obj_t *ball_image=NULL,*pokemon_image=NULL;
+static lv_obj_t *ball_image=NULL,*pokemon_image=NULL,*close_button=NULL;
 static lv_obj_t *name_label=NULL,*tier_label=NULL,*missing_label=NULL;
 static lv_timer_t *ball_timer=NULL,*sprite_timer=NULL,*session_timer=NULL;
 static uint8_t ball_pixels[PK_LAB_BALL_BUFFER_BYTES];
@@ -159,6 +159,7 @@ static void reveal(void)
     lv_label_set_text(missing_label,real?"SD SPRITE | TEST ONLY":
                              "SPRITE NOT INSTALLED | LAB ART");
     reveal_active=true;
+    if(close_button)lv_obj_clear_flag(close_button,LV_OBJ_FLAG_HIDDEN);
 }
 static void ball_tick(lv_timer_t *timer)
 {
@@ -210,6 +211,7 @@ static void on_draw(lv_event_t *event)
     }
     lv_label_set_text(status_label,"SIMULATED - NO ITEMS SPENT");
     lv_obj_clear_flag(opening,LV_OBJ_FLAG_HIDDEN);
+    if(close_button)lv_obj_add_flag(close_button,LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(ball_image,LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(pokemon_image,LV_OBJ_FLAG_HIDDEN);
     lv_label_set_text(name_label,"");
@@ -274,7 +276,7 @@ void pokemon_lab_ui_build(void)
     label(lab_screen,"CHOOSE A BALL",66,235,&lv_font_montserrat_14,0xB5C4DE);
     const char *const short_names[]={"POKE","GREAT","ULTRA","MASTER"};
     for(unsigned i=0;i<PK_BALL_COUNT;i++)
-        button(lab_screen,short_names[i],22+(int)i*80,104,76,37,
+        button(lab_screen,short_names[i],27+(int)i*77,104,74,37,
                on_ball,(void *)(uintptr_t)i);
     chosen_label=label(lab_screen,"POKE BALL",159,280,
                        &lv_font_montserrat_22,0xF6DBAA);
@@ -283,7 +285,7 @@ void pokemon_lab_ui_build(void)
     count_label=label(lab_screen,"QUANTITY x1",304,250,
                       &lv_font_montserrat_14,0xD3DDEE);
     button(lab_screen,"BACK",26,263,80,34,on_back,NULL);
-    status_label=label(lab_screen,"RAM LAB - UNLIMITED TEST BALLS",338,290,
+    status_label=label(lab_screen,"UNLIMITED | TEST ONLY",334,290,
                        &lv_font_montserrat_14,0xB5C4DE);
 
     /* This fullscreen scene has NO other menu controls on it. */
@@ -301,7 +303,7 @@ void pokemon_lab_ui_build(void)
     ball_dsc.data=ball_pixels;
     ball_image=lv_img_create(opening);
     lv_img_set_src(ball_image,&ball_dsc);
-    lv_img_set_zoom(ball_image,512);
+    lv_img_set_zoom(ball_image,768);
     lv_obj_align(ball_image,LV_ALIGN_CENTER,0,-10);
 
     symbol_dsc.header.w=PK_LAB_FIXTURE_PIXELS;
@@ -315,7 +317,7 @@ void pokemon_lab_ui_build(void)
     name_label=label(opening,"",250,315,&lv_font_montserrat_22,0xFFFFFF);
     tier_label=label(opening,"",284,315,&lv_font_montserrat_14,0xF4DEB0);
     missing_label=label(opening,"",310,315,&lv_font_montserrat_14,0xA9C0DC);
-    button(opening,"CLOSE",129,324,102,34,on_close,NULL);
+    close_button=button(opening,"CLOSE",129,321,102,32,on_close,NULL);
     lv_obj_add_flag(opening,LV_OBJ_FLAG_HIDDEN);
     ball_timer=lv_timer_create(ball_tick,220,NULL);
     lv_timer_pause(ball_timer);
