@@ -1,25 +1,36 @@
 #include "pokemon_lab_runtime.h"
 #include <esp_random.h>
+#include <atomic>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 namespace {
-SemaphoreHandle_t lab_lock=nullptr;
+/* USB and LVGL can both be first to enter. Publish exactly ONE mutex
+ * before either uses it; discard a concurrent duplicate safely. */
+std::atomic<SemaphoreHandle_t> lab_lock{nullptr};
 pk_lab_t lab={};
 uint32_t lab_session=0;
 bool ensure_lock()
 {
-    if(lab_lock)return true;
-    /* Initialized at explicit use, not a timer or background task.
-     * The firmware's UI and USB command dispatcher are initialized
-     * before users can call this API. */
-    lab_lock=xSemaphoreCreateMutex();
-    return lab_lock!=nullptr;
+    if(lab_lock.load(std::memory_order_acquire)!=nullptr)return true;
+    SemaphoreHandle_t created=xSemaphoreCreateMutex();
+    if(!created)return false;
+    SemaphoreHandle_t expected=nullptr;
+    if(!lab_lock.compare_exchange_strong(expected,created,
+           std::memory_order_release,std::memory_order_acquire))
+        vSemaphoreDelete(created);
+    return true;
 }
 bool enter()
 {
-    return ensure_lock() && xSemaphoreTake(lab_lock,pdMS_TO_TICKS(150))==pdTRUE;
+    if(!ensure_lock())return false;
+    SemaphoreHandle_t current=lab_lock.load(std::memory_order_acquire);
+    return current && xSemaphoreTake(current,pdMS_TO_TICKS(150))==pdTRUE;
 }
-void leave(){xSemaphoreGive(lab_lock);}
+void leave()
+{
+    SemaphoreHandle_t current=lab_lock.load(std::memory_order_acquire);
+    if(current)xSemaphoreGive(current);
+}
 bool rng(void *,uint32_t *out)
 {
     if(!out)return false;
