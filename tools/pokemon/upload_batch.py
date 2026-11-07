@@ -96,7 +96,7 @@ def check_before_upload(port, species, local_size, timeout=30):
     valid but different-sized file is NOT silently treated as the same asset.
     """
     port.reset_input_buffer()
-    port.write(f"PK PMD CHECK {species}\\n".encode("ascii"))
+    port.write(f"PK PMD CHECK {species}\n".encode("ascii"))
     port.flush()
     deadline = time.monotonic() + timeout
     seen_valid_size = None
@@ -109,7 +109,7 @@ def check_before_upload(port, species, local_size, timeout=30):
         if any(problem in line for problem in
                ("PMD INVALID", "PMD FAIL", "SKIPPED", "PMD PUT ERR")):
             raise RuntimeError(f"Cannot safely upload #{species}: {line}")
-        match = re.search(r"\\[Pokemon\\] PMD VALID size=(\\d+)", line)
+        match = re.search(r"\[Pokemon\] PMD VALID size=(\d+)", line)
         if match:
             seen_valid_size = int(match.group(1))
         if "PMD CHECK COMPLETE" in line:
