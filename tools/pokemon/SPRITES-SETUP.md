@@ -51,3 +51,39 @@ Se algum download não estiver disponível, o script imprime `FAILED`; nesse cas
 - **Companion**: os controles anteriores/próximos percorrem os 14 candidatos conhecidos. Só é possível mostrar a arte das espécies com TPK2 instalado; a escolha atual é uma prévia na RAM, **não seleção persistente de um parceiro de uma conta Playgroup**.
 - Um resultado Shiny continua sem sprite próprio até existir um fluxo dedicado de TPK2 Shiny validado. Não confundir o sprite normal com a versão Shiny.
 - A aparência final da animação de Pokébola ainda exige teste físico; preparar sprites não resolve sozinho o design visual.
+
+## Expansão opcional: Kanto + Johto — 251 Pokémon
+
+Para preparar **toda a 1ª geração (Dex #1–151) e a 2ª geração (Dex #152–251)**, sem copiar os binários para o firmware:
+
+```powershell
+py -3 tools/pokemon/prepare_sprites.py --gen1-2 --out-dir assets/pokemon
+```
+
+O programa baixa os GIFs quando disponíveis, usa PNG parado como fallback, gera TPK2 localmente e resume o total de bytes e IDs com erro. O download **não instala automaticamente nenhum arquivo no DIAL**; sprites privados/de terceiros não devem ser incluídos no Git. O conversor não apaga os arquivos existentes por padrão e nunca substitui `p778.bin`.
+
+Os 251 arquivos têm no máximo `251 × (7 + 480 + 4 + 12 + 6 × 48 × 48) = 3.596.077 bytes` (aprox. **3,43 MiB**). Esse cálculo é de **armazenamento SD**, não de RAM. Com 6 frames na dimensão máxima de 48×48, apenas o sprite carregado pode reservar **373.248 bytes (~365 KiB) de PSRAM**, dentro do limite de 512 KiB do cache Idle. Se a imagem original tiver só um frame, ocupa menos.
+
+Auditar o lote **antes** de transferir:
+
+```powershell
+py -3 tools/pokemon/upload_batch.py --gen1-2 --mons-dir assets/pokemon
+```
+
+Caso algum ID falte, o dry run para com erro em vez de afirmar que a geração inteira está instalada. Para testar poucos IDs inicialmente:
+
+```powershell
+py -3 tools/pokemon/upload_batch.py --gen1-2 --mons-dir assets/pokemon --species 1 25 151 152 251
+```
+
+Após validar cada arquivo, fechar o monitor serial e executar deliberadamente a transferência do lote escolhido:
+
+```powershell
+py -3 tools/pokemon/upload_batch.py --gen1-2 --mons-dir assets/pokemon --species 1 25 151 152 251 --port COM4 --execute
+```
+
+Para enviar todos de uma vez, remova o argumento `--species`, **somente quando os 251 arquivos estiverem gerados, auditados e o firmware com recepção genérica estiver instalado**. Os envios usam ACK por blocos de 256 bytes e verificação posterior; podem levar bastante tempo. Se precisar continuar após interrupção, **não force sobrescrita**: verifique os arquivos existentes e a resposta do dispositivo antes de reenviar.
+
+Na tela Companion, os botões anterior/próximo percorrem os arquivos `p1.bin` a `p251.bin` realmente encontrados no cartão (além do Mimikyu #778). A busca é feita uma vez ao abrir Companion, sem tentar carregar as 251 animações em RAM. **É uma prévia, não uma seleção permanente de Pokémon de uma conta.**
+
+**Importante:** essa expansão de arquivos **não configura automaticamente o gacha real** para sortear os 251 Pokémon. Regras de raridade, taxa de Shiny, posse, recompensa, persistência e confirmação do usuário permanecem separadas e desativadas, assim como antes.
