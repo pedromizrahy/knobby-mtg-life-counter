@@ -3,6 +3,7 @@
 #include <lvgl.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -17,6 +18,10 @@ const lv_img_dsc_t *pk_tpk2_idle_frame(unsigned index);
 unsigned pk_tpk2_idle_frame_count(void);
 uint16_t pk_tpk2_idle_duration_ms(unsigned index);
 void pk_tpk2_idle_release(void);
+/* One read-only SD scan for installed Kanto/Johto sprites plus Mimikyu.
+ * Does not decode sprites or change the cached Idle animation. Caller
+ * supplies >=252 entries; return count, 0 if SD unavailable. */
+size_t pk_tpk2_list_installed_gen12(uint16_t *out,size_t capacity);
 #ifdef __cplusplus
 }
 #endif
