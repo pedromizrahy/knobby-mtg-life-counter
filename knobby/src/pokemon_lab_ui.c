@@ -224,14 +224,14 @@ static void on_rates(lv_event_t *event)
         unsigned observed=total?
             (unsigned)(snapshot.tiers[ball][i]*10000ULL/total):0U;
         int n=snprintf(msg+used,sizeof(msg)-used,
-            "%s  %u.%02u%%  |  %u.%02u%%\\n",
+            "%s  %u.%02u%%  |  %u.%02u%%\n",
             tiers[i],weight/100U,weight%100U,
             observed/100U,observed%100U);
         if(n<0 || (size_t)n>=sizeof(msg)-used)return;
         used+=(size_t)n;
     }
     int n=snprintf(msg+used,sizeof(msg)-used,
-        "\\nTOTAL: %llu draws\\nSHINY: %llu (target 1/4096)",
+        "\nTOTAL: %llu draws\nSHINY: %llu (target 1/4096)",
         (unsigned long long)snapshot.draws[ball],
         (unsigned long long)snapshot.shinies[ball]);
     if(n<0 || (size_t)n>=sizeof(msg)-used)return;
