@@ -25,7 +25,11 @@ static lv_obj_t *level_label = NULL;
 static uint16_t displayed_species = 0;
 /* Only an ephemeral preview choice, NOT ownership or a profile write. */
 static uint16_t preview_species = 778U;
-static const uint16_t kPreviewCandidates[]={778U,25U,149U,150U};
+/* Species in candidate_pool.json; selection succeeds only if TPK2 is installed. */
+static const uint16_t kPreviewCandidates[]={
+    778U,1U,4U,7U,16U,25U,133U,6U,94U,149U,144U,145U,146U,150U
+};
+#define PK_PREVIEW_CANDIDATES (sizeof(kPreviewCandidates)/sizeof(kPreviewCandidates[0]))
 static lv_obj_t *header_plate = NULL;
 static lv_obj_t *info_panel = NULL;
 static lv_obj_t *stats_panel = NULL;
@@ -134,10 +138,11 @@ static void browse_preview(int step)
 {
     if(lv_scr_act()!=screen_pokemon_companion || companion_page!=0)return;
     unsigned index=0;
-    for(unsigned i=0;i<4;i++)
+    for(unsigned i=0;i<PK_PREVIEW_CANDIDATES;i++)
         if(kPreviewCandidates[i]==preview_species)index=i;
-    for(unsigned n=0;n<4;n++){
-        index=(index+(step>0?1U:3U))%4U;
+    for(unsigned n=0;n<PK_PREVIEW_CANDIDATES;n++){
+        index=(index+(step>0?1U:(PK_PREVIEW_CANDIDATES-1U)))%
+              PK_PREVIEW_CANDIDATES;
         const uint16_t candidate=kPreviewCandidates[index];
         if(pokemon_ui_show_species(candidate)){
             preview_species=candidate;
