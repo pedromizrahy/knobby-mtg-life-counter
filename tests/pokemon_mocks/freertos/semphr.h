@@ -9,6 +9,7 @@ static inline SemaphoreHandle_t xSemaphoreCreateMutex(void) {
     static int fake_mutex;
     return &fake_mutex;
 }
+static inline void vSemaphoreDelete(SemaphoreHandle_t mutex) {(void)mutex;}
 static inline int xSemaphoreTake(SemaphoreHandle_t mutex, unsigned ticks) {
     (void)ticks;return mutex?pdTRUE:pdFALSE;
 }
