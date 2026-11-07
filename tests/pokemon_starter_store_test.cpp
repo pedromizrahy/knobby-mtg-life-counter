@@ -45,5 +45,26 @@ int main(){
     SPIFFS.mount_ok=false;
     assert(pk_starter_store_inspect(27,&found)==PK_STARTER_STORE_ERROR);
     assert(!pk_starter_store_create(27,&a));
+    /* Owner test account: explicitly reset only unkept starter draws.
+     * Other players and confirmed KEEP decisions are preserved. */
+    SPIFFS.mount_ok=true;
+    auto mine=one(162);
+    assert(pk_starter_store_create(184199U,&mine));
+    auto other=one(25);
+    assert(pk_starter_store_create(1234U,&other));
+    assert(!pk_starter_store_reset_test(1234U));
+    assert(pk_starter_store_reset_test(184199U));
+    assert(pk_starter_store_inspect(184199U,&found)==PK_STARTER_STORE_MISSING);
+    assert(pk_starter_store_inspect(1234U,&found)==PK_STARTER_STORE_VALID);
+    assert(found.current.species==25);
+    assert(pk_starter_store_create(184199U,&mine));
+    assert(pk_starter_store_reset_test(184199U));
+    auto committed=mine;
+    committed.kept=true;
+    assert(pk_starter_store_create(184199U,&mine));
+    assert(pk_starter_store_update(184199U,&committed));
+    assert(!pk_starter_store_reset_test(184199U));
+    assert(pk_starter_store_inspect(184199U,&found)==PK_STARTER_STORE_VALID);
+    assert(found.kept);
     std::puts("Starter durable fail-closed slot tests passed");
 }

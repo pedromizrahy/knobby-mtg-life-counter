@@ -13,6 +13,7 @@
 #include "wifi_manager.h"
 #include "playgroup_pending.h"
 #include "pokemon_profile_store.h"
+#include "pokemon_starter_store.h"
 #include "pokemon_account_onboarding.h"
 #include "pokemon_player_identity.h"
 #include "pokemon_spiffs_selftest.h"
@@ -2898,6 +2899,7 @@ static void print_help(void)
     Serial.println("  PG WIFI <ssid>|<password>");
     Serial.println("  PG KEY <api-key>");
     Serial.println("  PK ME                   (read-only authenticated profile status)");
+    Serial.println("  PK TEST STARTER RESET 184199 CONFIRM (unkept test rolls only)");
     Serial.println("  PK STARTER ME           (paused; future random starter flow)");
     Serial.println("  PG STATUS");
     Serial.println("  PG PENDING");
@@ -3267,6 +3269,38 @@ static void handle_command(char *line)
         bool ok = pk_store_selftest();
         Serial.println(ok ? "[Pokemon] SELFTEST PASS" :
                             "[Pokemon] SELFTEST FAIL");
+        return;
+    }
+
+    /* Temporary owner-only reset. The literal command's explicit ID and
+     * confirmation, fresh authentication, and empty profile checks prevent
+     * resetting any real player or a finalized Pokémon. */
+    if(strcmp(line,"PK TEST STARTER RESET 184199 CONFIRM")==0){
+        if(playgroup_pending_current_active()){
+            Serial.println("[Pokemon TEST] BLOCKED: active game.");
+            return;
+        }
+        uint32_t verified=0;
+        if(!playgroup_authenticated_user_id(&verified) || verified!=184199U){
+            Serial.println("[Pokemon TEST] BLOCKED: authenticated account is not 184199.");
+            return;
+        }
+        if(pk_file_inspect(verified,NULL)!=PK_STORE_MISSING ||
+           pk_store_inspect(verified,NULL)!=PK_STORE_MISSING){
+            Serial.println("[Pokemon TEST] BLOCKED: a Pokemon profile exists or storage is unreadable.");
+            return;
+        }
+        pk_starter_state_t current={};
+        if(pk_starter_store_inspect(verified,&current)!=PK_STARTER_STORE_VALID ||
+           current.kept){
+            Serial.println("[Pokemon TEST] BLOCKED: no valid unkept starter rolls.");
+            return;
+        }
+        Serial.printf("[Pokemon TEST] Clearing %u unkept starter reveal(s) for account %lu.\\n",
+                      (unsigned)current.reveal_count,(unsigned long)verified);
+        bool ok=pk_starter_store_reset_test(verified);
+        Serial.println(ok?"[Pokemon TEST] RESET PASS: next card opening starts new roll with 5 rerolls.":
+                          "[Pokemon TEST] RESET FAILED: inspect starter records; do not format.");
         return;
     }
 

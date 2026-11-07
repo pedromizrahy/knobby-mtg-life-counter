@@ -20,6 +20,9 @@ bool pk_starter_store_create(uint32_t user_id,
                              const pk_starter_state_t *state);
 bool pk_starter_store_update(uint32_t user_id,
                              const pk_starter_state_t *state);
+/* Temporary test command backing; ONLY 184199, non-KEEP record.
+ * Caller must authenticate /me and inspect both profile stores first. */
+bool pk_starter_store_reset_test(uint32_t user_id);
 #ifdef __cplusplus
 }
 #endif

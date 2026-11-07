@@ -162,6 +162,20 @@ class PlaygroupFastPathTests(unittest.TestCase):
             self.assertLess(hypot(x-180,333-180),180)
         self.assertLess(85+28,118)
 
+    def test_owner_only_starter_test_reset(self):
+        api = API
+        store = (ROOT / "knobby/src/pokemon_starter_store.cpp").read_text(encoding="utf-8")
+        self.assertIn('PK TEST STARTER RESET 184199 CONFIRM',api)
+        self.assertIn('playgroup_authenticated_user_id(&verified)',api)
+        self.assertIn('verified!=184199U',api)
+        self.assertIn('pk_file_inspect(verified,NULL)!=PK_STORE_MISSING',api)
+        self.assertIn('pk_store_inspect(verified,NULL)!=PK_STORE_MISSING',api)
+        self.assertIn('current.kept',api)
+        self.assertIn('pk_starter_store_reset_test(verified)',api)
+        self.assertIn('if(id!=184199U',store)
+        self.assertIn('record.state.kept',store)
+        self.assertNotIn('SPIFFS.format(',store)
+
     def test_account_startup_has_no_implicit_starter_creation(self):
         route = between(API, "static void handle_command(char *line)\n{",
                         "\nvoid playgroup_process_serial(void)")

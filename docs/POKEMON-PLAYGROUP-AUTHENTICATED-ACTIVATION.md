@@ -94,3 +94,15 @@ unmerged. Arduino CI does not validate the physical UI.
   and its saved 5 rerolls must persist unchanged on upgrade.
 - TODO: evolution chains and gacha base-form-only restriction; preserve
   any pre-existing roll, including evolved species from the old catalog.
+
+## Temporary developer account reroll reset
+- The literal serial command `PK TEST STARTER RESET 184199 CONFIRM`
+  re-enables experimentation with a full 5/5 rerolls, **only** for global
+  Playgroup ID 184199 after a fresh authenticated `GET /me`.
+- Refuses during active games, if a real SPIFFS/NVS Pokémon profile exists,
+  or if the starter has already been KEEP-confirmed.
+- The storage function is hardcoded to that ID, removes only its two
+  `/psr_0002CF87a.bin` / `/psr_0002CF87b.bin` starter records, and never
+  formats, erases or resets other files or other users. Note: paths are
+  created by the formatter from the numeric ID; don't run manual deletion.
+- No starter/profile was reset merely by deploying this firmware.

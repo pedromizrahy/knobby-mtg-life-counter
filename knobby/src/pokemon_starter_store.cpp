@@ -109,3 +109,21 @@ extern "C" bool pk_starter_store_update(
     next.checksum=hash(&next);
     return write(id,1U-slot,&next);
 }
+
+/* Temporary diagnostics only: reset uncommitted starter rolls of the
+ * developer's own Playgroup account 184199. Never touch other identities,
+ * profiles, credentials, SD, or the SPIFFS filesystem itself.
+ * The calling serial route must authenticate a fresh matching /me and
+ * verify that both profile stores are truly missing. */
+extern "C" bool pk_starter_store_reset_test(uint32_t id)
+{
+    if(id!=184199U || !SPIFFS.begin(false))return false;
+    Record record={};unsigned slot=0;
+    if(inspect(id,&record,&slot)!=PK_STARTER_STORE_VALID ||
+       record.state.kept)return false;
+    char a[24],b[24];path(id,0,a);path(id,1,b);
+    if(SPIFFS.exists(a) && !SPIFFS.remove(a))return false;
+    if(SPIFFS.exists(b) && !SPIFFS.remove(b))return false;
+    Record check={};unsigned check_slot=0;
+    return inspect(id,&check,&check_slot)==PK_STARTER_STORE_MISSING;
+}
