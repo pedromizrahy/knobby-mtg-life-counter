@@ -16,12 +16,13 @@ from audit_catalog import validate_tpk2
 NAME = re.compile(r"^p([1-9][0-9]{0,3})\.bin$")
 
 
-def plan(catalog_path, mons_dir, include_mimikyu=False):
+def plan(catalog_path, mons_dir, include_mimikyu=False, species=None):
     manifest = json.loads(catalog_path.read_text(encoding="utf-8"))
     if manifest.get("schema") != 1 or not isinstance(manifest.get("species"), list):
         raise ValueError("Invalid catalog schema")
     files = []
     ids = set()
+    selected = set(species) if species else None
     for row in manifest["species"]:
         number = row["id"]
         asset = row["asset"]
@@ -31,6 +32,8 @@ def plan(catalog_path, mons_dir, include_mimikyu=False):
         match = NAME.fullmatch(asset)
         if not match or int(match.group(1)) != number:
             raise ValueError("Unexpected sprite filename")
+        if selected is not None and number not in selected:
+            continue
         if number == 778 and not include_mimikyu:
             continue
         path = mons_dir / asset
@@ -39,6 +42,8 @@ def plan(catalog_path, mons_dir, include_mimikyu=False):
         validate_tpk2(path)
         data = path.read_bytes()
         files.append((number, data, zlib.crc32(data)))
+    if selected is not None and not selected.issubset(ids):
+        raise ValueError("Selected species not in catalog")
     return files
 
 
@@ -97,12 +102,14 @@ def main():
                     default=Path(__file__).with_name("candidate_pool.json"))
     ap.add_argument("--mons-dir", type=Path, required=True)
     ap.add_argument("--port", default="COM4")
+    ap.add_argument("--species", type=int, nargs="*",
+                    help="Upload only these Dex IDs (e.g. 25 149 150)")
     ap.add_argument("--execute", action="store_true",
                     help="Explicitly transfer assets; default is a dry run")
     ap.add_argument("--include-mimikyu", action="store_true",
                     help="Include #778 (existing asset is still never overwritten)")
     args = ap.parse_args()
-    batch = plan(args.catalog, args.mons_dir, args.include_mimikyu)
+    batch = plan(args.catalog, args.mons_dir, args.include_mimikyu, args.species)
     for species, data, crc in batch:
         print(f"#{species:04d} {len(data):>8} bytes CRC32={crc:08x}")
     print(f"{len(batch)} valid candidate sprites; mode={'TRANSFER' if args.execute else 'DRY RUN'}")
