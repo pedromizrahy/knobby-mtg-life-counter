@@ -266,6 +266,9 @@ static void session_tick(lv_timer_t *timer)
     if(now!=shown_session){
         shown_session=now;
         stop_opening();
+        /* Serial START/RESET must also dismiss visible stale probabilities. */
+        if(rates_panel)lv_obj_add_flag(rates_panel,LV_OBJ_FLAG_HIDDEN);
+        captured.has_last=false;
         lv_label_set_text(status_label,"LAB SESSION RESET VIA USB");
     }
 }
