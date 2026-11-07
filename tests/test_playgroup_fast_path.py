@@ -104,11 +104,11 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn("lv_obj_set_pos(back_button,124,306);",preview)
         self.assertIn('back_button=make_button("BACK",93,112,exit_view);',preview)
         self.assertIn('next_button=make_button("NEXT >",215,85,next_page);',preview)
-        self.assertIn("lv_obj_set_size(back_button,80,30);",preview)
-        self.assertIn("lv_obj_set_pos(back_button,90,306);",preview)
-        self.assertIn("lv_obj_set_pos(next_button,190,306);",preview)
+        self.assertIn("lv_obj_set_size(back_button,78,30);",preview)
+        self.assertIn("lv_obj_set_pos(back_button,91,306);",preview)
+        self.assertIn("lv_obj_set_pos(next_button,191,306);",preview)
         from math import hypot
-        for x in (90,170,190,270):
+        for x in (91,169,191,269):
             self.assertLess(hypot(x-180,336-180),180)
 
         self.assertIn("view.level",preview)
