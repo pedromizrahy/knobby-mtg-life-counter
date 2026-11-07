@@ -1,4 +1,5 @@
 #include "pokemon_lab_ball_art.h"
+#include "pokemon_progress.h"
 #include <string.h>
 /* Four original 32px pixel balls. Their color schemes are lab previews,
  * not official sprites or graphical promises for the final game. */
