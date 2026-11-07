@@ -16,8 +16,15 @@ from audit_catalog import validate_tpk2
 NAME = re.compile(r"^p([1-9][0-9]{0,3})\.bin$")
 
 
-def plan(catalog_path, mons_dir, include_mimikyu=False, species=None):
-    manifest = json.loads(catalog_path.read_text(encoding="utf-8"))
+def plan(catalog_path, mons_dir, include_mimikyu=False, species=None, gen1_2=False):
+    # A generation range is a local asset inventory, NOT a gacha catalog.
+    if gen1_2:
+        manifest = {"schema": 1, "species": [
+            {"id": number, "asset": f"p{number}.bin"}
+            for number in range(1, 252)
+        ]}
+    else:
+        manifest = json.loads(catalog_path.read_text(encoding="utf-8"))
     if manifest.get("schema") != 1 or not isinstance(manifest.get("species"), list):
         raise ValueError("Invalid catalog schema")
     files = []
@@ -104,14 +111,19 @@ def main():
     ap.add_argument("--port", default="COM4")
     ap.add_argument("--species", type=int, nargs="*",
                     help="Upload only these Dex IDs (e.g. 25 149 150)")
+    ap.add_argument("--gen1-2", action="store_true",
+                    help="Audit/transfer TPK2 for all 251 Kanto+Johto entries")
     ap.add_argument("--execute", action="store_true",
                     help="Explicitly transfer assets; default is a dry run")
     ap.add_argument("--include-mimikyu", action="store_true",
                     help="Include #778 (existing asset is still never overwritten)")
     args = ap.parse_args()
-    batch = plan(args.catalog, args.mons_dir, args.include_mimikyu, args.species)
+    batch = plan(args.catalog, args.mons_dir, args.include_mimikyu,
+                 args.species, args.gen1_2)
     for species, data, crc in batch:
         print(f"#{species:04d} {len(data):>8} bytes CRC32={crc:08x}")
+    total_bytes = sum(len(data) for _, data, _ in batch)
+    print(f"Total: {total_bytes:,} bytes ({total_bytes/1048576:.2f} MiB)")
     print(f"{len(batch)} valid candidate sprites; mode={'TRANSFER' if args.execute else 'DRY RUN'}")
     if not args.execute:
         print("No writes performed. New generic firmware must be installed before --execute.")
