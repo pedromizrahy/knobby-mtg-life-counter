@@ -6,6 +6,8 @@ on:
       - 'knobby/src/pokemon_evolution.*'
       - 'knobby/src/pokemon_evolution_items.*'
       - 'knobby/src/pokemon_item_store.*'
+      - 'knobby/src/pokemon_item_enrollment.*'
+      - 'tests/pokemon_item_enrollment_test.cpp'
       - 'tests/pokemon_item_store_test.cpp'
       - 'tests/pokemon_evolution_items_test.c'
       - 'tests/pokemon_evolution_test.c'
@@ -156,6 +158,15 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_evolution_items.c -o /tmp/item_rules.o
           c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_item_store.cpp tests/pokemon_item_store_test.cpp /tmp/item_identity.o /tmp/item_rules.o -o /tmp/pokemon_item_store_test
           /tmp/pokemon_item_store_test
+      - name: Test guarded stable Pokemon identity enrollment
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_player_identity.c -o /tmp/enroll_identity.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_progress.c -o /tmp/enroll_progress.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_gacha.c -o /tmp/enroll_gacha.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_starter_roll.c -o /tmp/enroll_roll.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_evolution_items.c -o /tmp/enroll_items.o
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_item_enrollment.cpp knobby/src/pokemon_item_store.cpp knobby/src/pokemon_starter_store.cpp knobby/src/pokemon_file_store.cpp knobby/src/pokemon_profile_store.cpp tests/pokemon_item_enrollment_test.cpp /tmp/enroll_identity.o /tmp/enroll_progress.o /tmp/enroll_gacha.o /tmp/enroll_roll.o /tmp/enroll_items.o -o /tmp/pokemon_item_enrollment_test
+          /tmp/pokemon_item_enrollment_test
       - name: Test strict Playgroup user ID boundaries
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_player_identity.c tests/pokemon_player_identity_test.c -o /tmp/pokemon_player_identity_test

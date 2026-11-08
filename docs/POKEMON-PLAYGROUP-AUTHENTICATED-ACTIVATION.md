@@ -160,3 +160,20 @@ unmerged. Arduino CI does not validate the physical UI.
 - NEXT: guarded one-time enrollment for a confirmed KEEP starter; account
   proof from fresh /me; link the saved instance ID with the Pokémon
   independently of mutable species/level; no reward claims until verified.
+
+## Explicit confirmed-starter identity enrollment (still no live UI hook)
+- `pk_item_enroll_confirmed_starter` binds a securely generated nonzero
+  64-bit instance ID to exactly one confirmed KEEP starter. Enrollment
+  checks the saved KEEP decision, canonical SPIFFS profile, species and
+  shiny agreement, and absence of a legacy NVS record.
+- Repeated calls return the already-registered identity rather than
+  granting new milestones or rerolling identity. Existing unreadable or
+  corrupt item sidecars block enrollment.
+- Enrollment copies earned level milestones but never grants item credit
+  automatically. No mutation occurs to version-1 Pokemon profiles.
+- The caller still MUST fresh-authenticate /me and pass only its ID;
+  function is not yet wired to touchscreen or a serial command. The
+  secure random 64-bit ID must be supplied by the future controller.
+- TODO: bind IDs to Pokémon over reorder and future captures (not merely
+  slot 0), integrate verified level progression and crash-safe choice
+  UI, then evolution confirmation and item spending in one transaction.
