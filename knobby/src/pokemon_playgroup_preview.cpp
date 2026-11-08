@@ -1,6 +1,7 @@
 #include "pokemon_playgroup_preview.h"
 #include "pokemon_playgroup_roster.h"
 #include "pokemon_starter_ui.h"
+#include "pokemon_evolution_ui.h"
 #include "pokemon_player_identity.h"
 #include "pokemon_profile_store.h"
 #include "pokemon_file_store.h"
@@ -297,7 +298,7 @@ void build(){
         c.species=make_label(c.root,"-",78,0xE4EFE9);
         c.status=make_label(c.root,"NOT LINKED",94,0x7DC3BB);
     }
-    make_label(screen,"TAP YOUR UNLINKED CARD",53,0x8EABB3);
+    make_label(screen,"TAP YOUR CARD",53,0x8EABB3);
     back_button=make_button("BACK",93,112,exit_view);
     next_button=make_button("NEXT >",215,85,next_page);
 }
@@ -305,15 +306,17 @@ void start_card(lv_event_t *event){
     if(lv_scr_act()!=screen)return;
     unsigned slot=(unsigned)(uintptr_t)lv_event_get_user_data(event);
     size_t index=page*kPage+slot;
-    if(slot>=kPage || index>=participant_count ||
-       participants[index].has_main)return;
+    if(slot>=kPage || index>=participant_count)return;
     uint64_t id=original_seats[index].user_id;
     if(!pk_player_id_valid(id))return;
     /* Refuse ambiguous duplicate roster IDs, even if that member has no
        profile. Authentication is subsequently checked by fresh GET /me. */
     for(size_t i=0;i<participant_count;i++)
         if(i!=index && original_seats[i].user_id==id)return;
-    (void)pk_starter_ui_open((uint32_t)id);
+    if(participants[index].has_main)
+        (void)pk_evolution_ui_open((uint32_t)id);
+    else
+        (void)pk_starter_ui_open((uint32_t)id);
 }
 bool load_profile(void *,uint32_t user_id,pk_profile_t *out){
     if(!out)return false;

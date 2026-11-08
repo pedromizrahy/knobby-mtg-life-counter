@@ -192,3 +192,22 @@ unmerged. Arduino CI does not validate the physical UI.
   fresh authenticated `/me` at the future controller entry point.
 - CI simulates authenticated-v1 state, crossing milestones,
   duplicate claims, and persisted readback.
+
+## Read-only physical EVOLVE screen (preview only)
+- From Playgroup -> POKEMON -> linked own player card, a fresh /me
+  numeric identity check gates the EVOLVE preview. Unlinked cards
+  still open the unchanged starter Pokeball/reroll flow.
+- Circular 360x360 screen shows active canonical Pokémon,
+  its current level/shiny, first installed TPK2 Idle sprite, paginated
+  evolution targets and their visible requirements; NEXT/BACK never
+  grants or removes Pokémon or inventory.
+- Requirement labels: canonical evolution level; known Kanto/Johto
+  stones and held-item/link distinctions; friendship and special
+  conditions are explicitly pending. Presenting an option does NOT
+  imply it is currently executable.
+- Inventory is read-only from the separate sidecar; a missing sidecar
+  displays zero items. The UI does not initialize or migrate accounts.
+- The screen deliberately has NO evolve/confirm or item-spend action.
+  A future transaction must commit profile species + item consumption
+  with crash-safe recovery and preserve immutable instance ID before
+  granting an evolution.

@@ -8,6 +8,7 @@ on:
       - 'knobby/src/pokemon_item_store.*'
       - 'knobby/src/pokemon_item_enrollment.*'
       - 'knobby/src/pokemon_item_reward_service.*'
+      - 'knobby/src/pokemon_evolution_ui.*'
       - 'tests/pokemon_item_reward_service_test.cpp'
       - 'tests/pokemon_item_enrollment_test.cpp'
       - 'tests/pokemon_item_store_test.cpp'

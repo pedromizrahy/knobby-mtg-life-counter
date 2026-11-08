@@ -116,6 +116,28 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn('"LV %u MAIN"',preview)
         self.assertNotIn('pages>1U?"NEXT  >":"BACK"',preview)
 
+    def test_evolution_preview_is_authenticated_and_read_only(self):
+        preview = (ROOT / "knobby/src/pokemon_playgroup_preview.cpp").read_text(encoding="utf-8")
+        ui = (ROOT / "knobby/src/pokemon_evolution_ui.cpp").read_text(encoding="utf-8")
+        self.assertIn('pk_evolution_ui_open((uint32_t)id)',preview)
+        self.assertIn('if(participants[index].has_main)',preview)
+        self.assertIn('pk_starter_ui_open((uint32_t)id)',preview)
+        self.assertIn('original_seats[index].user_id',preview)
+        self.assertIn('playgroup_authenticated_user_id(&authenticated)',ui)
+        self.assertIn('authenticated!=expected_user_id',ui)
+        self.assertIn('pk_file_inspect(authenticated,&profile)',ui)
+        self.assertIn('pk_evo_options(mon.species,routes,12)',ui)
+        self.assertIn('pk_item_store_inspect(authenticated,&inventory,NULL)',ui)
+        self.assertIn('pk_pg_preview_resume()',ui)
+        self.assertIn('READ-ONLY | NO ITEMS SPENT',ui)
+        self.assertNotIn('pk_file_save(',ui)
+        self.assertNotIn('pk_item_store_update(',ui)
+        self.assertNotIn('pk_item_reward_claim_',ui)
+        self.assertNotIn('pk_evo_prepare_level(',ui)
+        from math import hypot
+        for x in (100,176,184,260):
+            self.assertLess(hypot(x-180,335-180),180)
+
     def test_starter_ui_authenticates_seat_and_persists_before_reveal(self):
         ui = (ROOT / "knobby/src/pokemon_starter_ui.cpp").read_text(encoding="utf-8")
         preview = (ROOT / "knobby/src/pokemon_playgroup_preview.cpp").read_text(encoding="utf-8")
