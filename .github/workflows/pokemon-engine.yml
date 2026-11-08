@@ -3,6 +3,8 @@ on:
   push:
     paths:
       - 'knobby/src/pokemon_progress.*'
+      - 'knobby/src/pokemon_evolution.*'
+      - 'tests/pokemon_evolution_test.c'
       - 'knobby/src/pokemon_pc.*'
       - 'knobby/src/pokemon_playgroup_*'
       - 'tests/pokemon_playgroup_roster_test.c'
@@ -136,6 +138,10 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_player_identity.c -o /tmp/svc_id.o
           c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_starter_store.cpp knobby/src/pokemon_starter_service.cpp knobby/src/pokemon_file_store.cpp knobby/src/pokemon_profile_store.cpp tests/pokemon_starter_service_test.cpp /tmp/svc_progress.o /tmp/svc_gacha.o /tmp/svc_roll.o /tmp/svc_id.o -o /tmp/pokemon_starter_service_test
           /tmp/pokemon_starter_service_test
+      - name: Test base-only gacha and evolution conditions
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_evolution.c tests/pokemon_evolution_test.c -o /tmp/pokemon_evolution_test
+          /tmp/pokemon_evolution_test
       - name: Test strict Playgroup user ID boundaries
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_player_identity.c tests/pokemon_player_identity_test.c -o /tmp/pokemon_player_identity_test

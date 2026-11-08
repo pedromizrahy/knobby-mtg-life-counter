@@ -106,3 +106,20 @@ unmerged. Arduino CI does not validate the physical UI.
   formats, erases or resets other files or other users. Note: paths are
   created by the formatter from the numeric ID; don't run manual deletion.
 - No starter/profile was reset merely by deploying this firmware.
+
+## Evolution foundations and first-stage-only NEW starter draws
+- Static offline data derived from PokeAPI public species/evolution CSV
+  (generation I/II subset, species numbers 1..251).
+- New starter draws are restricted to the 122 true base species with
+  no known pre-evolution anywhere in National Dex; SD sprites must exist.
+  A saved earlier Furret or another already-revealed evolved species
+  remains valid for KEEP, even after this update.
+- Query evolution branches by source species: level-up, stone, trade,
+  friendship or special. The 83 plain level-only steps use the official
+  minimum levels. Condition-specific rules do not become free level-ups.
+- Pure `pk_evo_prepare_level` creates a modified *copy* and preserves level,
+  XP, shiny, team and Dex. No production profile mutations or automatic
+  evolution have been connected yet.
+- NEXT: install offline items dictionary and per-Pokemon milestone inventory
+  with one-time, crash-safe claims; prompt EVOLVE on touchscreen, verify
+  target SD sprite, and commit confirmed profile as one durable transaction.

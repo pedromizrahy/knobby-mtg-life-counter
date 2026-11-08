@@ -1,6 +1,7 @@
 #include "pokemon_starter_ui.h"
 #include "pokemon_player_identity.h"
 #include "pokemon_starter_service.h"
+#include "pokemon_evolution.h"
 #include "pokemon_lab_dex.h"
 #include "pokemon_lab_ball_art.h"
 #include "pokemon_tpk2_renderer.h"
@@ -286,6 +287,10 @@ bool prepare_catalog(){
     size_t n=pk_tpk2_list_installed_gen12(ids,252);
     installed_count=0;
     for(size_t i=0;i<n;i++){
+        /* Base-form-only applies to NEW draws, never retroactively to a
+         * revealed Pokemon restored from SPIFFS (e.g. prior Furret #162).
+         * Original levels and rarity still use the same Pokeball weights. */
+        if(!pk_evo_is_base(ids[i]))continue;
         uint8_t rarity=pk_lab_dex_tier(ids[i]);
         if(rarity>=PK_TIER_COUNT)continue;
         if(installed_count>=PK_LAB_DEX_COUNT)return false;
