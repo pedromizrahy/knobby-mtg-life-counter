@@ -123,3 +123,22 @@ unmerged. Arduino CI does not validate the physical UI.
 - NEXT: install offline items dictionary and per-Pokemon milestone inventory
   with one-time, crash-safe claims; prompt EVOLVE on touchscreen, verify
   target SD sprite, and commit confirmed profile as one durable transaction.
+
+## Evolution inventory prototype (not yet wired to real profiles)
+- Pure `pokemon_evolution_items` defines once-per-Pokémon claims at
+  levels 30 (one selected stone), 50 (one selected special item),
+  and 75 (one item of either category).
+- Supported prototype items: Fire/Water/Thunder/Leaf/Moon/Sun Stones,
+  Link Cable, Metal Coat, King's Rock, Dragon Scale and Up Grade.
+- Items are stored in a whole-ledger inventory; an immutable **instance ID**
+  identifies a Pokémon across team reordering and evolution. A single
+  level milestone marks one earned claim, and claiming it credits inventory
+  in the same state transformation. Spending decrements a selected item.
+- The current version-1 profile does **not** have an immutable Pokémon
+  instance ID. DO NOT bind claims to species or team index, and DO NOT
+  change serialized profile structs in place (would invalidate existing
+  SPIFFS and NVS checksums/record sizes).
+- This module has isolated unit tests; no auto-credit from battle/XP, no
+  persistent inventory and no touchscreen item spending are active yet.
+  Next: safely migrate stable IDs, design an atomic versioned ledger store,
+  and connect verified saved battles to earned milestones.

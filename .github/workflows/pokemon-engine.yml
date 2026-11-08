@@ -4,6 +4,8 @@ on:
     paths:
       - 'knobby/src/pokemon_progress.*'
       - 'knobby/src/pokemon_evolution.*'
+      - 'knobby/src/pokemon_evolution_items.*'
+      - 'tests/pokemon_evolution_items_test.c'
       - 'tests/pokemon_evolution_test.c'
       - 'knobby/src/pokemon_pc.*'
       - 'knobby/src/pokemon_playgroup_*'
@@ -142,6 +144,10 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_evolution.c tests/pokemon_evolution_test.c -o /tmp/pokemon_evolution_test
           /tmp/pokemon_evolution_test
+      - name: Test per-Pokemon one-time evolutionary item milestones
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_evolution_items.c tests/pokemon_evolution_items_test.c -o /tmp/pokemon_evolution_items_test
+          /tmp/pokemon_evolution_items_test
       - name: Test strict Playgroup user ID boundaries
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_player_identity.c tests/pokemon_player_identity_test.c -o /tmp/pokemon_player_identity_test
