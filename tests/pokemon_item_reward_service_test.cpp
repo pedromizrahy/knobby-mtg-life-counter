@@ -54,10 +54,10 @@ int main(){
        re-credit from the older generation. */
     SPIFFS.fail_write=true;
     assert(pk_item_reward_sync_starter(id,&out)==PK_ITEM_REWARD_UNCHANGED);
+    SPIFFS.fail_write=false;
     p.team[0].level=80;
     assert(pk_file_save(id,&p));
     /* All milestones already earned, no new write. */
     assert(pk_item_reward_sync_starter(id,&out)==PK_ITEM_REWARD_UNCHANGED);
-    SPIFFS.fail_write=false;
     puts("Durable starter milestone sync and once-only choice tests PASS");
 }
