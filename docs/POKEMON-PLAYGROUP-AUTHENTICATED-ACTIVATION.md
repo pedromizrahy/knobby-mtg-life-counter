@@ -177,3 +177,18 @@ unmerged. Arduino CI does not validate the physical UI.
 - TODO: bind IDs to Pokémon over reorder and future captures (not merely
   slot 0), integrate verified level progression and crash-safe choice
   UI, then evolution confirmation and item spending in one transaction.
+
+## Starter evolution milestones coordinator (no activation yet)
+- `pk_item_reward_sync_starter` reads only a verified, confirmed
+  KEEP starter and its canonical saved level, then persists earned bits
+  at 30/50/75 without crediting an item automatically.
+- `pk_item_reward_claim_starter` accepts a selected valid item, verifies
+  the milestone against the canonical level, and atomically writes
+  both the claim bit and inventory increase in one sidecar revision.
+- This deliberate starter-only gate refuses extra team members,
+  species/shiny mismatch, missing item sidecar and legacy NVS;
+  evolved Pokémon and new captures need a stable mapping first.
+- Neither routine is called by gameplay, serial or UI; they require
+  fresh authenticated `/me` at the future controller entry point.
+- CI simulates authenticated-v1 state, crossing milestones,
+  duplicate claims, and persisted readback.
