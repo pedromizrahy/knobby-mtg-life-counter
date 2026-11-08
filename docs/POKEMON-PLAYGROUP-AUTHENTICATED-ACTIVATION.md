@@ -142,3 +142,21 @@ unmerged. Arduino CI does not validate the physical UI.
   persistent inventory and no touchscreen item spending are active yet.
   Next: safely migrate stable IDs, design an atomic versioned ledger store,
   and connect verified saved battles to earned milestones.
+
+## Persistent item sidecar (new isolated storage module)
+- A versioned record `PKI1` is stored in two per-Playgroup-account
+  SPIFFS files (`pki_<account>a/b.bin`). FNV checksum plus generation
+  enable safe verification after writes and compare-and-swap updates.
+- A damaged or partial slot blocks all changes; the firmware MUST NOT
+  fall back to an older inventory or automatically wipe the sidecar.
+  Existing account profiles (SPIFFS `pkf_*` and NVS) are unchanged.
+- A previously registered immutable Pokémon ID cannot be replaced;
+  past earned/claimed flags cannot be cleared in a normal update.
+- This storage API intentionally has **no automatic initialization**:
+  no reliable permanent Pokémon ID exists in version-1 profiles yet.
+  Only an explicitly authenticated, safely bound starter instance may
+  enroll. The immutable instance ID must survive party reorder, XP gains,
+  and evolution.
+- NEXT: guarded one-time enrollment for a confirmed KEEP starter; account
+  proof from fresh /me; link the saved instance ID with the Pokémon
+  independently of mutable species/level; no reward claims until verified.

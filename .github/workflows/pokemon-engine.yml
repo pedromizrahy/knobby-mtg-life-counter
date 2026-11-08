@@ -5,6 +5,8 @@ on:
       - 'knobby/src/pokemon_progress.*'
       - 'knobby/src/pokemon_evolution.*'
       - 'knobby/src/pokemon_evolution_items.*'
+      - 'knobby/src/pokemon_item_store.*'
+      - 'tests/pokemon_item_store_test.cpp'
       - 'tests/pokemon_evolution_items_test.c'
       - 'tests/pokemon_evolution_test.c'
       - 'knobby/src/pokemon_pc.*'
@@ -148,6 +150,12 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_evolution_items.c tests/pokemon_evolution_items_test.c -o /tmp/pokemon_evolution_items_test
           /tmp/pokemon_evolution_items_test
+      - name: Test strict persistent evolution inventory
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_player_identity.c -o /tmp/item_identity.o
+          cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_evolution_items.c -o /tmp/item_rules.o
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_item_store.cpp tests/pokemon_item_store_test.cpp /tmp/item_identity.o /tmp/item_rules.o -o /tmp/pokemon_item_store_test
+          /tmp/pokemon_item_store_test
       - name: Test strict Playgroup user ID boundaries
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_player_identity.c tests/pokemon_player_identity_test.c -o /tmp/pokemon_player_identity_test
