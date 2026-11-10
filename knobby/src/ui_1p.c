@@ -19,7 +19,11 @@ static lv_obj_t *label_life_total = NULL;
 static lv_obj_t *label_life_preview_total = NULL;
 static lv_obj_t *turn_container = NULL;
 static lv_obj_t *label_turn = NULL;
+static lv_obj_t *label_turn_meta = NULL;
 static lv_obj_t *turn_live_dot = NULL;
+static lv_obj_t *turn_hold_arc = NULL;
+static lv_obj_t *reminder_overlay_1p = NULL;
+static lv_obj_t *reminder_overlay_label_1p = NULL;
 
 // ---------- 1p counter widgets ----------
 static lv_obj_t *counter_row_1p[COUNTER_TYPE_COUNT];
@@ -38,10 +42,30 @@ static lv_obj_t *label_damage_hint = NULL;
 static lv_obj_t *label_damage_delta = NULL;
 
 // ---------- refresh functions ----------
+static void ui1p_label_set_text_if_changed(lv_obj_t *label, const char *text)
+{
+    if (label == NULL || text == NULL) return;
+    if (strcmp(lv_label_get_text(label), text) != 0)
+        lv_label_set_text(label, text);
+}
+
+static void ui1p_set_text_color_if_changed(lv_obj_t *obj, lv_color_t color)
+{
+    if (obj == NULL) return;
+    if (lv_obj_get_style_text_color(obj, LV_PART_MAIN).full != color.full)
+        lv_obj_set_style_text_color(obj, color, 0);
+}
+
 static void refresh_ring(void)
 {
     int max_life = nvs_get_life_total();
-    lv_color_t c = get_effective_player_color(0, 0, LIFE_VIB_MID);
+    int vib = LIFE_VIB_MID;
+    lv_color_t c;
+
+    if (turn_timer_enabled && active_turn_player >= 0) {
+        vib = (active_turn_player == 0) ? LIFE_VIB_VIV : LIFE_VIB_DIM;
+    }
+    c = get_effective_player_color(0, 0, vib);
 
     lv_arc_set_range(arc_life, 0, max_life);
     lv_arc_set_value(arc_life, get_arc_display_value(player_life[0], max_life));
@@ -56,22 +80,88 @@ static void refresh_ring(void)
 
 void refresh_turn_ui(void)
 {
-    char buf[48];
-    uint32_t total_seconds = get_turn_elapsed_ms() / 1000;
-    uint32_t hours = total_seconds / 3600;
-    uint32_t minutes = (total_seconds % 3600) / 60;
+    lv_obj_t *active_screen = lv_scr_act();
 
-    if (turn_number <= 0) {
-        snprintf(buf, sizeof(buf), "turn  %lu:%02lu",
-                 (unsigned long)hours, (unsigned long)minutes);
-    } else {
-        snprintf(buf, sizeof(buf), "turn %d  %lu:%02lu",
-                 turn_number, (unsigned long)hours, (unsigned long)minutes);
+    /*
+     * The timer ticks once per second even while menus, Playgroup setup or
+     * logs are open. Update only the gameplay HUD that is actually visible;
+     * back_to_main()/screen entry will refresh whichever HUD becomes visible
+     * later. This also avoids updating both 1P and multiplayer every tick.
+     */
+    if (active_screen == screen_multiplayer) {
+        refresh_multiplayer_turn_ui();
+        return;
     }
-    lv_label_set_text(label_turn, buf);
+    if (active_screen != screen_1p)
+        return;
 
-    if (turn_live_dot != NULL) {
-        lv_obj_align_to(turn_live_dot, label_turn, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+    char time_buf[24];
+    char meta_buf[32];
+    uint32_t total_seconds = get_current_turn_elapsed_ms() / 1000;
+    uint32_t minutes = total_seconds / 60;
+    uint32_t seconds = total_seconds % 60;
+    lv_color_t active_color = get_effective_player_color(0, 0, LIFE_VIB_VIV);
+
+    snprintf(time_buf, sizeof(time_buf), "%lu:%02lu",
+             (unsigned long)minutes,
+             (unsigned long)seconds);
+    ui1p_label_set_text_if_changed(label_turn, time_buf);
+
+    if (active_turn_player >= 0 && active_turn_player < MAX_GAME_PLAYERS) {
+        snprintf(meta_buf, sizeof(meta_buf), "%s | R%d | T%d",
+                 player_names[active_turn_player], round_number, turn_in_round);
+    } else {
+        snprintf(meta_buf, sizeof(meta_buf), "P1 | R%d | T%d",
+                 round_number, turn_in_round);
+    }
+    ui1p_label_set_text_if_changed(label_turn_meta, meta_buf);
+
+    if (turn_hold_arc != NULL) {
+        lv_obj_set_style_arc_color(turn_hold_arc, active_color, LV_PART_INDICATOR);
+        if (turn_hold_active) {
+            lv_arc_set_value(turn_hold_arc, turn_hold_progress);
+            lv_obj_clear_flag(turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_arc_set_value(turn_hold_arc, 0);
+            lv_obj_add_flag(turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (turn_reminder_active && nvs_get_turn_visual_alert()) {
+        lv_color_t alert = lv_palette_main(LV_PALETTE_RED);
+        lv_obj_set_style_text_color(label_turn, alert, 0);
+        if (label_turn_meta != NULL)
+            lv_obj_set_style_text_color(label_turn_meta, alert, 0);
+        if (turn_container != NULL) {
+            lv_obj_set_style_border_color(turn_container, alert, 0);
+            lv_obj_set_style_border_width(turn_container, 2, 0);
+            lv_obj_set_style_bg_color(turn_container, lv_color_hex(0x101010), 0);
+            lv_obj_set_style_shadow_color(turn_container, alert, 0);
+            lv_obj_set_style_shadow_width(
+                turn_container,
+                10 + (turn_reminder_pulse_level * 18U) / 100U, 0);
+            lv_obj_set_style_shadow_spread(
+                turn_container,
+                2 + (turn_reminder_pulse_level * 4U) / 100U, 0);
+            lv_obj_set_style_shadow_opa(
+                turn_container,
+                (lv_opa_t)(55U + (turn_reminder_pulse_level * 165U) / 100U), 0);
+        }
+        if (turn_hold_arc != NULL)
+            lv_obj_set_style_arc_color(turn_hold_arc, alert, LV_PART_INDICATOR);
+    } else {
+        lv_obj_set_style_text_color(label_turn, lv_color_white(), 0);
+        if (label_turn_meta != NULL)
+            lv_obj_set_style_text_color(label_turn_meta,
+                                        lv_color_hex(0xA8A8A8), 0);
+        if (turn_container != NULL) {
+            lv_obj_set_style_border_color(turn_container, active_color, 0);
+            lv_obj_set_style_border_width(turn_container, 2, 0);
+            lv_obj_set_style_bg_color(turn_container, lv_color_hex(0x101010), 0);
+            lv_obj_set_style_shadow_width(turn_container, 0, 0);
+            lv_obj_set_style_shadow_spread(turn_container, 0, 0);
+            lv_obj_set_style_shadow_opa(turn_container, LV_OPA_TRANSP, 0);
+        }
     }
 
     if (turn_container != NULL) {
@@ -80,19 +170,35 @@ void refresh_turn_ui(void)
         } else {
             lv_obj_add_flag(turn_container, LV_OBJ_FLAG_HIDDEN);
         }
+        lv_obj_set_style_opa(turn_container,
+                             turn_indicator_visible ? LV_OPA_COVER : LV_OPA_TRANSP,
+                             0);
     }
 
     if (turn_live_dot != NULL) {
         if (turn_timer_enabled) {
             lv_obj_clear_flag(turn_live_dot, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_bg_color(turn_live_dot, active_color, 0);
         } else {
             lv_obj_add_flag(turn_live_dot, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
-    if (turn_container != NULL) {
-        lv_obj_set_style_opa(turn_container, turn_indicator_visible ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    if (reminder_overlay_1p != NULL && reminder_overlay_label_1p != NULL) {
+        if (turn_reminder_overlay_active && nvs_get_turn_visual_alert()) {
+            char alert_buf[24];
+            int reminder_minutes = nvs_get_turn_reminder_minutes();
+
+            snprintf(alert_buf, sizeof(alert_buf), "%d MIN", reminder_minutes);
+            ui1p_label_set_text_if_changed(reminder_overlay_label_1p, alert_buf);
+            lv_obj_set_style_bg_opa(reminder_overlay_1p, LV_OPA_90, 0);
+            lv_obj_clear_flag(reminder_overlay_1p, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(reminder_overlay_1p);
+        } else {
+            lv_obj_add_flag(reminder_overlay_1p, LV_OBJ_FLAG_HIDDEN);
+        }
     }
+
 }
 
 static void refresh_life_digits(void)
@@ -114,14 +220,22 @@ static void refresh_life_digits(void)
         snprintf(buf, sizeof(buf), "%d", display_value);
     }
 
-    lv_label_set_text(label_life_total, buf);
-    lv_obj_set_style_text_color(label_life_total, c, 0);
-    lv_obj_align(label_life_total, LV_ALIGN_CENTER, 0, -6);
+    ui1p_label_set_text_if_changed(label_life_total, buf);
+    ui1p_set_text_color_if_changed(label_life_total, c);
+
+    if (life_preview_active) {
+        /* Give the life delta its own visual lane. The old preview total sat
+           directly under the timer badge on 1P and became unreadable. */
+        lv_obj_align(label_life_total, LV_ALIGN_CENTER, 0, -44);
+    } else {
+        lv_obj_align(label_life_total, LV_ALIGN_CENTER, 0, -6);
+    }
 
     if (life_preview_active && label_life_preview_total != NULL) {
         int new_total = player_life[0] + pending_life_delta;
         snprintf(buf, sizeof(buf), "= %d", new_total);
-        lv_label_set_text(label_life_preview_total, buf);
+        ui1p_label_set_text_if_changed(label_life_preview_total, buf);
+        lv_obj_align(label_life_preview_total, LV_ALIGN_CENTER, 0, 34);
         lv_obj_clear_flag(label_life_preview_total, LV_OBJ_FLAG_HIDDEN);
     } else if (label_life_preview_total != NULL) {
         lv_obj_add_flag(label_life_preview_total, LV_OBJ_FLAG_HIDDEN);
@@ -181,6 +295,17 @@ void refresh_player_ui(void)
         refresh_main_ui();
     else
         refresh_multiplayer_ui();
+}
+
+void refresh_life_preview_ui(void)
+{
+    if (nvs_get_players_to_track() == 1) {
+        /* Life dialing only changes the central value/preview labels.
+           Avoid rebuilding the ring, timer and counters on every detent. */
+        refresh_life_digits();
+    } else {
+        refresh_multiplayer_life_preview();
+    }
 }
 
 /* grid constants for select screen */
@@ -454,17 +579,44 @@ void build_main_screen(void)
     lv_obj_align(label_life_preview_total, LV_ALIGN_CENTER, 0, 80);
     lv_obj_add_flag(label_life_preview_total, LV_OBJ_FLAG_HIDDEN);
 
-    turn_container = make_plain_box(screen_1p, 240, 32);
-    lv_obj_align(turn_container, LV_ALIGN_CENTER, 0, 120);
+    turn_hold_arc = lv_arc_create(screen_1p);
+    lv_obj_set_size(turn_hold_arc, 344, 344);
+    lv_obj_align(turn_hold_arc, LV_ALIGN_CENTER, 0, 0);
+    lv_arc_set_rotation(turn_hold_arc, 270);
+    lv_arc_set_bg_angles(turn_hold_arc, 0, 360);
+    lv_arc_set_range(turn_hold_arc, 0, 1000);
+    lv_arc_set_value(turn_hold_arc, 0);
+    lv_obj_remove_style(turn_hold_arc, NULL, LV_PART_KNOB);
+    lv_obj_set_style_arc_width(turn_hold_arc, 3, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(turn_hold_arc, lv_color_hex(0x333333), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(turn_hold_arc, 6, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(turn_hold_arc, lv_color_white(), LV_PART_INDICATOR);
+    lv_obj_clear_flag(turn_hold_arc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(turn_hold_arc, LV_OBJ_FLAG_HIDDEN);
+
+    turn_container = make_plain_box(screen_1p, 190, 52);
+    lv_obj_align(turn_container, LV_ALIGN_CENTER, 0, 102);
+    lv_obj_set_style_radius(turn_container, 18, 0);
+    lv_obj_set_style_bg_color(turn_container, lv_color_hex(0x101010), 0);
+    lv_obj_set_style_bg_opa(turn_container, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(turn_container, 2, 0);
     lv_obj_add_flag(turn_container, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(turn_container, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_event_cb(turn_container, event_turn_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(turn_container, event_turn_hold, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(turn_container, event_turn_hold, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(turn_container, event_turn_hold, LV_EVENT_PRESS_LOST, NULL);
 
     label_turn = lv_label_create(turn_container);
-    lv_label_set_text(label_turn, "turn  0:00");
-    lv_obj_set_style_text_color(label_turn, lv_color_hex(0xB8B8B8), 0);
+    lv_label_set_text(label_turn, "0:00");
+    lv_obj_set_style_text_color(label_turn, lv_color_white(), 0);
     lv_obj_set_style_text_font(label_turn, &lv_font_montserrat_22, 0);
-    lv_obj_align(label_turn, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(label_turn, LV_ALIGN_TOP_MID, 0, 4);
+
+    label_turn_meta = lv_label_create(turn_container);
+    lv_label_set_text(label_turn_meta, "R1");
+    lv_obj_set_style_text_color(label_turn_meta, lv_color_hex(0xA8A8A8), 0);
+    lv_obj_set_style_text_font(label_turn_meta, &lv_font_montserrat_14, 0);
+    lv_obj_align(label_turn_meta, LV_ALIGN_BOTTOM_MID, 0, -4);
 
     turn_live_dot = lv_obj_create(turn_container);
     lv_obj_remove_style_all(turn_live_dot);
@@ -472,7 +624,7 @@ void build_main_screen(void)
     lv_obj_set_style_radius(turn_live_dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(turn_live_dot, lv_palette_main(LV_PALETTE_RED), 0);
     lv_obj_set_style_bg_opa(turn_live_dot, LV_OPA_COVER, 0);
-    lv_obj_align_to(turn_live_dot, label_turn, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+    lv_obj_align(turn_live_dot, LV_ALIGN_RIGHT_MID, -10, 0);
     lv_obj_add_flag(turn_live_dot, LV_OBJ_FLAG_HIDDEN);
 
     create_counter_row_1p(screen_1p, COUNTER_TYPE_COMMANDER_TAX,
@@ -496,6 +648,22 @@ void build_main_screen(void)
         lv_obj_align(batt, LV_ALIGN_TOP_MID, 0, 28);
         battery_icon_register(batt);
     }
+
+    reminder_overlay_1p = lv_obj_create(screen_1p);
+    lv_obj_remove_style_all(reminder_overlay_1p);
+    lv_obj_set_size(reminder_overlay_1p, 360, 360);
+    lv_obj_set_pos(reminder_overlay_1p, 0, 0);
+    lv_obj_set_style_bg_color(reminder_overlay_1p, lv_color_hex(0xC62828), 0);
+    lv_obj_set_style_bg_opa(reminder_overlay_1p, LV_OPA_80, 0);
+    lv_obj_clear_flag(reminder_overlay_1p, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(reminder_overlay_1p, LV_OBJ_FLAG_HIDDEN);
+
+    reminder_overlay_label_1p = lv_label_create(reminder_overlay_1p);
+    lv_label_set_text(reminder_overlay_label_1p, "5 MIN");
+    lv_obj_set_style_text_color(reminder_overlay_label_1p, lv_color_white(), 0);
+    lv_obj_set_style_text_font(reminder_overlay_label_1p, &lv_font_montserrat_32, 0);
+    lv_obj_set_style_text_letter_space(reminder_overlay_label_1p, 2, 0);
+    lv_obj_center(reminder_overlay_label_1p);
 }
 
 void build_select_screen(void)

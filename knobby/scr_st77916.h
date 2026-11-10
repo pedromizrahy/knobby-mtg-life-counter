@@ -389,18 +389,35 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
 {
   ESP_PanelTouch *tp = (ESP_PanelTouch *)indev_drv->user_data;
   ESP_PanelTouchPoint point;
+  bool starting_gesture = !tp_tracking;
+  bool irq_flag_seen = touch_irq_pending;
 
-  if (!touch_irq_pending && !tp_tracking) {
+  /* The CST816S interrupt is active-low. Do not rely exclusively on the
+     callback flag: after a few idle seconds the first wake/touch IRQ can
+     arrive before point data is ready (or the edge can be missed). If INT
+     is physically low, poll the controller anyway so the first tap is not
+     silently discarded. */
+  bool touch_int_active =
+      (TOUCH_PIN_NUM_INT >= 0) &&
+      (gpio_get_level((gpio_num_t)TOUCH_PIN_NUM_INT) == 0);
+
+  if (!touch_irq_pending && !tp_tracking && !touch_int_active) {
     data->state = LV_INDEV_STATE_RELEASED;
     return;
   }
 
-  /* Clear before the (multi-ms) I2C read so a touch interrupt arriving
-     mid-read is preserved for the next poll instead of being lost. */
+  /* Clear before the I2C read so an interrupt arriving mid-read survives.
+     If the controller is still asserting INT but point data is not ready
+     yet, the no-point path below re-arms another read. */
   touch_irq_pending = false;
   int read_touch_result = tp->readPoints(&point, 1);
   if (read_touch_result > 0)
   {
+    if (starting_gesture) {
+      printf("[Touch] start x=%d y=%d irq=%d int=%d\n",
+             point.x, point.y, irq_flag_seen ? 1 : 0,
+             touch_int_active ? 1 : 0);
+    }
     if (!touch_point_valid(point.x, point.y)) {
       touch_reset_state();
       data->state = LV_INDEV_STATE_RELEASED;
@@ -408,7 +425,10 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
     }
 
     bool was_dimmed = activity_kick();
-    if (was_dimmed || in_undim_grace()) {
+    bool grace_active = in_undim_grace();
+    if (was_dimmed || grace_active) {
+      printf("[Touch] swallowed wake/grace dimmed=%d grace=%d\n",
+             was_dimmed ? 1 : 0, grace_active ? 1 : 0);
       /* The tap that wakes (or just woke) a dimmed screen must not also
          click the widget under the finger; swallow the whole gesture for
          the grace window, matching the swipe/encoder suppression. */
@@ -433,6 +453,24 @@ static void touchpad_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data)
   }
   else
   {
+    /* A first read immediately after the wake IRQ can race the controller.
+       While INT is still asserted, retry on the next LVGL poll instead of
+       converting that first tap into a fake release. */
+    if (!tp_tracking &&
+        TOUCH_PIN_NUM_INT >= 0 &&
+        gpio_get_level((gpio_num_t)TOUCH_PIN_NUM_INT) == 0) {
+      printf("[Touch] no-point, retry while INT low irq=%d\n",
+             irq_flag_seen ? 1 : 0);
+      touch_irq_pending = true;
+      data->state = LV_INDEV_STATE_RELEASED;
+      return;
+    }
+
+    if (starting_gesture && (irq_flag_seen || touch_int_active)) {
+      printf("[Touch] no-point released irq=%d int=%d\n",
+             irq_flag_seen ? 1 : 0, touch_int_active ? 1 : 0);
+    }
+
     if (tp_tracking && touch_point_valid(tp_last.x, tp_last.y)) {
       check_swipe(tp_last.x, tp_last.y);
     }

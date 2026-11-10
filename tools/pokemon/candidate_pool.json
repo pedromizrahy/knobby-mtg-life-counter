@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "status": "CANDIDATE_POOL_NOT_INSTALLED_NOT_APPROVED",
+  "notes": "Initial DIAL gacha candidate pool. Tier assignments are game-design proposals only, NOT official Pokemon rarity. Every candidate must be packed from licensed source, audited, and installed locally before enabling openings. Do not replace catalog.json (confirmed assets) automatically.",
+  "species": [
+    {"id": 1, "name": "Bulbasaur", "tier": "common", "asset": "p1.bin"},
+    {"id": 4, "name": "Charmander", "tier": "common", "asset": "p4.bin"},
+    {"id": 7, "name": "Squirtle", "tier": "common", "asset": "p7.bin"},
+    {"id": 16, "name": "Pidgey", "tier": "common", "asset": "p16.bin"},
+    {"id": 25, "name": "Pikachu", "tier": "rare", "asset": "p25.bin"},
+    {"id": 133, "name": "Eevee", "tier": "rare", "asset": "p133.bin"},
+    {"id": 778, "name": "Mimikyu", "tier": "rare", "asset": "p778.bin"},
+    {"id": 6, "name": "Charizard", "tier": "epic", "asset": "p6.bin"},
+    {"id": 94, "name": "Gengar", "tier": "epic", "asset": "p94.bin"},
+    {"id": 149, "name": "Dragonite", "tier": "epic", "asset": "p149.bin"},
+    {"id": 144, "name": "Articuno", "tier": "legendary", "asset": "p144.bin"},
+    {"id": 145, "name": "Zapdos", "tier": "legendary", "asset": "p145.bin"},
+    {"id": 146, "name": "Moltres", "tier": "legendary", "asset": "p146.bin"},
+    {"id": 150, "name": "Mewtwo", "tier": "legendary", "asset": "p150.bin"}
+  ]
+}
