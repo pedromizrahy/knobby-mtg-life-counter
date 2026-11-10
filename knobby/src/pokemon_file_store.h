@@ -17,6 +17,12 @@ bool pk_file_create_selected_starter(uint32_t user_id,
                                       uint16_t species,bool shiny);
 bool pk_file_create_starter(uint32_t user_id);
 bool pk_file_save(uint32_t user_id,const pk_profile_t *profile);
+/* Safe compare-and-save for recovery transactions: refuse all stale
+ * snapshots, malformed replacements and corrupt/missing profile files.
+ * Both expected and updated must be full, byte-exact v1 profiles. */
+bool pk_file_save_if_unchanged(uint32_t user_id,
+                              const pk_profile_t *expected,
+                              const pk_profile_t *updated);
 /* Explicit hardware-only diagnostic: reserved isolated profile, verifies
  * alternating copies and recovery, cleans only files it creates. */
 bool pk_file_profile_selftest(void);

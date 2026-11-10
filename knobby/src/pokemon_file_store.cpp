@@ -135,6 +135,25 @@ extern "C" bool pk_file_save(uint32_t id,const pk_profile_t *profile)
     return write_slot(id,1U-slot,&record);
 }
 
+/* Compare-and-save is used only after a durable user-confirmed
+ * transaction intent exists. Never silently overwrite a newer profile. */
+extern "C" bool pk_file_save_if_unchanged(uint32_t id,
+          const pk_profile_t *expected,const pk_profile_t *updated)
+{
+    if(!id || reserved_id(id) || !expected || !updated ||
+       !profile_valid(expected) || !profile_valid(updated) ||
+       !SPIFFS.begin(false))return false;
+    file_record_t old={};unsigned slot=0;
+    if(inspect(id,&old,&slot)!=PK_STORE_VALID ||
+       memcmp(&old.profile,expected,sizeof(*expected))!=0 ||
+       old.generation==UINT32_MAX)return false;
+    file_record_t rec={};
+    rec.magic=MAGIC;rec.user_id=id;
+    rec.generation=old.generation+1U;
+    rec.profile=*updated;rec.checksum=record_checksum(&rec);
+    return write_slot(id,1U-slot,&rec);
+}
+
 /* Explicit import from an already-validated NVS profile.
  * Writes only a private staging path; never truncates either profile slot.
  * If power is lost with a staging file present, fail closed on retry:

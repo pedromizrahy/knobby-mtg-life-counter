@@ -105,5 +105,24 @@ int main() {
     SPIFFS.files.erase("/pkf_fffffffca.bin");
     SPIFFS.files.erase("/pkf_fffffffcb.bin");
     assert(SPIFFS.files==others);
+    /* Protected evolution write: rejects stale snapshots and preserves
+       all unrelated bytes when saving an explicitly approved change. */
+    assert(pk_file_create_selected_starter(712,161,true));
+    pk_profile_t v1={};
+    assert(pk_file_inspect(712,&v1)==PK_STORE_VALID);
+    pk_profile_t v2=v1;
+    v2.team[0].level=30;
+    assert(pk_file_save_if_unchanged(712,&v1,&v2));
+    assert(!pk_file_save_if_unchanged(712,&v1,&v2));
+    pk_profile_t check={};
+    assert(pk_file_inspect(712,&check)==PK_STORE_VALID);
+    assert(memcmp(&v2,&check,sizeof(v2))==0);
+    pk_profile_t evo=v2;
+    evo.team[0].species=162;
+    assert(pk_file_save_if_unchanged(712,&v2,&evo));
+    assert(pk_file_inspect(712,&check)==PK_STORE_VALID);
+    assert(check.team[0].species==162 && check.team[0].shiny==1);
+    assert(!pk_file_save_if_unchanged(713,&v2,&evo));
+    assert(!pk_file_save_if_unchanged(0xFFFFFFFDUL,&v2,&evo));
     std::puts("Pokemon SPIFFS dual-slot tests passed");
 }
