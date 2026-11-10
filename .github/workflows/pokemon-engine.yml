@@ -9,6 +9,8 @@ on:
       - 'knobby/src/pokemon_item_enrollment.*'
       - 'knobby/src/pokemon_item_reward_service.*'
       - 'knobby/src/pokemon_evolution_ui.*'
+      - 'knobby/src/pokemon_evolution_transaction.*'
+      - 'tests/pokemon_evolution_transaction_test.c'
       - 'tests/pokemon_item_reward_service_test.cpp'
       - 'tests/pokemon_item_enrollment_test.cpp'
       - 'tests/pokemon_item_store_test.cpp'
@@ -179,6 +181,10 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -pedantic -c knobby/src/pokemon_evolution_items.c -o /tmp/miles_items.o
           c++ -std=c++17 -Wall -Wextra -Werror -pedantic -Itests/pokemon_mocks knobby/src/pokemon_item_reward_service.cpp knobby/src/pokemon_item_enrollment.cpp knobby/src/pokemon_item_store.cpp knobby/src/pokemon_starter_store.cpp knobby/src/pokemon_file_store.cpp knobby/src/pokemon_profile_store.cpp tests/pokemon_item_reward_service_test.cpp /tmp/miles_identity.o /tmp/miles_progress.o /tmp/miles_gacha.o /tmp/miles_roll.o /tmp/miles_items.o -o /tmp/pokemon_item_reward_service_test
           /tmp/pokemon_item_reward_service_test
+      - name: Test level evolution transaction and crash recovery
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_progress.c knobby/src/pokemon_evolution.c knobby/src/pokemon_evolution_transaction.c tests/pokemon_evolution_transaction_test.c -o /tmp/pokemon_evolution_transaction_test
+          /tmp/pokemon_evolution_transaction_test
       - name: Test strict Playgroup user ID boundaries
         run: |
           cc -std=c11 -Wall -Wextra -Werror -pedantic knobby/src/pokemon_player_identity.c tests/pokemon_player_identity_test.c -o /tmp/pokemon_player_identity_test

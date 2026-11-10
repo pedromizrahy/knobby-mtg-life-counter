@@ -211,3 +211,18 @@ unmerged. Arduino CI does not validate the physical UI.
   A future transaction must commit profile species + item consumption
   with crash-safe recovery and preserve immutable instance ID before
   granting an evolution.
+
+## Level evolution write-ahead transaction coordinator (pure engine)
+- The new `pokemon_evolution_transaction` module is designed for a
+  player-confirmed, LEVEL-only evolution. A persisted intent includes
+  the full old profile, next profile, immutable target and transaction
+  nonce; the mutation must be saved conditionally against the complete
+  old profile to prevent losing new XP or other concurrent changes.
+- Crash/restart recovery accepts only exactly the old or new snapshot.
+  It resumes a pending consented transition, never re-applies an already
+  written evolution, and refuses any unexpected profile divergence.
+- Item evolution remains blocked: species + item spending needs a
+  separate cross-record transaction with recovery and idempotency.
+- This is an isolated tested coordinator; there is not yet a concrete
+  durable write-ahead storage adapter, atomic save-if-unchanged function
+  or enabled CONFIRM button. No real user profile is changed here.
