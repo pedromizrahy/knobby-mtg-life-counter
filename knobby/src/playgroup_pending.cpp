@@ -302,9 +302,9 @@ static uint32_t snapshot_max_elapsed_ms(const pg_pending_snapshot_t *snapshot)
 
         if (elapsed > max_elapsed)
             max_elapsed = elapsed;
-        if (event->event_type == LOG_EVT_TURN_END &&
-            elapsed + event->duration_ms > max_elapsed)
-            max_elapsed = elapsed + event->duration_ms;
+        /* TURN_END timestamp already denotes the END of the turn, not
+         * its beginning. Adding duration again inflated game length. */
+
     }
     return max_elapsed;
 }
@@ -708,6 +708,21 @@ static bool sync_one_snapshot(const char *path,
         return false;
     }
 
+    /* A successful remote winner alone does NOT prove timeline completeness.
+     * Report exactly how many PassTurn events could be constructed. */
+    {
+        int total=0,passable=0;
+        for(int i=0;i<snapshot->event_count;i++) {
+            if(snapshot->events[i].event_type!=LOG_EVT_TURN_END)continue;
+            total++;
+            if(next_turn_player(snapshot,i)>=0)passable++;
+        }
+        Serial.printf("[Playgroup] Timeline import: %d/%d turn transitions exportable, raw=%u saved=%u.\\n",
+                      passable,total,(unsigned)snapshot->raw_event_count,
+                      (unsigned)snapshot->event_count);
+        if(total==0 || (total>1 && passable==0))
+            Serial.println("[Playgroup] WARNING: result can sync without turn times. Check turn timer and pass-turn tracking.");
+    }
     if (!build_sync_body(snapshot, body, PG_SYNC_BODY_CAPACITY)) {
         Serial.println("[Playgroup] Could not build pending game event batch.");
         heap_caps_free(body);
@@ -978,6 +993,21 @@ static bool write_finished_snapshot(int winner)
             copied++;
     }
     snapshot->event_count = (uint16_t)copied;
+    /* Do not silently describe a result-only import as full turn sync.
+     * A missing/disabled turn timer yields zero TURN_END records;
+     * the bounded ring may also drop events from a long match. */
+    {
+        int turn_ends=0;
+        for(int i=0;i<copied;i++)
+            if(snapshot->events[i].event_type==LOG_EVT_TURN_END)
+                turn_ends++;
+        Serial.printf("[Playgroup] Timeline snapshot: %d turn ends, %d/%d history records.\\n",
+                      turn_ends,copied,log_count);
+        if(!turn_ends)
+            Serial.println("[Playgroup] WARNING: no recorded turn transitions; remote turn times may be unavailable.");
+        if(log_count>PG_PENDING_MAX_EVENTS)
+            Serial.println("[Playgroup] WARNING: full damage/turn history exceeds snapshot capacity; earlier events omitted.");
+    }
 
     if (snapshot->starting_player < 0) {
         for (int i = 0; i < copied; i++) {

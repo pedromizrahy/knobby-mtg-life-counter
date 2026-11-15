@@ -164,6 +164,16 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn('life_edit_cancel(', menu)
         self.assertIn('build_player_life_adjust_screen();', menu)
 
+    def test_playgroup_turn_sync_reports_missing_timeline(self):
+        pending=(ROOT / "knobby/src/playgroup_pending.cpp").read_text(encoding="utf-8")
+        self.assertIn('Timeline snapshot:',pending)
+        self.assertIn('Timeline import:',pending)
+        self.assertIn('result can sync without turn times',pending)
+        self.assertIn('full damage/turn history exceeds snapshot capacity',pending)
+        self.assertIn('next_turn_player(snapshot,i)>=0',pending)
+        self.assertNotIn('elapsed + event->duration_ms > max_elapsed',pending)
+        self.assertIn('"PassTurn"',pending)
+
     def test_starter_ui_authenticates_seat_and_persists_before_reveal(self):
         ui = (ROOT / "knobby/src/pokemon_starter_ui.cpp").read_text(encoding="utf-8")
         preview = (ROOT / "knobby/src/pokemon_playgroup_preview.cpp").read_text(encoding="utf-8")
