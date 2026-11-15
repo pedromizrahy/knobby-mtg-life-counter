@@ -1796,6 +1796,16 @@ static void event_deck_select(lv_event_t *e)
     if (deck == NULL)
         return;
 
+    /* When changing a seat's deck, its old decoded commander art must
+     * never survive as a misleading preview for the new selection.
+     * Do not touch any other seat's selected pixels. */
+    if (selected_deck_id[deck_picker_seat]!=deck->id ||
+        strcmp(selected_art_id[deck_picker_seat],deck->scryfall_id)!=0) {
+        if (selected_player_art[deck_picker_seat].pixels)
+            commander_image_free_pixels(selected_player_art[deck_picker_seat].pixels);
+        memset(&selected_player_art[deck_picker_seat],0,
+               sizeof(selected_player_art[deck_picker_seat]));
+    }
     /* Store both ID and URL before leaving the picker. The selected JPEG
      * may still be downloading and the cached deck list is later replaced
      * by the next seat's decks. */

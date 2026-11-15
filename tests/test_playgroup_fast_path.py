@@ -260,6 +260,8 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn("art_persistent_load(scryfall_id",api)
         self.assertIn("art_persistent_store(job->scryfall_id,data,size)",api)
         self.assertIn("PG_ART_CACHE_MAX_BYTES (512U * 1024U)",api)
+        self.assertIn('selected_deck_id[deck_picker_seat]!=deck->id',pre)
+        self.assertIn('commander_image_free_pixels(selected_player_art[deck_picker_seat].pixels)',pre)
         self.assertIn('mulligan_start_button',pre)
         self.assertIn('start_without_art_requested=true;',pre)
         self.assertIn('SKIP ART',pre)
