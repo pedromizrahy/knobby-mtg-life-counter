@@ -717,7 +717,7 @@ static bool sync_one_snapshot(const char *path,
             total++;
             if(next_turn_player(snapshot,i)>=0)passable++;
         }
-        Serial.printf("[Playgroup] Timeline import: %d/%d turn transitions exportable, raw=%u saved=%u.\\n",
+        Serial.printf("[Playgroup] Timeline import: %d/%d turn transitions exportable, raw=%u saved=%u.\n",
                       passable,total,(unsigned)snapshot->raw_event_count,
                       (unsigned)snapshot->event_count);
         if(total==0 || (total>1 && passable==0))
@@ -1001,7 +1001,7 @@ static bool write_finished_snapshot(int winner)
         for(int i=0;i<copied;i++)
             if(snapshot->events[i].event_type==LOG_EVT_TURN_END)
                 turn_ends++;
-        Serial.printf("[Playgroup] Timeline snapshot: %d turn ends, %d/%d history records.\\n",
+        Serial.printf("[Playgroup] Timeline snapshot: %d turn ends, %d/%d history records.\n",
                       turn_ends,copied,log_count);
         if(!turn_ends)
             Serial.println("[Playgroup] WARNING: no recorded turn transitions; remote turn times may be unavailable.");
