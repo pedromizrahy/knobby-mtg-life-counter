@@ -9,86 +9,124 @@
 
 // ---------- screens ----------
 // ---------- focused life adjustment ----------
-/* Long-press on any active player, including outside their turn, opens
- * this editor. No change is applied until APPLY is pressed. */
-static lv_obj_t *screen_player_life_adjust = NULL;
+// Uses the same Montserrat fonts, visual emphasis and physical dial as the
+// other built-in editors. Nothing commits until APPLY.
+lv_obj_t *screen_player_life_adjust = NULL;
 static lv_obj_t *life_edit_title = NULL;
 static lv_obj_t *life_edit_value = NULL;
+static lv_obj_t *life_edit_delta_label = NULL;
 static int life_edit_delta = 0;
 
 static void life_edit_refresh(void) {
-  char title[70], value[40];
-  snprintf(title,sizeof(title),"%s - LIFE",player_names[menu_player]);
-  snprintf(value,sizeof(value),"%d  (%+d)",player_life[menu_player]+life_edit_delta,
-           life_edit_delta);
-  if (life_edit_title) lv_label_set_text(life_edit_title,title);
-  if (life_edit_value) lv_label_set_text(life_edit_value,value);
+  char title[64], value[20], delta[24];
+  if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS) return;
+  snprintf(title, sizeof(title), "%s", player_names[menu_player]);
+  snprintf(value, sizeof(value), "%d",
+           clamp_life(player_life[menu_player] + life_edit_delta));
+  snprintf(delta, sizeof(delta), "%+d LIFE", life_edit_delta);
+  if (life_edit_title) lv_label_set_text(life_edit_title, title);
+  if (life_edit_value) lv_label_set_text(life_edit_value, value);
+  if (life_edit_delta_label) {
+    lv_label_set_text(life_edit_delta_label, delta);
+    lv_obj_set_style_text_color(life_edit_delta_label,
+        life_edit_delta > 0 ? lv_color_hex(0x06D6A0) :
+        life_edit_delta < 0 ? lv_color_hex(0xFF1744) :
+                              lv_color_hex(0x929BA8), 0);
+  }
 }
-static void life_edit_noop(lv_event_t *e) { (void)e; }
-static void life_edit_adjust(lv_event_t *e) {
-  int step=(int)(intptr_t)lv_event_get_user_data(e);
-  if ((step<0 && life_edit_delta < -10000-step) ||
-      (step>0 && life_edit_delta > 10000-step)) return;
-  life_edit_delta+=step;
+
+void player_life_adjust_change(int step) {
+  if (step == 0 || menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS ||
+      player_eliminated[menu_player]) return;
+  int next = clamp_life(player_life[menu_player] + life_edit_delta + step);
+  life_edit_delta = next - player_life[menu_player];
   life_edit_refresh();
 }
+
+static void life_edit_adjust(lv_event_t *e) {
+  player_life_adjust_change((int)(intptr_t)lv_event_get_user_data(e));
+}
+static void life_edit_noop(lv_event_t *e) { (void)e; }
 static void life_edit_apply(lv_event_t *e) {
   (void)e;
-  if (menu_player>=0 && menu_player<MAX_DISPLAY_PLAYERS &&
+  if (menu_player >= 0 && menu_player < MAX_DISPLAY_PLAYERS &&
       !player_eliminated[menu_player] && life_edit_delta)
-    apply_life_delta(menu_player,life_edit_delta);
-  life_edit_delta=0;
+    apply_life_delta(menu_player, life_edit_delta);
+  life_edit_delta = 0;
   back_to_main();
 }
 static void life_edit_more(lv_event_t *e) {
   (void)e;
+  life_edit_delta = 0;
   open_player_menu(menu_player);
 }
 static void life_edit_cancel(lv_event_t *e) {
   (void)e;
-  life_edit_delta=0;
+  life_edit_delta = 0;
   back_to_main();
 }
 void open_player_life_adjust(int player_index) {
-  if (player_index<0 || player_index>=MAX_DISPLAY_PLAYERS ||
-      player_eliminated[player_index])return;
-  menu_player=player_index;
-  life_edit_delta=0;
+  if (player_index < 0 || player_index >= MAX_DISPLAY_PLAYERS ||
+      player_eliminated[player_index]) return;
+  menu_player = player_index;
+  life_edit_delta = 0;
   life_edit_refresh();
   load_screen_if_needed(screen_player_life_adjust);
 }
+static lv_obj_t *life_edit_button(const char *label, int x, int y,
+                                  int w, int height, lv_event_cb_t cb) {
+  lv_obj_t *btn = make_button(screen_player_life_adjust, label,
+                              w, height, cb);
+  lv_obj_set_pos(btn, x, y);
+  lv_obj_set_style_radius(btn, 12, 0);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(0x1A1A2E), 0);
+  lv_obj_set_style_shadow_width(btn, 0, 0);
+  lv_obj_t *txt = lv_obj_get_child(btn, 0);
+  lv_obj_set_style_text_font(txt, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(txt, lv_color_white(), 0);
+  return btn;
+}
 static void build_player_life_adjust_screen(void) {
-  screen_player_life_adjust=lv_obj_create(NULL);
-  lv_obj_set_size(screen_player_life_adjust,360,360);
-  lv_obj_set_style_bg_color(screen_player_life_adjust,lv_color_black(),0);
-  lv_obj_set_style_border_width(screen_player_life_adjust,0,0);
-  lv_obj_set_style_pad_all(screen_player_life_adjust,0,0);
-  life_edit_title=lv_label_create(screen_player_life_adjust);
-  lv_label_set_text(life_edit_title,"PLAYER - LIFE");
-  lv_obj_set_width(life_edit_title,280);
-  lv_obj_set_style_text_align(life_edit_title,LV_TEXT_ALIGN_CENTER,0);
-  lv_obj_set_style_text_color(life_edit_title,lv_color_white(),0);
-  lv_obj_align(life_edit_title,LV_ALIGN_TOP_MID,0,35);
-  life_edit_value=lv_label_create(screen_player_life_adjust);
-  lv_label_set_text(life_edit_value,"40");
-  lv_obj_set_style_text_font(life_edit_value,&lv_font_montserrat_32,0);
-  lv_obj_set_style_text_color(life_edit_value,lv_color_hex(0xDFCC9F),0);
-  lv_obj_align(life_edit_value,LV_ALIGN_TOP_MID,0,94);
+  screen_player_life_adjust = lv_obj_create(NULL);
+  lv_obj_set_size(screen_player_life_adjust, 360, 360);
+  lv_obj_set_style_bg_color(screen_player_life_adjust, lv_color_black(), 0);
+  lv_obj_set_style_border_width(screen_player_life_adjust, 0, 0);
+  lv_obj_set_style_pad_all(screen_player_life_adjust, 0, 0);
+  lv_obj_set_scrollbar_mode(screen_player_life_adjust, LV_SCROLLBAR_MODE_OFF);
+
+  life_edit_title = lv_label_create(screen_player_life_adjust);
+  lv_obj_set_width(life_edit_title, 250);
+  lv_obj_set_style_text_align(life_edit_title, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_style_text_color(life_edit_title, lv_color_white(), 0);
+  lv_obj_set_style_text_font(life_edit_title, &lv_font_montserrat_22, 0);
+  lv_obj_align(life_edit_title, LV_ALIGN_TOP_MID, 0, 36);
+
+  life_edit_value = lv_label_create(screen_player_life_adjust);
+  lv_obj_set_style_text_font(life_edit_value, &lv_font_montserrat_bold_56, 0);
+  lv_obj_set_style_text_color(life_edit_value, lv_color_white(), 0);
+  lv_obj_align(life_edit_value, LV_ALIGN_TOP_MID, 0, 82);
+
+  life_edit_delta_label = lv_label_create(screen_player_life_adjust);
+  lv_obj_set_style_text_font(life_edit_delta_label, &lv_font_montserrat_16, 0);
+  lv_obj_align(life_edit_delta_label, LV_ALIGN_TOP_MID, 0, 148);
+
   lv_obj_t *btn;
-  const int steps[4]={-5,-1,1,5};
-  const char *names[4]={"-5","-1","+1","+5"};
-  for(int i=0;i<4;i++){
-    btn=make_button(screen_player_life_adjust,names[i],68,52,life_edit_noop);
-    lv_obj_set_pos(btn,31+i*72,156);
-    lv_obj_add_event_cb(btn,life_edit_adjust,LV_EVENT_CLICKED,
-                        (void *)(intptr_t)steps[i]);
-  }
-  btn=make_button(screen_player_life_adjust,"CANCEL",78,36,life_edit_cancel);
-  lv_obj_set_pos(btn,55,236);
-  btn=make_button(screen_player_life_adjust,"APPLY",78,36,life_edit_apply);
-  lv_obj_set_pos(btn,227,236);
-  btn=make_button(screen_player_life_adjust,"MORE",92,32,life_edit_more);
-  lv_obj_set_pos(btn,134,294);
+  btn = life_edit_button("-1", 64, 183, 65, 46, life_edit_noop);
+  lv_obj_add_event_cb(btn, life_edit_adjust, LV_EVENT_CLICKED,
+                      (void *)(intptr_t)-1);
+  btn = life_edit_button("+1", 231, 183, 65, 46, life_edit_noop);
+  lv_obj_add_event_cb(btn, life_edit_adjust, LV_EVENT_CLICKED,
+                      (void *)(intptr_t)+1);
+
+  lv_obj_t *hint = lv_label_create(screen_player_life_adjust);
+  lv_label_set_text(hint, "Turn dial to change life");
+  lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(hint, lv_color_hex(0x929BA8), 0);
+  lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 243);
+
+  life_edit_button("CANCEL", 58, 279, 84, 38, life_edit_cancel);
+  life_edit_button("APPLY", 218, 279, 84, 38, life_edit_apply);
+  life_edit_button("MORE", 148, 321, 64, 28, life_edit_more);
 }
 
 lv_obj_t *screen_player_menu = NULL;

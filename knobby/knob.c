@@ -397,6 +397,8 @@ static void handle_back_navigation(lv_obj_t *screen)
     } else if (screen == screen_custom_life) {
         refresh_game_mode_menu_ui();
         lv_scr_load(screen_game_setup);
+    } else if (screen == screen_player_life_adjust) {
+        back_to_main();
     } else if (screen == screen_player_menu) {
         back_to_main();
     } else if (screen == screen_player_name) {
@@ -463,7 +465,7 @@ static void menu_facing_screen_event(lv_event_t *e)
 static void menu_facing_hook_screens(void)
 {
     lv_obj_t *scoped[] = {
-        screen_player_menu, screen_eliminated_player_menu,
+        screen_player_menu, screen_player_life_adjust, screen_eliminated_player_menu,
         screen_player_all_damage, screen_counter_menu, screen_counter_edit,
         screen_player_color_menu, screen_player_color_picker,
         screen_player_name, screen_select, screen_damage,
@@ -625,6 +627,11 @@ static void handle_knob_event(knob_event_t k)
         selection_set_single(active_turn_player);
         if (k == KNOB_LEFT)      change_player_life(-1);
         else if (k == KNOB_RIGHT) change_player_life(+1);
+    }
+    else if (lv_scr_act() == screen_player_life_adjust)
+    {
+        if (k == KNOB_LEFT)       player_life_adjust_change(-1);
+        else if (k == KNOB_RIGHT) player_life_adjust_change(+1);
     }
     else if (lv_scr_act() == screen_player_all_damage)
     {

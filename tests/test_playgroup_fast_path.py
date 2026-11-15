@@ -181,6 +181,23 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertNotIn('elapsed + event->duration_ms > max_elapsed',pending)
         self.assertIn('"PassTurn"',pending)
 
+    def test_hold_life_editor_routes_knob_and_uses_project_fonts(self):
+        knob=(ROOT / "knobby/knob.c").read_text(encoding="utf-8")
+        menu=(ROOT / "knobby/src/ui_player_menu.c").read_text(encoding="utf-8")
+        header=(ROOT / "knobby/src/ui_player_menu.h").read_text(encoding="utf-8")
+        self.assertIn('lv_scr_act() == screen_player_life_adjust',knob)
+        self.assertIn('player_life_adjust_change(-1)',knob)
+        self.assertIn('player_life_adjust_change(+1)',knob)
+        self.assertIn('screen == screen_player_life_adjust',knob)
+        self.assertIn('screen_player_menu, screen_player_life_adjust',knob)
+        self.assertIn('extern lv_obj_t *screen_player_life_adjust;',header)
+        self.assertIn('void player_life_adjust_change(int delta);',header)
+        self.assertIn('&lv_font_montserrat_bold_56',menu)
+        self.assertIn('&lv_font_montserrat_22',menu)
+        self.assertIn('Turn dial to change life',menu)
+        self.assertIn('apply_life_delta(menu_player, life_edit_delta)',menu)
+        self.assertIn('life_edit_delta = 0;',menu)
+
     def test_starter_ui_authenticates_seat_and_persists_before_reveal(self):
         ui = (ROOT / "knobby/src/pokemon_starter_ui.cpp").read_text(encoding="utf-8")
         preview = (ROOT / "knobby/src/pokemon_playgroup_preview.cpp").read_text(encoding="utf-8")
