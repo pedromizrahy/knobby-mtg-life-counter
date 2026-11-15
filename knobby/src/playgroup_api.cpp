@@ -41,7 +41,7 @@ extern "C" void knob_print_reset_diagnostics(void);
 #define PG_API_KEY_MAX 192
 #define PG_SERIAL_LINE_MAX 320
 #define PG_ART_CACHE_SLOTS 3
-#define PG_ART_CACHE_MAX_BYTES (256U * 1024U)
+#define PG_ART_CACHE_MAX_BYTES (512U * 1024U)
 #define PG_ART_PERSIST_RESERVE (512U * 1024U)
 #define PG_ART_PREFETCH_TOP_DECKS 5U
 #define PG_ART_PREFETCH_QUEUE 4U
@@ -79,6 +79,7 @@ static bool art_prefetch_worker_running = false;
 typedef struct {
     char scryfall_id[PG_SCRYFALL_ID_LEN];
     char art_crop_url[PG_IMAGE_URL_LEN];
+    uint32_t generation;
 } pg_art_single_job_t;
 
 static pg_art_cache_entry_t art_cache[PG_ART_CACHE_SLOTS];
@@ -88,6 +89,7 @@ static volatile uint32_t art_prefetch_generation = 0;
 static volatile bool art_single_prefetch_active = false;
 static uint32_t art_cache_stamp = 1;
 
+static bool art_image_header_valid(const uint8_t *data,size_t size);
 static NetworkClientSecure art_tls;
 static HTTPClient art_http;
 static bool art_http_configured = false;
@@ -265,8 +267,11 @@ static bool art_persistent_load(const char *id,
     read_count = file.read(data, (size_t)header.jpeg_size);
     file.close();
 
-    if (read_count != (size_t)header.jpeg_size) {
+    if (read_count != (size_t)header.jpeg_size ||
+        !art_image_header_valid(data, read_count)) {
         heap_caps_free(data);
+        Serial.println("[Playgroup] Invalid stored art; discarding only art cache file.");
+        SPIFFS.remove(path);
         return false;
     }
 
@@ -296,6 +301,14 @@ static bool art_persistent_valid(const char *id)
               head.jpeg_size <= PG_ART_CACHE_MAX_BYTES &&
               strncmp(head.scryfall_id, id, sizeof(head.scryfall_id)) == 0 &&
               f.size() == sizeof(head) + head.jpeg_size;
+    if (ok) {
+        uint8_t signature[8]={0};
+        if (f.seek(sizeof(head),SeekSet) &&
+            f.read(signature,sizeof(signature)) == sizeof(signature))
+            ok=art_image_header_valid(signature,sizeof(signature));
+        else
+            ok=false;
+    }
     f.close();
     return ok;
 }
@@ -1266,6 +1279,16 @@ static bool parse_deck_object(const String &obj, void *ctx)
         }
     }
 
+    /* Some deck covers are non-Scryfall URLs or commanders without a card
+     * UUID. A missing ID previously disabled the whole art pipeline.
+     * Give the URL a stable cache key; only the direct URL is authoritative. */
+    if (!deck->scryfall_id[0] && deck->art_crop_url[0]) {
+        snprintf(deck->scryfall_id,sizeof(deck->scryfall_id),
+                 "url-%016llx",(unsigned long long)art_id_hash(deck->art_crop_url));
+        Serial.printf("[Playgroup] Cover without Scryfall UUID: deck %ld, using URL cache key.\\n",
+                      deck->id);
+    }
+
     cached_deck_count++;
     return true;
 }
@@ -1598,6 +1621,11 @@ static bool playgroup_download_image_url(const char *url_cstr,
         return false;
     }
 
+    if (!art_image_header_valid(data,received)) {
+        Serial.println("[Playgroup] Art HTTP body is not JPEG/PNG; refusing cache.");
+        heap_caps_free(data);
+        return false;
+    }
     *out_data = data;
     *out_size = received;
     return true;
@@ -1804,6 +1832,18 @@ static void playgroup_art_prefetch_task(void *param)
     vTaskDelete(NULL);
 }
 
+/* Retain compressed art only for formats the RGB565 decoder understands.
+ * A CDN can return a 200 status with HTML or an error placeholder. */
+static bool art_image_header_valid(const uint8_t *data,size_t size)
+{
+    if(!data || size<8U) return false;
+    bool jpeg=data[0]==0xff && data[1]==0xd8 && data[2]==0xff;
+    bool png=data[0]==0x89 && data[1]=='P' && data[2]=='N' &&
+             data[3]=='G' && data[4]==0x0d && data[5]==0x0a &&
+             data[6]==0x1a && data[7]==0x0a;
+    return jpeg || png;
+}
+
 static void playgroup_single_art_prefetch_task(void *param)
 {
     pg_art_single_job_t *job = (pg_art_single_job_t *)param;
@@ -1814,20 +1854,28 @@ static void playgroup_single_art_prefetch_task(void *param)
         Serial.print("[Playgroup] Async commander art start: ");
         Serial.println(job->scryfall_id);
 
-        if (playgroup_download_deck_image(job->art_crop_url,
-                                          job->scryfall_id,
-                                          &data, &size)) {
-            /* Also retain the actively chosen art, including MORE DECKS.
-             * Never attempt flash formatting or overwrite game snapshots. */
-            if(data && job->scryfall_id[0])
+        bool ok=false;
+        for (int attempt=1;attempt<=3;attempt++) {
+            if (job->generation != art_prefetch_generation) break;
+            ok=playgroup_download_deck_image(job->art_crop_url,
+                                              job->scryfall_id,&data,&size);
+            if(ok && art_image_header_valid(data,size)) break;
+            playgroup_free_image(data); data=NULL; size=0;
+            ok=false;
+            Serial.printf("[Playgroup] Art %s attempt %d/3 failed.\n",
+                          job->scryfall_id,attempt);
+            if(attempt<3)vTaskDelay(pdMS_TO_TICKS(400U*attempt));
+        }
+        if (ok && data) {
+            if(job->generation == art_prefetch_generation)
                 art_persistent_store(job->scryfall_id,data,size);
-            playgroup_free_image(data);
             Serial.print("[Playgroup] Async commander art ready: ");
             Serial.println(job->scryfall_id);
         } else {
-            Serial.print("[Playgroup] Async commander art failed: ");
+            Serial.print("[Playgroup] Async commander art failed after retries: ");
             Serial.println(job->scryfall_id);
         }
+        playgroup_free_image(data);
 
         heap_caps_free(job);
     }
@@ -1860,6 +1908,7 @@ bool playgroup_prefetch_deck_image_async(const char *art_crop_url,
         return false;
 
     strlcpy(job->scryfall_id, scryfall_id, sizeof(job->scryfall_id));
+    job->generation=art_prefetch_generation;
     if (art_crop_url != NULL)
         strlcpy(job->art_crop_url, art_crop_url, sizeof(job->art_crop_url));
 

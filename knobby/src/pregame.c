@@ -94,6 +94,11 @@ static lv_obj_t *deck_more_button = NULL;
 static lv_obj_t *deck_image = NULL;
 static lv_obj_t *deck_image_overlay = NULL;
 static lv_timer_t *deck_art_timer = NULL;
+static lv_timer_t *selected_art_timer = NULL;
+/* Remember the exact art chosen per seat, even if JPEG is still downloading. */
+static char selected_art_id[MAX_DISPLAY_PLAYERS][PG_SCRYFALL_ID_LEN] = {{0}};
+static char selected_art_url[MAX_DISPLAY_PLAYERS][PG_IMAGE_URL_LEN] = {{0}};
+static uint8_t selected_art_failures[MAX_DISPLAY_PLAYERS] = {0};
 static lv_timer_t *commander_prepare_timer = NULL;
 static volatile bool commander_prepare_active = false;
 static volatile bool commander_prepare_done = false;
@@ -293,6 +298,7 @@ static void refresh_member_picker(void);
 static void refresh_deck_picker(bool schedule_art);
 static void schedule_deck_art(void);
 static void clear_deck_art(void);
+static void selected_art_timer_cb(lv_timer_t *timer);
 static void split_member_display_name(const char *full,
                                       char *first, size_t first_size,
                                       char *second_initial)
@@ -522,6 +528,9 @@ static void event_local_play(lv_event_t *e)
 
     clear_decoded_art_cache();
     clear_selected_player_art();
+    memset(selected_art_id,0,sizeof(selected_art_id));
+    memset(selected_art_url,0,sizeof(selected_art_url));
+    memset(selected_art_failures,0,sizeof(selected_art_failures));
     playgroup_end_session();
     nvs_clear_color_mode_runtime_override();
     nvs_set_offline_session_active(0);
@@ -1525,6 +1534,59 @@ static void schedule_deck_art(void)
     lv_timer_resume(deck_art_timer);
 }
 
+/* Runs at 650 ms only during the pregame roster/mulligans. All network
+ * work happens in the async worker, never on the LVGL thread. The cached
+ * compressed JPEG can arrive AFTER deck selection, so capture and decode it
+ * using the preserved seat ID instead of querying the next player's decks. */
+static void selected_art_timer_cb(lv_timer_t *timer)
+{
+    if (!playgroup_roster_active ||
+        (lv_scr_act()!=screen_pregame_roster &&
+         lv_scr_act()!=screen_pregame_mulligans &&
+         lv_scr_act()!=screen_pregame_member &&
+         lv_scr_act()!=screen_pregame_deck)) {
+        lv_timer_pause(timer);
+        return;
+    }
+    int missing=0;
+    for(int seat=0;seat<pregame_player_count && seat<MAX_DISPLAY_PLAYERS;seat++) {
+        if (!selected_deck_id[seat] || !selected_art_id[seat][0] ||
+            selected_player_art[seat].pixels!=NULL)continue;
+        missing++;
+        uint8_t *data=NULL,*pixels=NULL;
+        size_t size=0;
+        uint16_t w=0,h=0;
+        if (!playgroup_cached_image_copy(selected_art_id[seat],&data,&size)) {
+            /* A single background fetch may serve a different seat.
+             * Keep asking (without blocking) until this specific art arrives. */
+            if (!playgroup_prefetch_deck_image_async(selected_art_url[seat],
+                                                     selected_art_id[seat]))
+                continue;
+            continue;
+        }
+        bool ok=commander_image_decode_rgb565(data,size,&pixels,&w,&h);
+        playgroup_free_image(data);
+        if (!ok) {
+            if(selected_art_failures[seat]<3)selected_art_failures[seat]++;
+            printf("[Playgroup] Selected P%d art decode failure (%u).\n",
+                   seat+1,(unsigned)selected_art_failures[seat]);
+            continue;
+        }
+        deck_decoded_cache_entry_t *entry =
+            store_decoded_art(selected_art_id[seat],pixels,w,h);
+        if (!entry) {
+            commander_image_free_pixels(pixels);
+            continue;
+        }
+        if (set_selected_player_art(seat,entry)) {
+            printf("[Playgroup] Selected P%d commander art recovered asynchronously.\n",
+                   seat+1);
+            missing--;
+        }
+    }
+    if (!missing)lv_timer_pause(timer);
+}
+
 static void set_deck_picker_more_visual(bool more)
 {
     if (deck_more_button != NULL) {
@@ -1626,9 +1688,9 @@ void pregame_change_deck(int delta)
 
         if (decoded != NULL) {
             show_decoded_art(decoded);
-        } else if (deck_picker_show_all) {
-            /* MORE DECKS is explicitly the secondary path. Keep the top-five
-               path instant; less-used decks may populate on demand here. */
+        } else {
+            /* ALL decks need the delayed cache poll, not just MORE DECKS.
+             * Previously the top five could remain blank indefinitely. */
             schedule_deck_art();
         }
     }
@@ -1719,6 +1781,14 @@ static void event_deck_select(lv_event_t *e)
     if (deck == NULL)
         return;
 
+    /* Store both ID and URL before leaving the picker. The selected JPEG
+     * may still be downloading and the cached deck list is later replaced
+     * by the next seat's decks. */
+    snprintf(selected_art_id[deck_picker_seat],sizeof(selected_art_id[deck_picker_seat]),
+             "%s",deck->scryfall_id);
+    snprintf(selected_art_url[deck_picker_seat],sizeof(selected_art_url[deck_picker_seat]),
+             "%s",deck->art_crop_url);
+    selected_art_failures[deck_picker_seat]=0;
     selected_deck_id[deck_picker_seat] = deck->id;
     selected_commander_id[deck_picker_seat] = deck->commander_id;
     snprintf(selected_deck_name[deck_picker_seat],
@@ -1754,6 +1824,7 @@ static void event_deck_select(lv_event_t *e)
     clear_deck_art();
     if (deck_art_timer != NULL)
         lv_timer_pause(deck_art_timer);
+    if (selected_art_timer != NULL) lv_timer_resume(selected_art_timer);
 
     if (roster_edit_mode) {
         roster_edit_mode=false;
@@ -2869,6 +2940,8 @@ void build_pregame_screens(void)
        polls the PSRAM cache and decodes when data is ready. */
     deck_art_timer = lv_timer_create(deck_art_timer_cb, 120, NULL);
     lv_timer_pause(deck_art_timer);
+    selected_art_timer = lv_timer_create(selected_art_timer_cb, 650, NULL);
+    lv_timer_pause(selected_art_timer);
 
     commander_prepare_timer = lv_timer_create(commander_prepare_timer_cb, 150, NULL);
     lv_timer_pause(commander_prepare_timer);

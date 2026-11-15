@@ -243,6 +243,24 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn('LV_IMG_CF_TRUE_COLOR_ALPHA',skull)
         self.assertIn('Anti-aliased skull art',skull)
 
+    def test_commander_art_retry_and_late_selected_seat_recovery(self):
+        pre=(ROOT / "knobby/src/pregame.c").read_text(encoding="utf-8")
+        api=(ROOT / "knobby/src/playgroup_api.cpp").read_text(encoding="utf-8")
+        self.assertIn("static void selected_art_timer_cb(lv_timer_t *timer)",pre)
+        self.assertIn("selected_art_id[deck_picker_seat]",pre)
+        self.assertIn("selected_art_url[deck_picker_seat]",pre)
+        self.assertIn("playgroup_cached_image_copy(selected_art_id[seat]",pre)
+        self.assertIn("set_selected_player_art(seat,entry)",pre)
+        self.assertIn("selected_art_timer = lv_timer_create",pre)
+        self.assertIn("ALL decks need the delayed cache poll",pre)
+        self.assertIn("schedule_deck_art();",pre)
+        self.assertIn("for (int attempt=1;attempt<=3;attempt++)",api)
+        self.assertIn("art_image_header_valid(data,received)",api)
+        self.assertIn('not JPEG/PNG; refusing cache',api)
+        self.assertIn("art_persistent_load(scryfall_id",api)
+        self.assertIn("art_persistent_store(job->scryfall_id,data,size)",api)
+        self.assertIn("PG_ART_CACHE_MAX_BYTES (512U * 1024U)",api)
+
     def test_starter_ui_authenticates_seat_and_persists_before_reveal(self):
         ui = (ROOT / "knobby/src/pokemon_starter_ui.cpp").read_text(encoding="utf-8")
         preview = (ROOT / "knobby/src/pokemon_playgroup_preview.cpp").read_text(encoding="utf-8")
