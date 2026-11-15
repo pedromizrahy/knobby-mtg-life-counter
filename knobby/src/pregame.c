@@ -99,6 +99,9 @@ static lv_timer_t *selected_art_timer = NULL;
 static char selected_art_id[MAX_DISPLAY_PLAYERS][PG_SCRYFALL_ID_LEN] = {{0}};
 static char selected_art_url[MAX_DISPLAY_PLAYERS][PG_IMAGE_URL_LEN] = {{0}};
 static uint8_t selected_art_failures[MAX_DISPLAY_PLAYERS] = {0};
+static bool start_without_art_requested = false;
+static lv_obj_t *mulligan_art_hint = NULL;
+static lv_obj_t *mulligan_start_button = NULL;
 static lv_timer_t *commander_prepare_timer = NULL;
 static volatile bool commander_prepare_active = false;
 static volatile bool commander_prepare_done = false;
@@ -1543,8 +1546,7 @@ static void selected_art_timer_cb(lv_timer_t *timer)
     if (!playgroup_roster_active ||
         (lv_scr_act()!=screen_pregame_roster &&
          lv_scr_act()!=screen_pregame_mulligans &&
-         lv_scr_act()!=screen_pregame_member &&
-         lv_scr_act()!=screen_pregame_deck)) {
+         lv_scr_act()!=screen_pregame_member)) {
         lv_timer_pause(timer);
         return;
     }
@@ -1553,6 +1555,9 @@ static void selected_art_timer_cb(lv_timer_t *timer)
         if (!selected_deck_id[seat] || !selected_art_id[seat][0] ||
             selected_player_art[seat].pixels!=NULL)continue;
         missing++;
+        /* Do not decode inside the visible deck picker: its LVGL image may
+         * still refer to an entry in this tiny two-slot decoded cache. */
+        if (selected_art_failures[seat]>=3) continue;
         uint8_t *data=NULL,*pixels=NULL;
         size_t size=0;
         uint16_t w=0,h=0;
@@ -1584,7 +1589,17 @@ static void selected_art_timer_cb(lv_timer_t *timer)
             missing--;
         }
     }
-    if (!missing)lv_timer_pause(timer);
+    if (!missing) {
+        lv_timer_pause(timer);
+        if (start_without_art_requested) {
+            start_without_art_requested=false;
+            if (mulligan_art_hint)
+                lv_label_set_text(mulligan_art_hint,"Tap +1   |   Hold -1");
+            if (mulligan_start_button)
+                lv_label_set_text(lv_obj_get_child(mulligan_start_button,0),
+                                  "START GAME");
+        }
+    }
 }
 
 static void set_deck_picker_more_visual(bool more)
@@ -1789,6 +1804,7 @@ static void event_deck_select(lv_event_t *e)
     snprintf(selected_art_url[deck_picker_seat],sizeof(selected_art_url[deck_picker_seat]),
              "%s",deck->art_crop_url);
     selected_art_failures[deck_picker_seat]=0;
+    start_without_art_requested=false;
     selected_deck_id[deck_picker_seat] = deck->id;
     selected_commander_id[deck_picker_seat] = deck->commander_id;
     snprintf(selected_deck_name[deck_picker_seat],
@@ -2100,6 +2116,12 @@ static void event_roster_continue(lv_event_t *e)
         return;
     }
 
+    start_without_art_requested=false;
+    if(mulligan_art_hint)
+        lv_label_set_text(mulligan_art_hint,"Tap +1   |   Hold -1");
+    if(mulligan_start_button)
+        lv_label_set_text(lv_obj_get_child(mulligan_start_button,0),
+                          "START GAME");
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) mulligans[i] = 0;
     refresh_mulligans();
     if (offline_playgroup_mode)
@@ -2199,6 +2221,33 @@ static void event_start_game(lv_event_t *e)
     bool track_playgroup_game = false;
     pg_pending_seed_t pending_seed = {0};
     (void)e;
+
+    /* Downloading is asynchronous, but NEVER silently start a game with
+     * unknown art. First press shows the missing count; pressing again
+     * explicitly accepts color/blank art if internet remains unavailable. */
+    if (playgroup_roster_active) {
+        int missing=0;
+        for(int seat=0;seat<pregame_player_count;seat++)
+            if(selected_deck_id[seat] && selected_art_id[seat][0] &&
+               selected_player_art[seat].pixels==NULL)
+                missing++;
+        if(missing && !start_without_art_requested) {
+            start_without_art_requested=true;
+            if(mulligan_art_hint) {
+                char msg[80];
+                snprintf(msg,sizeof(msg),"%d art loading - wait or SKIP ART",
+                         missing);
+                lv_label_set_text(mulligan_art_hint,msg);
+            }
+            if(mulligan_start_button)
+                lv_label_set_text(lv_obj_get_child(mulligan_start_button,0),
+                                  "SKIP ART");
+            printf("[Playgroup] Game start paused: %d selected arts missing.\\n",
+                   missing);
+            return;
+        }
+    }
+    start_without_art_requested=false;
 
     /*
      * Capture Playgroup identity before ending the setup Wi-Fi session.
@@ -2908,6 +2957,7 @@ void build_pregame_screens(void)
 
         {
             lv_obj_t *hint = lv_label_create(screen_pregame_mulligans);
+            mulligan_art_hint = hint;
             lv_label_set_text(hint, "Tap +1   |   Hold -1");
             lv_obj_set_style_text_color(hint, lv_color_hex(0x6F7A85), 0);
             lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
@@ -2928,6 +2978,7 @@ void build_pregame_screens(void)
 
         lv_obj_t *start = pregame_button(screen_pregame_mulligans, "START GAME", 146, 42,
                                          event_start_game, LV_EVENT_CLICKED, NULL);
+        mulligan_start_button = start;
         lv_obj_align(start, LV_ALIGN_BOTTOM_MID, 0, -24);
         /* The circular display registers touches below the painted button. */
         lv_obj_set_ext_click_area(start, 16);

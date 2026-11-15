@@ -260,6 +260,12 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn("art_persistent_load(scryfall_id",api)
         self.assertIn("art_persistent_store(job->scryfall_id,data,size)",api)
         self.assertIn("PG_ART_CACHE_MAX_BYTES (512U * 1024U)",api)
+        self.assertIn('mulligan_start_button',pre)
+        self.assertIn('start_without_art_requested=true;',pre)
+        self.assertIn('SKIP ART',pre)
+        self.assertIn('Game start paused:',pre)
+        self.assertIn('if (selected_art_failures[seat]>=3) continue;',pre)
+        self.assertNotIn('lv_scr_act()!=screen_pregame_deck))',pre)
 
     def test_starter_ui_authenticates_seat_and_persists_before_reveal(self):
         ui = (ROOT / "knobby/src/pokemon_starter_ui.cpp").read_text(encoding="utf-8")
