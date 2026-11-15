@@ -166,7 +166,7 @@ class PlaygroupFastPathTests(unittest.TestCase):
         menu = (ROOT / "knobby/src/ui_player_menu.c").read_text(encoding="utf-8")
         self.assertIn("open_player_life_adjust(player);", mp)
         self.assertIn("open_player_life_adjust(int player_index)", menu)
-        self.assertIn("apply_life_delta(menu_player,life_edit_delta)", menu)
+        self.assertIn("apply_life_delta(menu_player, life_edit_delta)", menu)
         self.assertIn('life_edit_more(', menu)
         self.assertIn('life_edit_cancel(', menu)
         self.assertIn('build_player_life_adjust_screen();', menu)
