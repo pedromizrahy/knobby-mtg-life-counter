@@ -140,8 +140,8 @@ class PlaygroupFastPathTests(unittest.TestCase):
 
     def test_roster_short_tap_edits_only_selected_seat(self):
         src=(ROOT / "knobby/src/pregame.c").read_text(encoding="utf-8")
-        handler=between(src,"static void event_roster_member_cycle(lv_event_t *e)\\n{",
-                        "\\nstatic bool member_index_used_by_other_seat(")
+        handler=between(src,"static void event_roster_member_cycle(lv_event_t *e)\n{",
+                        "\nstatic bool member_index_used_by_other_seat(")
         self.assertIn("member_picker_seat=seat;",handler)
         self.assertIn("roster_edit_mode=true;",handler)
         self.assertIn("lv_scr_load(screen_pregame_member);",handler)
@@ -153,6 +153,16 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn('Tap: edit player | Hold: decks',src)
         self.assertIn("event_roster_open_decks,",src)
         self.assertIn("LV_EVENT_LONG_PRESSED,",src)
+
+    def test_multiplayer_hold_has_direct_life_adjust_and_more_menu(self):
+        mp = (ROOT / "knobby/src/ui_mp.c").read_text(encoding="utf-8")
+        menu = (ROOT / "knobby/src/ui_player_menu.c").read_text(encoding="utf-8")
+        self.assertIn("open_player_life_adjust(player);", mp)
+        self.assertIn("open_player_life_adjust(int player_index)", menu)
+        self.assertIn("apply_life_delta(menu_player,life_edit_delta)", menu)
+        self.assertIn('life_edit_more(', menu)
+        self.assertIn('life_edit_cancel(', menu)
+        self.assertIn('build_player_life_adjust_screen();', menu)
 
     def test_starter_ui_authenticates_seat_and_persists_before_reveal(self):
         ui = (ROOT / "knobby/src/pokemon_starter_ui.cpp").read_text(encoding="utf-8")

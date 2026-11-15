@@ -1718,7 +1718,7 @@ static void event_multiplayer_open_menu(lv_event_t *e)
         return;
     }
 
-    open_player_menu(player);
+    open_player_life_adjust(player);
     lv_indev_wait_release(lv_indev_get_act());
 }
 

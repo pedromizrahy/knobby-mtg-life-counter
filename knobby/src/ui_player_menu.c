@@ -8,6 +8,89 @@
 #include "ui_damage_resolver.h"
 
 // ---------- screens ----------
+// ---------- focused life adjustment ----------
+/* Long-press on any active player, including outside their turn, opens
+ * this editor. No change is applied until APPLY is pressed. */
+static lv_obj_t *screen_player_life_adjust = NULL;
+static lv_obj_t *life_edit_title = NULL;
+static lv_obj_t *life_edit_value = NULL;
+static int life_edit_delta = 0;
+
+static void life_edit_refresh(void) {
+  char title[70], value[40];
+  snprintf(title,sizeof(title),"%s - LIFE",player_names[menu_player]);
+  snprintf(value,sizeof(value),"%d  (%+d)",player_life[menu_player]+life_edit_delta,
+           life_edit_delta);
+  if (life_edit_title) lv_label_set_text(life_edit_title,title);
+  if (life_edit_value) lv_label_set_text(life_edit_value,value);
+}
+static void life_edit_noop(lv_event_t *e) { (void)e; }
+static void life_edit_adjust(lv_event_t *e) {
+  int step=(int)(intptr_t)lv_event_get_user_data(e);
+  if ((step<0 && life_edit_delta < -10000-step) ||
+      (step>0 && life_edit_delta > 10000-step)) return;
+  life_edit_delta+=step;
+  life_edit_refresh();
+}
+static void life_edit_apply(lv_event_t *e) {
+  (void)e;
+  if (menu_player>=0 && menu_player<MAX_DISPLAY_PLAYERS &&
+      !player_eliminated[menu_player] && life_edit_delta)
+    apply_life_delta(menu_player,life_edit_delta);
+  life_edit_delta=0;
+  back_to_main();
+}
+static void life_edit_more(lv_event_t *e) {
+  (void)e;
+  open_player_menu(menu_player);
+}
+static void life_edit_cancel(lv_event_t *e) {
+  (void)e;
+  life_edit_delta=0;
+  back_to_main();
+}
+void open_player_life_adjust(int player_index) {
+  if (player_index<0 || player_index>=MAX_DISPLAY_PLAYERS ||
+      player_eliminated[player_index])return;
+  menu_player=player_index;
+  life_edit_delta=0;
+  life_edit_refresh();
+  load_screen_if_needed(screen_player_life_adjust);
+}
+static void build_player_life_adjust_screen(void) {
+  screen_player_life_adjust=lv_obj_create(NULL);
+  lv_obj_set_size(screen_player_life_adjust,360,360);
+  lv_obj_set_style_bg_color(screen_player_life_adjust,lv_color_black(),0);
+  lv_obj_set_style_border_width(screen_player_life_adjust,0,0);
+  lv_obj_set_style_pad_all(screen_player_life_adjust,0,0);
+  life_edit_title=lv_label_create(screen_player_life_adjust);
+  lv_label_set_text(life_edit_title,"PLAYER - LIFE");
+  lv_obj_set_width(life_edit_title,280);
+  lv_obj_set_style_text_align(life_edit_title,LV_TEXT_ALIGN_CENTER,0);
+  lv_obj_set_style_text_color(life_edit_title,lv_color_white(),0);
+  lv_obj_align(life_edit_title,LV_ALIGN_TOP_MID,0,35);
+  life_edit_value=lv_label_create(screen_player_life_adjust);
+  lv_label_set_text(life_edit_value,"40");
+  lv_obj_set_style_text_font(life_edit_value,&lv_font_montserrat_32,0);
+  lv_obj_set_style_text_color(life_edit_value,lv_color_hex(0xDFCC9F),0);
+  lv_obj_align(life_edit_value,LV_ALIGN_TOP_MID,0,94);
+  lv_obj_t *btn;
+  const int steps[4]={-5,-1,1,5};
+  const char *names[4]={"-5","-1","+1","+5"};
+  for(int i=0;i<4;i++){
+    btn=make_button(screen_player_life_adjust,names[i],68,52,life_edit_noop);
+    lv_obj_set_pos(btn,31+i*72,156);
+    lv_obj_add_event_cb(btn,life_edit_adjust,LV_EVENT_CLICKED,
+                        (void *)(intptr_t)steps[i]);
+  }
+  btn=make_button(screen_player_life_adjust,"CANCEL",78,36,life_edit_cancel);
+  lv_obj_set_pos(btn,55,236);
+  btn=make_button(screen_player_life_adjust,"APPLY",78,36,life_edit_apply);
+  lv_obj_set_pos(btn,227,236);
+  btn=make_button(screen_player_life_adjust,"MORE",92,32,life_edit_more);
+  lv_obj_set_pos(btn,134,294);
+}
+
 lv_obj_t *screen_player_menu = NULL;
 lv_obj_t *screen_player_all_damage = NULL;
 lv_obj_t *screen_counter_menu = NULL;
@@ -327,6 +410,7 @@ void build_player_menu_screen(void) {
       {"Counters", event_menu_counters, true, LV_EVENT_SHORT_CLICKED},
   };
   build_quad_screen(&screen_player_menu, items);
+  build_player_life_adjust_screen();
 
   /* Long-press Counters to manually eliminate */
   lv_obj_t *counters_btn = lv_obj_get_child(screen_player_menu, 3);
