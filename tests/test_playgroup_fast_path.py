@@ -151,6 +151,13 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn("roster_edit_has_pending_member",src)
         self.assertIn("roster_edit_original_deck_id",src)
         self.assertIn('Tap: edit player | Hold: decks',src)
+        self.assertIn('roster_edit_decks_preloaded=true;',src)
+        self.assertIn('if (!roster_edit_decks_preloaded &&',src)
+        self.assertIn('roster_edit_decks_preloaded=false;',src)
+        direct=between(src,"static void event_roster_open_decks(lv_event_t *e)\n{",
+                       "\nstatic void event_deck_select(lv_event_t *e)")
+        self.assertIn("roster_edit_mode=true;",direct)
+        self.assertIn("member_picker_seat=seat;",direct)
         self.assertIn("event_roster_open_decks,",src)
         self.assertIn("LV_EVENT_LONG_PRESSED,",src)
 

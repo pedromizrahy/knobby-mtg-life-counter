@@ -58,6 +58,7 @@ static int member_picker_seat = 0;
 static int member_picker_index = 0;
 static bool roster_edit_mode = false; /* only clicked seat is editable */
 static bool roster_edit_has_pending_member = false;
+static bool roster_edit_decks_preloaded = false;
 static int roster_edit_original_member = 0;
 static bool roster_edit_original_set = false;
 static long roster_edit_original_deck_id = 0;
@@ -945,6 +946,7 @@ static void event_roster_member_cycle(lv_event_t *e)
     /* A tap must not cycle the member or erase an already chosen deck.
        Explicit SELECT confirms any change, scoped to this seat only. */
     roster_edit_mode=true;
+    roster_edit_decks_preloaded=false;
     roster_edit_has_pending_member=false;
     roster_edit_original_member=selected_member_index[seat];
     roster_edit_original_set=selected_member_set[seat];
@@ -1330,12 +1332,14 @@ static void event_member_select(lv_event_t *e)
         return;
     }
     /* A network failure cannot erase the deck of an existing seat. */
-    if (roster_edit_mode && member != NULL &&
-        !playgroup_refresh_decks(member->user_id)) {
-        if (member_status_label != NULL)
-            lv_label_set_text(member_status_label,
-                              "Deck load failed - retry SELECT");
-        return;
+    if (roster_edit_mode && member != NULL) {
+        if (!playgroup_refresh_decks(member->user_id)) {
+            if (member_status_label != NULL)
+                lv_label_set_text(member_status_label,
+                                  "Deck load failed - retry SELECT");
+            return;
+        }
+        roster_edit_decks_preloaded=true;
     }
     if (roster_edit_mode) roster_edit_has_pending_member=true;
     selected_member_index[member_picker_seat] = member_picker_index;
@@ -1387,11 +1391,13 @@ static void event_member_select(lv_event_t *e)
     clear_decoded_art_cache();
 
     perf_network_started = lv_tick_get();
-    if (!playgroup_refresh_decks(member->user_id)) {
+    if (!roster_edit_decks_preloaded &&
+        !playgroup_refresh_decks(member->user_id)) {
         if (member_status_label != NULL)
             lv_label_set_text(member_status_label, "Deck load failed - tap SELECT to retry");
         return;
     }
+    roster_edit_decks_preloaded=false;
 
     printf("[Perf] PG SELECT PLAYER decks=%lu ms user=%ld\n",
            (unsigned long)(lv_tick_get() - perf_network_started),
@@ -1653,6 +1659,12 @@ static void event_roster_open_decks(lv_event_t *e)
     if (member == NULL)
         return;
 
+    /* Direct deck edits are scoped to the held roster seat. Once selected,
+     * return to roster; never advance the member onboarding sequence. */
+    roster_edit_mode=true;
+    roster_edit_has_pending_member=false;
+    roster_edit_decks_preloaded=false;
+    member_picker_seat=seat;
     deck_picker_seat = seat;
     deck_picker_index = 0;
     deck_picker_show_all = false;
@@ -1746,6 +1758,7 @@ static void event_deck_select(lv_event_t *e)
     if (roster_edit_mode) {
         roster_edit_mode=false;
         roster_edit_has_pending_member=false;
+        roster_edit_decks_preloaded=false;
         refresh_roster();
         lv_scr_load(screen_pregame_roster);
         return;
