@@ -6,6 +6,7 @@
 #include "storage.h"
 #include "ui_1p.h"
 #include "ui_damage_resolver.h"
+#include "ui_mp.h"
 
 // ---------- screens ----------
 // ---------- lethal state confirmation ----------
