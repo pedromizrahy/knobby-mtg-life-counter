@@ -8,6 +8,86 @@
 #include "ui_damage_resolver.h"
 
 // ---------- screens ----------
+// ---------- lethal state confirmation ----------
+// Only enters from the main LVGL loop, AFTER an entire combat/action is
+// processed. No screen switches inside the game damage engine.
+lv_obj_t *screen_player_elimination_confirm = NULL;
+static lv_obj_t *elimination_confirm_title = NULL;
+static lv_obj_t *elimination_confirm_reason = NULL;
+static int elimination_confirm_player = -1;
+
+static void event_elimination_confirm(lv_event_t *e) {
+  (void)e;
+  int player=elimination_confirm_player;
+  elimination_confirm_player=-1;
+  if (player>=0) (void)confirm_pending_player_elimination(player);
+  back_to_main();
+}
+static void event_elimination_cancel(lv_event_t *e) {
+  (void)e;
+  int player=elimination_confirm_player;
+  elimination_confirm_player=-1;
+  if (player>=0) (void)cancel_pending_player_elimination(player);
+  back_to_main();
+}
+void poll_player_elimination_confirm(void) {
+  if (screen_player_elimination_confirm==NULL ||
+      lv_scr_act()==screen_player_elimination_confirm ||
+      life_preview_active)return;
+  int player=next_pending_player_elimination();
+  if (player<0)return;
+  /* A pending fight may originate on another menu; show the question
+     after the action returns to gameplay to avoid overwriting its UI. */
+  if (lv_scr_act()!=screen_multiplayer)return;
+  elimination_confirm_player=player;
+  char title[64], reason[90];
+  snprintf(title,sizeof(title),"%s eliminated?",player_names[player]);
+  if (player_life[player]<=0)
+    snprintf(reason,sizeof(reason),"Life: %d",player_life[player]);
+  else if (player_counters[player][COUNTER_TYPE_POISON]>=10)
+    snprintf(reason,sizeof(reason),"Poison: %d",
+             player_counters[player][COUNTER_TYPE_POISON]);
+  else snprintf(reason,sizeof(reason),"Lethal commander damage");
+  lv_label_set_text(elimination_confirm_title,title);
+  lv_label_set_text(elimination_confirm_reason,reason);
+  load_screen_if_needed(screen_player_elimination_confirm);
+}
+static void build_player_elimination_confirm_screen(void) {
+  screen_player_elimination_confirm=lv_obj_create(NULL);
+  lv_obj_set_size(screen_player_elimination_confirm,360,360);
+  lv_obj_set_style_bg_color(screen_player_elimination_confirm,
+                            lv_color_black(),0);
+  lv_obj_set_style_border_width(screen_player_elimination_confirm,0,0);
+  lv_obj_set_style_pad_all(screen_player_elimination_confirm,0,0);
+  lv_obj_set_scrollbar_mode(screen_player_elimination_confirm,
+                             LV_SCROLLBAR_MODE_OFF);
+
+  elimination_confirm_title=lv_label_create(screen_player_elimination_confirm);
+  lv_obj_set_width(elimination_confirm_title,290);
+  lv_label_set_text(elimination_confirm_title,"PLAYER eliminated?");
+  lv_obj_set_style_text_align(elimination_confirm_title,LV_TEXT_ALIGN_CENTER,0);
+  lv_obj_set_style_text_color(elimination_confirm_title,lv_color_white(),0);
+  lv_obj_set_style_text_font(elimination_confirm_title,&lv_font_montserrat_22,0);
+  lv_obj_align(elimination_confirm_title,LV_ALIGN_TOP_MID,0,65);
+
+  elimination_confirm_reason=lv_label_create(screen_player_elimination_confirm);
+  lv_label_set_text(elimination_confirm_reason,"Life: 0");
+  lv_obj_set_style_text_color(elimination_confirm_reason,
+                               lv_color_hex(0xFF1744),0);
+  lv_obj_set_style_text_font(elimination_confirm_reason,
+                             &lv_font_montserrat_32,0);
+  lv_obj_align(elimination_confirm_reason,LV_ALIGN_CENTER,0,-10);
+
+  lv_obj_t *btn=make_button(screen_player_elimination_confirm,
+                            "BACK",105,48,event_elimination_cancel);
+  lv_obj_set_style_radius(btn,12,0);
+  lv_obj_align(btn,LV_ALIGN_BOTTOM_LEFT,56,-70);
+  btn=make_button(screen_player_elimination_confirm,
+                  "CONFIRM",105,48,event_elimination_confirm);
+  lv_obj_set_style_radius(btn,12,0);
+  lv_obj_align(btn,LV_ALIGN_BOTTOM_RIGHT,-56,-70);
+}
+
 // ---------- focused life adjustment ----------
 // Uses the same Montserrat fonts, visual emphasis and physical dial as the
 // other built-in editors. Nothing commits until APPLY.
@@ -449,6 +529,7 @@ void build_player_menu_screen(void) {
   };
   build_quad_screen(&screen_player_menu, items);
   build_player_life_adjust_screen();
+  build_player_elimination_confirm_screen();
 
   /* Long-press Counters to manually eliminate */
   lv_obj_t *counters_btn = lv_obj_get_child(screen_player_menu, 3);

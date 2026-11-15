@@ -56,6 +56,8 @@ bool player_eliminated[MAX_DISPLAY_PLAYERS] = {false};
    so an undo that recomputes auto conditions can't revive someone who
    manually conceded while still above 0 life. */
 static bool player_manually_eliminated[MAX_DISPLAY_PLAYERS] = {false};
+static bool player_elimination_pending[MAX_DISPLAY_PLAYERS] = {false};
+
 
 typedef struct {
     bool valid;
@@ -207,50 +209,92 @@ void undo_elimination_action(int player)
     damage_log_remove_last_for(player, action.event_type);
 }
 
+/* A lethal state is NOT an elimination until the table confirms it.
+ * Do not broadcast the elimination bit, skip turns, or finalize the game
+ * while a local action is awaiting confirmation. */
+int next_pending_player_elimination(void)
+{
+    for (int i=0;i<nvs_get_players_to_track() && i<MAX_DISPLAY_PLAYERS;i++)
+        if (player_elimination_pending[i] && !player_eliminated[i])
+            return i;
+    return -1;
+}
+
 void check_player_elimination(int player)
 {
-    if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return;
-    bool was_eliminated = player_eliminated[player];
-    bool now_eliminated = false;
-
-    /* Elimination is a multiplayer concept: with a single tracked player
-       there is no eliminated-menu route in the 1p UI, so eliminating
-       player 0 would brick the counter until reset. */
-    if (nvs_get_auto_eliminate() && nvs_get_players_to_track() > 1) {
-        if (player_life[player] <= 0) {
-            now_eliminated = true;
-        } else {
-            for (int i = 0; i < MAX_GAME_PLAYERS; i++) {
-                if (i != player && cmd_damage_totals[i][player] >= 21) {
-                    now_eliminated = true;
+    if (player<0 || player>=MAX_DISPLAY_PLAYERS) return;
+    bool was_eliminated=player_eliminated[player];
+    bool lethal=false;
+    if (nvs_get_auto_eliminate() && nvs_get_players_to_track()>1) {
+        lethal=player_life[player]<=0 ||
+               player_counters[player][COUNTER_TYPE_POISON]>=10;
+        if (!lethal) {
+            for (int i=0;i<MAX_GAME_PLAYERS;i++) {
+                if (i!=player && cmd_damage_totals[i][player]>=21) {
+                    lethal=true;
                     break;
                 }
             }
-            if (!now_eliminated && player_counters[player][COUNTER_TYPE_POISON] >= 10) {
-                now_eliminated = true;
-            }
         }
     }
-
     if (player_manually_eliminated[player]) {
-        now_eliminated = true;
+        player_elimination_pending[player]=false;
+        player_eliminated[player]=true;
+    } else if (lethal && !was_eliminated) {
+        /* The lethal action is now queued for on-screen consent. */
+        player_elimination_pending[player]=true;
+        player_eliminated[player]=false;
+    } else {
+        player_elimination_pending[player]=false;
+        player_eliminated[player]=was_eliminated && lethal;
     }
-
-    player_eliminated[player] = now_eliminated;
-    if (!now_eliminated) {
+    if (!player_eliminated[player] && !player_elimination_pending[player])
         clear_player_elimination_action(player);
-    } else if (player_selected[player]) {
-        /* An eliminated player is no longer a life-change target: drop it
-           from the selection so the knob doesn't preview onto a dead panel
-           that can't be tapped to deselect. */
-        player_selected[player] = false;
+    if (player_eliminated[player] && player_selected[player]) {
+        player_selected[player]=false;
         select_kick_timer();
     }
-
-    if (was_eliminated != now_eliminated) {
+    if (was_eliminated!=player_eliminated[player]) {
         refresh_game_player_state(player);
         playgroup_pending_reconcile_outcome();
     }
+}
+
+bool confirm_pending_player_elimination(int player)
+{
+    if (player<0 || player>=MAX_DISPLAY_PLAYERS ||
+        !player_elimination_pending[player] || player_eliminated[player])
+        return false;
+    player_elimination_pending[player]=false;
+    player_eliminated[player]=true;
+    /* Keep last lethal action available for the existing Undo menu. */
+    player_manually_eliminated[player]=false;
+    if (player_selected[player]) {
+        player_selected[player]=false;
+        select_kick_timer();
+    }
+    net_sync_commit_player(player);
+    refresh_game_player_state(player);
+    playgroup_pending_reconcile_outcome();
+    return true;
+}
+
+bool cancel_pending_player_elimination(int player)
+{
+    if (player<0 || player>=MAX_DISPLAY_PLAYERS ||
+        !player_elimination_pending[player])return false;
+    player_elimination_pending[player]=false;
+    /* BACK means undo the lethal adjustment, rather than leaving a
+     * negative-life, not-eliminated player indefinitely. */
+    if (elimination_action_available(player)) {
+        undo_elimination_action(player);
+        return true;
+    }
+    /* No reversable local action: keep the state unchanged, do not
+     * fabricate a life total or silently alter poison/commander counters.
+     * Recheck on the next actual game modification. */
+    clear_player_elimination_action(player);
+    return true;
 }
 
 void manual_eliminate_player(int player)
@@ -260,6 +304,7 @@ void manual_eliminate_player(int player)
     /* Same solo-mode exemption as check_player_elimination. */
     if (nvs_get_players_to_track() <= 1) return;
     player_eliminated[player] = true;
+    player_elimination_pending[player] = false;
     player_manually_eliminated[player] = true;
     clear_player_elimination_action(player);
     if (player_selected[player]) {
@@ -277,6 +322,7 @@ void manual_uneliminate_player(int player)
     if (player < 0 || player >= MAX_DISPLAY_PLAYERS) return;
     if (!player_eliminated[player]) return;
     player_eliminated[player] = false;
+    player_elimination_pending[player] = false;
     player_manually_eliminated[player] = false;
     clear_player_elimination_action(player);
     /* A remotely-caused elimination arrives with no local
@@ -967,6 +1013,7 @@ void knob_life_reset(void)
     memset(player_counters, 0, sizeof(player_counters));
     memset(player_eliminated, 0, sizeof(player_eliminated));
     memset(player_manually_eliminated, 0, sizeof(player_manually_eliminated));
+    memset(player_elimination_pending, 0, sizeof(player_elimination_pending));
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) clear_player_elimination_action(i);
     all_damage_value = 0;
     counter_edit_type = COUNTER_TYPE_COMMANDER_TAX;
@@ -1286,6 +1333,10 @@ void net_sync_apply_state(const net_sync_state_t *in, int wins_ties)
             if (newer < 0) remote_stale = true;
             continue;
         }
+        /* Only an ACCEPTED remote revision may cancel local consent.
+         * A stale packet must not dismiss the confirmation screen. */
+        if (epoch_newer > 0 || newer > 0)
+            player_elimination_pending[p] = false;
 
         if (player_life[p] != life) {
             player_life[p] = life;

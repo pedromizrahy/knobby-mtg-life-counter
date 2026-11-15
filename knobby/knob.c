@@ -397,6 +397,9 @@ static void handle_back_navigation(lv_obj_t *screen)
     } else if (screen == screen_custom_life) {
         refresh_game_mode_menu_ui();
         lv_scr_load(screen_game_setup);
+    } else if (screen == screen_player_elimination_confirm) {
+        /* No swipe-out: the user must explicitly confirm or undo. */
+        return;
     } else if (screen == screen_player_life_adjust) {
         back_to_main();
     } else if (screen == screen_player_menu) {
@@ -465,7 +468,8 @@ static void menu_facing_screen_event(lv_event_t *e)
 static void menu_facing_hook_screens(void)
 {
     lv_obj_t *scoped[] = {
-        screen_player_menu, screen_player_life_adjust, screen_eliminated_player_menu,
+        screen_player_menu, screen_player_life_adjust,
+        screen_player_elimination_confirm, screen_eliminated_player_menu,
         screen_player_all_damage, screen_counter_menu, screen_counter_edit,
         screen_player_color_menu, screen_player_color_picker,
         screen_player_name, screen_select, screen_damage,
@@ -729,4 +733,7 @@ void knob_process_pending(void)
         handle_knob_event(event);
         processed++;
     }
+    /* Open the confirmation only after completing the current action and
+       draining rotary events. Never push UI from a multi-target damage loop. */
+    poll_player_elimination_confirm();
 }

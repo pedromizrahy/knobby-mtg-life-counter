@@ -91,6 +91,9 @@ void manual_eliminate_player(int player);
 void manual_uneliminate_player(int player);
 
 void check_player_elimination(int player);
+int next_pending_player_elimination(void);
+bool confirm_pending_player_elimination(int player);
+bool cancel_pending_player_elimination(int player);
 
 // ---------- player colors ----------
 extern int player_color_index[MAX_DISPLAY_PLAYERS];

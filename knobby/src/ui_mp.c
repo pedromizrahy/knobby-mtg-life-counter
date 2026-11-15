@@ -1,4 +1,5 @@
 #include "ui_mp.h"
+#include "dial_skull_icon.h"
 #include "ui_player_menu.h"
 #include "ui_1p.h"
 #include "game.h"
@@ -136,6 +137,7 @@ static lv_opa_t art_turn_life_opa_for_player(int player);
 static struct {
     lv_obj_t *panels[MULTIPLAYER_COUNT];
     lv_obj_t *life_labels[MULTIPLAYER_COUNT];
+    lv_obj_t *skull_images[MULTIPLAYER_COUNT];
     lv_obj_t *name_labels[MULTIPLAYER_COUNT];
     lv_obj_t *art_images[MULTIPLAYER_COUNT];
     lv_obj_t *art_overlays[MULTIPLAYER_COUNT];
@@ -148,6 +150,23 @@ static struct {
 static lv_timer_t *select_timeout_timer = NULL;
 
 /* ---------- small helpers ---------- */
+/* Never rely on an unbundled Unicode glyph: the bundled Montserrat fonts
+ * do not include the skull. Show a tiny ROM bitmap in the life position. */
+static void mp_refresh_skull(int panel_index, int player) {
+    if (panel_index<0 || panel_index>=MULTIPLAYER_COUNT ||
+        player<0 || player>=MAX_DISPLAY_PLAYERS)return;
+    lv_obj_t *skull=mp_state.skull_images[panel_index];
+    lv_obj_t *life=mp_state.life_labels[panel_index];
+    if (!skull || !life)return;
+    if (player_eliminated[player]) {
+        lv_obj_add_flag(life,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(skull,LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(skull,LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(life,LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void mp_label_set_text_if_changed(lv_obj_t *label, const char *text)
 {
     const char *current;
@@ -1059,6 +1078,7 @@ void refresh_multiplayer_player_state(int player)
          */
         text_color = refresh_mp_panel(panel, life_lbl, name_lbl,
                                       spec->player_index, spec->color_index);
+        mp_refresh_skull(i,spec->player_index);
 
         if (nvs_get_color_mode() == COLOR_MODE_ART &&
             mp_state.art_overlays[i] != NULL) {
@@ -1129,6 +1149,7 @@ void refresh_multiplayer_turn_state(void)
                          mp_state.name_labels[i],
                          spec->player_index,
                          spec->color_index);
+        mp_refresh_skull(i,spec->player_index);
 
         if (nvs_get_color_mode() == COLOR_MODE_ART &&
             mp_state.art_overlays[i] != NULL) {
@@ -1412,9 +1433,20 @@ void refresh_multiplayer_ui(void)
             }
             apply_label_rotation(life_lbl, name_lbl, angle, life_pivot_y,
                                  (layout->panel_count >= 5) ? -22 : -27);
+            if (mp_state.skull_images[i]) {
+                lv_obj_align(mp_state.skull_images[i], LV_ALIGN_CENTER, bx,
+                             by - life_pivot_y);
+                lv_img_set_angle(mp_state.skull_images[i], angle);
+            }
         } else {
             apply_label_rotation(life_lbl, name_lbl, angle, 10, -30);
+            if (mp_state.skull_images[i]) {
+                lv_obj_align(mp_state.skull_images[i], LV_ALIGN_CENTER, bx,
+                             by - 10);
+                lv_img_set_angle(mp_state.skull_images[i], angle);
+            }
         }
+        mp_refresh_skull(i,spec->player_index);
 
         refresh_counter_rows(spec, wedge_geom[i].bis_deg, panel,
                              mp_state.counter_rows[i], mp_state.counter_values[i],
@@ -1942,6 +1974,13 @@ void rebuild_multiplayer_layout(int track)
         lv_obj_set_style_text_font(life_lbl, &lv_font_montserrat_bold_56, 0);
         lv_obj_align(life_lbl, LV_ALIGN_CENTER, 0, -10);
         mp_state.life_labels[i] = life_lbl;
+        /* Static ROM icon, hidden until the elimination is confirmed. */
+        mp_state.skull_images[i] = lv_img_create(panel);
+        lv_img_set_src(mp_state.skull_images[i], &dial_skull_icon);
+        lv_obj_add_flag(mp_state.skull_images[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(mp_state.skull_images[i],
+                          LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_align(mp_state.skull_images[i], LV_ALIGN_CENTER, 0, -10);
 
         create_counter_row(panel, COUNTER_TYPE_COMMANDER_TAX,
             &mp_state.counter_rows[i][COUNTER_TYPE_COMMANDER_TAX],

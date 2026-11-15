@@ -6,6 +6,7 @@
 // ---------- screens ----------
 extern lv_obj_t *screen_player_menu;
 extern lv_obj_t *screen_player_life_adjust;
+extern lv_obj_t *screen_player_elimination_confirm;
 extern lv_obj_t *screen_player_all_damage;
 extern lv_obj_t *screen_counter_menu;
 extern lv_obj_t *screen_counter_edit;
@@ -28,6 +29,7 @@ void refresh_counter_edit_ui(void);
 void open_player_menu(int player_index);
 void open_player_life_adjust(int player_index);
 void player_life_adjust_change(int delta);
+void poll_player_elimination_confirm(void);
 void open_counter_menu(void);
 void change_player_color(int delta);
 void commit_player_color(void);

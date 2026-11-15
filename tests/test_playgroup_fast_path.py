@@ -198,6 +198,28 @@ class PlaygroupFastPathTests(unittest.TestCase):
         self.assertIn('apply_life_delta(menu_player, life_edit_delta)',menu)
         self.assertIn('life_edit_delta = 0;',menu)
 
+    def test_elimination_requires_confirmation_and_shows_bundled_skull(self):
+        game=(ROOT / "knobby/src/game.c").read_text(encoding="utf-8")
+        mp=(ROOT / "knobby/src/ui_mp.c").read_text(encoding="utf-8")
+        menu=(ROOT / "knobby/src/ui_player_menu.c").read_text(encoding="utf-8")
+        knob=(ROOT / "knobby/knob.c").read_text(encoding="utf-8")
+        image=(ROOT / "knobby/src/dial_skull_icon.c").read_text(encoding="utf-8")
+        self.assertIn('player_elimination_pending[player]=true',game)
+        self.assertIn('player_eliminated[player]=false',game)
+        self.assertIn('confirm_pending_player_elimination(int player)',game)
+        self.assertIn('cancel_pending_player_elimination(int player)',game)
+        self.assertIn('undo_elimination_action(player)',game)
+        self.assertIn('player_elimination_pending[p] = false;',game)
+        self.assertIn('mp_refresh_skull(i,spec->player_index)',mp)
+        self.assertIn('lv_img_set_src(mp_state.skull_images[i], &dial_skull_icon)',mp)
+        self.assertIn('LV_IMG_CF_TRUE_COLOR_ALPHA',image)
+        self.assertIn('poll_player_elimination_confirm();',knob)
+        self.assertIn('confirm_pending_player_elimination(player)',menu)
+        self.assertIn('cancel_pending_player_elimination(player)',menu)
+        self.assertIn('next_pending_player_elimination()',menu)
+        self.assertIn('screen_player_elimination_confirm',knob)
+        self.assertIn('player_life_adjust_change(-1)',knob)
+
     def test_starter_ui_authenticates_seat_and_persists_before_reveal(self):
         ui = (ROOT / "knobby/src/pokemon_starter_ui.cpp").read_text(encoding="utf-8")
         preview = (ROOT / "knobby/src/pokemon_playgroup_preview.cpp").read_text(encoding="utf-8")
