@@ -2,6 +2,8 @@
 #include "hw.h"
 #include "storage.h"
 #include <string.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include "dice.h"
 #include "timer.h"
 #include "game_mode.h"
@@ -13,9 +15,12 @@
 #include "ui_1p.h"
 #include "ui_mp.h"
 #include "ui_player_menu.h"
+#include "pregame.h"
+#include "wifi_manager.h"
 
 // Forward declarations for cross-module calls
 extern void reset_all_values(void);
+static void refresh_wifi_scan_ui(void);
 extern void back_to_main(void);
 
 // ---------- screens ----------
@@ -24,6 +29,9 @@ lv_obj_t *screen_tools_menu = NULL;
 lv_obj_t *screen_settings = NULL;
 lv_obj_t *screen_battery = NULL;
 lv_obj_t *screen_rotate = NULL;
+lv_obj_t *screen_wifi = NULL;
+lv_obj_t *screen_wifi_scan = NULL;
+lv_obj_t *screen_wifi_password = NULL;
 
 // ---------- widgets ----------
 static lv_obj_t *arc_brightness = NULL;
@@ -32,6 +40,30 @@ static lv_obj_t *label_settings_hint = NULL;
 static lv_obj_t *label_settings_battery = NULL;
 static lv_obj_t *label_settings_battery_detail = NULL;
 static lv_obj_t *label_rotate_value = NULL;
+static lv_obj_t *wifi_status_lbl = NULL;
+static lv_obj_t *wifi_saved_lbl = NULL;
+static lv_obj_t *wifi_preferred_lbl = NULL;
+static lv_obj_t *wifi_forget_lbl = NULL;
+static int wifi_selected_index = 0;
+static int wifi_scan_index = 0;
+static lv_obj_t *wifi_scan_network_lbl = NULL;
+static lv_obj_t *wifi_scan_meta_lbl = NULL;
+static lv_obj_t *wifi_password_title_lbl = NULL;
+static lv_obj_t *wifi_password_textarea = NULL;
+static lv_obj_t *wifi_password_keyboard = NULL;
+static lv_obj_t *wifi_password_eye_btn = NULL;
+static lv_obj_t *wifi_password_eye_lbl = NULL;
+static lv_obj_t *wifi_password_status_lbl = NULL;
+static bool wifi_password_visible = false;
+static char wifi_editor_ssid[WIFI_MANAGER_SSID_MAX] = {0};
+static bool wifi_editor_from_scan = false;
+static lv_obj_t *turn_timer_btns[4] = {NULL, NULL, NULL, NULL};
+static lv_obj_t *turn_timer_lbls[4] = {NULL, NULL, NULL, NULL};
+static bool turn_settings_from_tools = false;
+static bool turn_settings_from_game = false;
+static bool table_sync_from_tools = false;
+static bool device_settings_from_home = false;
+static bool wifi_scan_from_home = false;
 
 // ---------- quadrant menu builder ----------
 void build_quad_screen(lv_obj_t **screen, quad_item_t items[4])
@@ -187,7 +219,7 @@ static uint32_t orientation_color(int mode)
 
 static uint32_t color_mode_color(int mode)
 {
-    return (mode == COLOR_MODE_LIFE) ? 0x4A148C : 0x0D47A1; /* purple / blue */
+    return (mode == COLOR_MODE_ART) ? 0x4A148C : 0x0D47A1; /* purple / blue */
 }
 
 static uint32_t deselect_color(int index)
@@ -201,6 +233,7 @@ static uint32_t deselect_color(int index)
 static void event_quad_screen_settings(lv_event_t *e)
 {
     (void)e;
+    device_settings_from_home = false;
     lv_scr_load(settings_pages[0]);
 }
 
@@ -217,9 +250,31 @@ static const char *autodim_label(int index)
 static const char *color_mode_label(int mode)
 {
     switch (mode) {
-        case COLOR_MODE_LIFE:   return "Colors\nLife";
-        default:                return "Colors\nPlayer";
+        case COLOR_MODE_ART: return "Colors\nArt";
+        default:             return "Colors\nPlayer";
     }
+}
+
+static const char *cmd_marker_label(int mode)
+{
+    return (mode == CMD_MARKER_ART)
+        ? "Commander\nMarker: Art"
+        : "Commander\nMarker: Dot";
+}
+
+static void cmd_marker_set(int mode)
+{
+    /*
+     * Settings is the visible screen. The gameplay view refreshes when the
+     * user returns through the quad menu, so repainting it here is wasted.
+     */
+    nvs_set_cmd_marker_mode(mode);
+}
+
+static void color_mode_set(int mode)
+{
+    nvs_set_color_mode(mode);
+    rebuild_multiplayer_layout(nvs_get_players_to_track());
 }
 
 static const char *deselect_label(int index)
@@ -282,6 +337,94 @@ void open_rotate_screen(void)
     lv_scr_load(screen_rotate);
 }
 
+static void refresh_wifi_settings_ui(void)
+{
+    wifi_manager_network_t net;
+    char current[WIFI_MANAGER_SSID_MAX];
+    char buf[96];
+    int count = wifi_manager_saved_count();
+
+    if (wifi_selected_index >= count)
+        wifi_selected_index = (count > 0) ? count - 1 : 0;
+    if (wifi_selected_index < 0)
+        wifi_selected_index = 0;
+
+    if (wifi_status_lbl != NULL) {
+        if (wifi_manager_current_ssid(current, sizeof(current))) {
+            snprintf(buf, sizeof(buf), "Connected\n%s\n%d dBm",
+                     current, wifi_manager_rssi());
+        } else {
+            snprintf(buf, sizeof(buf), "Wi-Fi\nOff");
+        }
+        lv_label_set_text(wifi_status_lbl, buf);
+    }
+
+    if (wifi_saved_lbl != NULL) {
+        if (count > 0 && wifi_manager_get_saved(wifi_selected_index, &net)) {
+            snprintf(buf, sizeof(buf), "Saved %d/%d\n%s%s",
+                     wifi_selected_index + 1, count, net.ssid,
+                     net.preferred ? "\nPreferred" : "");
+        } else {
+            snprintf(buf, sizeof(buf), "No saved\nnetworks");
+        }
+        lv_label_set_text(wifi_saved_lbl, buf);
+    }
+
+    if (wifi_preferred_lbl != NULL) {
+        if (count > 0 && wifi_manager_get_saved(wifi_selected_index, &net)) {
+            lv_label_set_text(wifi_preferred_lbl,
+                              net.preferred ? "Preferred" : "Make\nPreferred");
+        } else {
+            lv_label_set_text(wifi_preferred_lbl, "Preferred\n--");
+        }
+    }
+
+    if (wifi_forget_lbl != NULL) {
+        lv_label_set_text(wifi_forget_lbl,
+                          count > 0 ? "Hold to\nForget" : "Forget\n--");
+    }
+}
+
+void open_wifi_screen(void)
+{
+    wifi_scan_from_home = false;
+    refresh_wifi_settings_ui();
+    lv_scr_load(screen_wifi);
+}
+
+void open_device_settings(void)
+{
+    device_settings_from_home = false;
+    refresh_settings_pages_ui();
+    if (settings_page_count > 0)
+        lv_scr_load(settings_pages[0]);
+}
+
+void open_device_settings_from_home(void)
+{
+    device_settings_from_home = true;
+    refresh_settings_pages_ui();
+    if (settings_page_count > 0)
+        lv_scr_load(settings_pages[0]);
+}
+
+void open_wifi_scan_from_home(void)
+{
+    wifi_scan_from_home = true;
+    wifi_scan_index = 0;
+
+    if (wifi_scan_network_lbl != NULL)
+        lv_label_set_text(wifi_scan_network_lbl, "Scanning...");
+    if (wifi_scan_meta_lbl != NULL)
+        lv_label_set_text(wifi_scan_meta_lbl, "Please wait");
+
+    lv_scr_load(screen_wifi_scan);
+    lv_refr_now(NULL);
+
+    wifi_manager_scan();
+    refresh_wifi_scan_ui();
+}
+
 void change_display_rotation(int dir)
 {
     int v = (nvs_get_display_rotation() +
@@ -335,14 +478,159 @@ static const char *random_first_label(int val)
     return val ? "Random\nFirst\nON" : "Random\nFirst\nOFF";
 }
 
+static const char *turn_timer_label(int val)
+{
+    return val ? "Turn Timer\nON" : "Turn Timer\nOFF";
+}
+
 static const char *menu_facing_label(int val)
 {
     return val ? "Menus\nFace\nPlayer" : "Menus\nFixed";
 }
 
+static const char *timer_facing_label(int val)
+{
+    return val ? "Timer\nFaces\nPlayer" : "Timer\nFixed";
+}
+
+
 static const char *multi_select_label(int val)
 {
     return val ? "Multi-\nSelect\nON" : "Multi-\nSelect\nOFF";
+}
+
+static const char *turn_reminder_label(int minutes)
+{
+    switch (minutes) {
+        case 3:  return "Timer Alert\n3 min";
+        case 5:  return "Timer Alert\n5 min";
+        case 10: return "Timer Alert\n10 min";
+        case 15: return "Timer Alert\n15 min";
+        default: return "Timer Alert\nOFF";
+    }
+}
+
+static const char *turn_alert_duration_label(int seconds)
+{
+    switch (seconds) {
+        case 5:  return "Alert Duration\n5 sec";
+        case 10: return "Alert Duration\n10 sec";
+        default: return "Alert Duration\n3 sec";
+    }
+}
+
+static void refresh_turn_timer_settings_button(int index, const char *text, bool enabled)
+{
+    if (index < 0 || index >= 4) return;
+    if (turn_timer_lbls[index] != NULL)
+        lv_label_set_text(turn_timer_lbls[index], text);
+    if (turn_timer_btns[index] != NULL)
+        set_btn_color(turn_timer_btns[index], enabled ? TOGGLE_ON : TOGGLE_OFF);
+}
+
+void refresh_turn_timer_settings_ui(void)
+{
+    int reminder = nvs_get_turn_reminder_minutes();
+    int duration = nvs_get_turn_alert_duration_seconds();
+
+    refresh_turn_timer_settings_button(
+        0,
+        nvs_get_turn_timer_enabled() ? "Timer\nON" : "Timer\nOFF",
+        nvs_get_turn_timer_enabled() != 0);
+
+    if (turn_timer_lbls[1] != NULL)
+        lv_label_set_text(turn_timer_lbls[1], turn_reminder_label(reminder));
+    if (turn_timer_btns[1] != NULL)
+        set_btn_color(turn_timer_btns[1],
+                      reminder > 0 ? 0x0D47A1 : TOGGLE_OFF);
+
+    if (turn_timer_lbls[2] != NULL)
+        lv_label_set_text(turn_timer_lbls[2], turn_alert_duration_label(duration));
+    if (turn_timer_btns[2] != NULL)
+        set_btn_color(turn_timer_btns[2], 0x263238);
+
+    refresh_turn_timer_settings_button(
+        3,
+        nvs_get_turn_visual_alert() ? "Visual Alert\nON" : "Visual Alert\nOFF",
+        nvs_get_turn_visual_alert() != 0);
+}
+
+static void event_turn_timer_enable(lv_event_t *e)
+{
+    (void)e;
+    nvs_set_turn_timer_enabled(!nvs_get_turn_timer_enabled());
+    refresh_turn_timer_settings_ui();
+}
+
+static void event_turn_timer_reminder(lv_event_t *e)
+{
+    int value = nvs_get_turn_reminder_minutes();
+    (void)e;
+
+    if (value == 0) value = 3;
+    else if (value == 3) value = 5;
+    else if (value == 5) value = 10;
+    else if (value == 10) value = 15;
+    else value = 0;
+
+    nvs_set_turn_reminder_minutes(value);
+    turn_reminder_reconcile_after_setting_change();
+    refresh_turn_timer_settings_ui();
+}
+
+static void event_turn_alert_duration(lv_event_t *e)
+{
+    int value = nvs_get_turn_alert_duration_seconds();
+    (void)e;
+
+    if (value == 3) value = 5;
+    else if (value == 5) value = 10;
+    else value = 3;
+
+    nvs_set_turn_alert_duration_seconds(value);
+    refresh_turn_timer_settings_ui();
+}
+
+static void event_turn_timer_visual(lv_event_t *e)
+{
+    (void)e;
+    nvs_set_turn_visual_alert(!nvs_get_turn_visual_alert());
+    refresh_turn_timer_settings_ui();
+    refresh_turn_ui();
+}
+
+void open_turn_timer_settings(void)
+{
+    turn_settings_from_tools = false;
+    turn_settings_from_game = false;
+    refresh_turn_timer_settings_ui();
+    load_screen_if_needed(screen_turn_timer_settings);
+}
+
+void open_turn_timer_settings_from_game(void)
+{
+    turn_settings_from_tools = false;
+    turn_settings_from_game = true;
+    refresh_turn_timer_settings_ui();
+    load_screen_if_needed(screen_turn_timer_settings);
+}
+
+void build_turn_timer_settings_screen(void)
+{
+    quad_item_t items[4] = {
+        {"Timer\nON",            event_turn_timer_enable,   true, LV_EVENT_CLICKED},
+        {"Timer Alert\n5 min",   event_turn_timer_reminder, true, LV_EVENT_CLICKED},
+        {"Alert Duration\n3 sec",event_turn_alert_duration, true, LV_EVENT_CLICKED},
+        {"Visual Alert\nON",     event_turn_timer_visual,   true, LV_EVENT_CLICKED},
+    };
+    int i;
+
+    build_quad_screen(&screen_turn_timer_settings, items);
+    for (i = 0; i < 4; i++) {
+        turn_timer_btns[i] = lv_obj_get_child(screen_turn_timer_settings, i);
+        turn_timer_lbls[i] = lv_obj_get_child(turn_timer_btns[i], 0);
+    }
+    refresh_turn_timer_settings_ui();
 }
 
 static void multi_select_set(int v)
@@ -357,6 +645,7 @@ static void multi_select_set(int v)
 
 // ---------- table sync screen ----------
 lv_obj_t *screen_table_sync = NULL;
+lv_obj_t *screen_turn_timer_settings = NULL;
 static lv_obj_t *table_sync_action_lbl; /* Start <-> Invite quadrant */
 static lv_obj_t *table_sync_status_lbl; /* status tile */
 static lv_timer_t *table_sync_timer;
@@ -434,6 +723,7 @@ static void table_sync_timer_cb(lv_timer_t *timer)
 
 void open_table_sync_screen(void)
 {
+    table_sync_from_tools = false;
     refresh_table_sync_ui();
     lv_timer_resume(table_sync_timer);
     lv_scr_load(screen_table_sync);
@@ -476,12 +766,13 @@ static const setting_item_t settings_items[] = {
     { .id = "brightness",     .fixed_label = "Brightness", .navigate = open_settings_screen, .nav_screen = &screen_settings },
     { .id = "autodim",        .label = autodim_label,          .color = autodim_color,     .get = autodim_get,              .set = autodim_set,              .count = AUTO_DIM_COUNT },
     { .id = "battery",        .fixed_label = "Battery",    .navigate = open_battery_screen, .nav_screen = &screen_battery },
-    { .id = "color-mode",     .label = color_mode_label,       .color = color_mode_color,  .get = nvs_get_color_mode,       .set = nvs_set_color_mode,       .count = COLOR_MODE_COUNT },
-    { .id = "deselect",       .label = deselect_label,         .color = deselect_color,    .get = nvs_get_deselect_timeout, .set = nvs_set_deselect_timeout, .count = DESELECT_COUNT },
+    { .id = "wifi",           .fixed_label = "Wi-Fi",      .navigate = open_wifi_screen, .nav_screen = &screen_wifi },
+    { .id = "color-mode",     .label = color_mode_label,       .color = color_mode_color,  .get = nvs_get_color_mode,       .set = color_mode_set,           .count = COLOR_MODE_COUNT },
+    { .id = "cmd-marker",     .label = cmd_marker_label,       .color = color_mode_color,  .get = nvs_get_cmd_marker_mode,  .set = cmd_marker_set,           .count = CMD_MARKER_COUNT },
     { .id = "orientation",    .label = orientation_mode_label, .color = orientation_color, .get = nvs_get_orientation,      .set = nvs_set_orientation,      .count = ORIENTATION_MODE_COUNT },
     { .id = "auto-eliminate", .label = auto_eliminate_label,   .color = toggle_color,      .get = nvs_get_auto_eliminate,   .set = nvs_set_auto_eliminate,   .count = 2 },
     { .id = "random-first",   .label = random_first_label,     .color = toggle_color,      .get = nvs_get_random_first,     .set = nvs_set_random_first,     .count = 2 },
-    { .id = "multi-select",   .label = multi_select_label,     .color = toggle_color,      .get = nvs_get_multi_select,     .set = multi_select_set,         .count = 2 },
+    { .id = "timer-facing",   .label = timer_facing_label,      .color = toggle_color,      .get = nvs_get_timer_face_player, .set = nvs_set_timer_face_player, .count = 2 },
     { .id = "table-sync",     .fixed_label = "Table Sync\n(Experimental)", .navigate = open_table_sync_screen, .nav_screen = &screen_table_sync },
     { .id = "rotate",         .fixed_label = "Rotate\nScreen", .navigate = open_rotate_screen, .nav_screen = &screen_rotate },
     { .id = "menu-facing",    .label = menu_facing_label,      .color = toggle_color,      .get = nvs_get_menu_facing,      .set = nvs_set_menu_facing,      .count = 2 },
@@ -498,10 +789,30 @@ static int setting_page_of[SETTINGS_ITEM_COUNT];
 void refresh_settings_pages_ui(void)
 {
     int i;
+    bool offline = nvs_is_offline_session_active() != 0;
+
     for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
         const setting_item_t *it = &settings_items[i];
         int v;
-        if (setting_btns[i] == NULL || it->get == NULL) continue;
+
+        if (setting_btns[i] == NULL)
+            continue;
+
+        /* Offline never has commander art. Remove ART-related choices from
+           the in-game settings entirely instead of presenting options that
+           cannot apply. Playgroup settings remain untouched. */
+        if (offline &&
+            (strcmp(it->id, "color-mode") == 0 ||
+             strcmp(it->id, "cmd-marker") == 0)) {
+            lv_obj_add_flag(setting_btns[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+
+        lv_obj_clear_flag(setting_btns[i], LV_OBJ_FLAG_HIDDEN);
+
+        if (it->get == NULL)
+            continue;
+
         v = it->get();
         lv_label_set_text(setting_lbls[i], it->label(v));
         set_btn_color(setting_btns[i], it->color ? it->color(v) : 0x1A1A2E);
@@ -512,6 +823,11 @@ static void event_setting_item(lv_event_t *e)
 {
     const setting_item_t *it = lv_event_get_user_data(e);
     if (it == NULL) return;
+
+    if (nvs_is_offline_session_active() &&
+        (strcmp(it->id, "color-mode") == 0 ||
+         strcmp(it->id, "cmd-marker") == 0))
+        return;
     if (it->navigate != NULL) {
         it->navigate();
         return;
@@ -574,9 +890,50 @@ bool settings_handle_back(lv_obj_t *screen)
 {
     int i;
 
+    if (screen == screen_turn_timer_settings && turn_settings_from_game) {
+        settings_save();
+        turn_settings_from_game = false;
+        lv_scr_load(screen_game_mode_menu);
+        return true;
+    }
+
+    if (screen == screen_turn_timer_settings && turn_settings_from_tools) {
+        settings_save();
+        turn_settings_from_tools = false;
+        lv_scr_load(screen_tools_menu);
+        return true;
+    }
+
+    if (screen == screen_table_sync && table_sync_from_tools) {
+        table_sync_from_tools = false;
+        lv_scr_load(screen_tools_menu);
+        return true;
+    }
+
+    if (screen == screen_wifi_password) {
+        if (wifi_password_keyboard != NULL)
+            lv_obj_add_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+        if (wifi_scan_from_home && wifi_editor_from_scan)
+            lv_scr_load(screen_wifi_scan);
+        else
+            lv_scr_load(wifi_editor_from_scan ? screen_wifi_scan : screen_wifi);
+        return true;
+    }
+
+    if (screen == screen_wifi_scan) {
+        if (wifi_scan_from_home) {
+            wifi_scan_from_home = false;
+            lv_scr_load(screen_pregame_home);
+        } else {
+            refresh_wifi_settings_ui();
+            lv_scr_load(screen_wifi);
+        }
+        return true;
+    }
+
     for (i = 0; i < SETTINGS_ITEM_COUNT; i++) {
         if (settings_items[i].nav_screen != NULL && screen == *settings_items[i].nav_screen) {
-            if (screen == screen_settings || screen == screen_rotate) settings_save();
+            settings_save();
             lv_scr_load(settings_pages[setting_page_of[i]]);
             return true;
         }
@@ -586,7 +943,12 @@ bool settings_handle_back(lv_obj_t *screen)
     for (i = 0; i < settings_page_count; i++) {
         if (screen == settings_pages[i]) {
             settings_save();
-            lv_scr_load(screen_quad_menu);
+            if (device_settings_from_home) {
+                device_settings_from_home = false;
+                lv_scr_load(screen_pregame_home);
+            } else {
+                lv_scr_load(screen_quad_menu);
+            }
             return true;
         }
     }
@@ -624,7 +986,7 @@ static void event_quad_tools(lv_event_t *e)
     lv_scr_load(screen_tools_menu);
 }
 
-static void event_general_game_mode(lv_event_t *e)
+static void event_general_game_settings(lv_event_t *e)
 {
     (void)e;
     open_game_mode_menu();
@@ -636,11 +998,28 @@ static void event_open_damage_log(lv_event_t *e)
     open_damage_log_screen();
 }
 
-static void event_general_reset(lv_event_t *e)
+static void event_open_table_sync_tools(lv_event_t *e)
 {
     (void)e;
-    reset_all_values();
-    back_to_main();
+    open_table_sync_screen();
+    table_sync_from_tools = true;
+}
+
+static void event_start_new_game(lv_event_t *e)
+{
+    (void)e;
+
+    /*
+     * Entering pregame is not a game start. Clear match state directly
+     * instead of reset_all_values(), which would repaint every gameplay
+     * screen, start Random First/turn tracking, then immediately stop both.
+     */
+    net_sync_leave_game();
+    stop_player_selection_animation();
+    knob_life_reset();
+    turn_timer_reset_silent();
+    mana_clear_all();
+    open_pregame_home();
     lv_indev_wait_release(lv_indev_get_act());
 }
 
@@ -648,16 +1027,16 @@ static void event_general_reset(lv_event_t *e)
 void build_quad_menus(void)
 {
     quad_item_t main_items[4] = {
-        {"Settings", event_quad_screen_settings, true, LV_EVENT_CLICKED},
-        {"Game\nMode", event_general_game_mode, true, LV_EVENT_CLICKED},
+        {"Device\nSettings", event_quad_screen_settings, true, LV_EVENT_CLICKED},
+        {"Game\nSettings", event_general_game_settings, true, LV_EVENT_CLICKED},
         {"Tools",             event_quad_tools, true, LV_EVENT_CLICKED},
-        {"Reset\n(Hold)", event_general_reset, true, LV_EVENT_LONG_PRESSED},
+        {"Start New\nGame (Hold)", event_start_new_game, true, LV_EVENT_LONG_PRESSED},
     };
     build_quad_screen(&screen_quad_menu, main_items);
 
     quad_item_t tools_items[4] = {
         {"Dice",        event_tool_dice, true, LV_EVENT_CLICKED},
-        {"Timer",       event_tool_timer, true, LV_EVENT_CLICKED},
+        {"Table\nSync", event_open_table_sync_tools, true, LV_EVENT_CLICKED},
         {"Event\nLog",  event_open_damage_log, true, LV_EVENT_CLICKED},
         {"Mana\nPool",  event_tool_mana, true, LV_EVENT_CLICKED},
     };
@@ -724,6 +1103,417 @@ void build_battery_screen(void)
     lv_obj_align(label_settings_battery_detail, LV_ALIGN_CENTER, 0, 30);
 }
 
+static void refresh_wifi_scan_ui(void)
+{
+    char ssid[WIFI_MANAGER_SSID_MAX];
+    char meta[48];
+    int rssi = 0;
+    int count = wifi_manager_scan_count();
+
+    if (count <= 0) {
+        if (wifi_scan_network_lbl != NULL)
+            lv_label_set_text(wifi_scan_network_lbl, "No networks");
+        if (wifi_scan_meta_lbl != NULL)
+            lv_label_set_text(wifi_scan_meta_lbl, "Tap RESCAN");
+        wifi_scan_index = 0;
+        return;
+    }
+
+    if (wifi_scan_index >= count)
+        wifi_scan_index = 0;
+    if (wifi_scan_index < 0)
+        wifi_scan_index = count - 1;
+
+    if (!wifi_manager_scan_ssid(wifi_scan_index, ssid, sizeof(ssid), &rssi))
+        return;
+
+    if (wifi_scan_network_lbl != NULL)
+        lv_label_set_text(wifi_scan_network_lbl, ssid);
+
+    if (wifi_scan_meta_lbl != NULL) {
+        snprintf(meta, sizeof(meta), "%d/%d   %d dBm",
+                 wifi_scan_index + 1, count, rssi);
+        lv_label_set_text(wifi_scan_meta_lbl, meta);
+    }
+}
+
+static void wifi_open_password_editor(const char *ssid, bool from_scan)
+{
+    char title[80];
+
+    if (ssid == NULL || ssid[0] == '\0')
+        return;
+
+    strlcpy(wifi_editor_ssid, ssid, sizeof(wifi_editor_ssid));
+    wifi_editor_from_scan = from_scan;
+
+    if (wifi_password_title_lbl != NULL) {
+        snprintf(title, sizeof(title), "Wi-Fi Password\n%s", wifi_editor_ssid);
+        lv_label_set_text(wifi_password_title_lbl, title);
+    }
+
+    if (wifi_password_textarea != NULL) {
+        wifi_password_visible = false;
+        lv_textarea_set_text(wifi_password_textarea, "");
+        lv_textarea_set_password_mode(wifi_password_textarea, true);
+        lv_textarea_set_placeholder_text(
+            wifi_password_textarea,
+            from_scan ? "Password (blank = open)" : "Enter new password");
+        lv_obj_clear_flag(wifi_password_textarea, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (wifi_password_eye_btn != NULL)
+        lv_obj_clear_flag(wifi_password_eye_btn, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_password_eye_lbl != NULL)
+        lv_label_set_text(wifi_password_eye_lbl, LV_SYMBOL_EYE_OPEN);
+    if (wifi_password_status_lbl != NULL) {
+        lv_label_set_text(wifi_password_status_lbl, "");
+        lv_obj_clear_flag(wifi_password_status_lbl, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (wifi_password_keyboard != NULL)
+        lv_obj_clear_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+
+    lv_scr_load(screen_wifi_password);
+}
+
+static void event_wifi_scan(lv_event_t *e)
+{
+    (void)e;
+    wifi_scan_from_home = false;
+    wifi_scan_index = 0;
+
+    if (wifi_scan_network_lbl != NULL)
+        lv_label_set_text(wifi_scan_network_lbl, "Scanning...");
+    if (wifi_scan_meta_lbl != NULL)
+        lv_label_set_text(wifi_scan_meta_lbl, "Please wait");
+
+    lv_scr_load(screen_wifi_scan);
+    lv_refr_now(NULL);
+
+    wifi_manager_scan();
+    refresh_wifi_scan_ui();
+}
+
+static void event_wifi_next(lv_event_t *e)
+{
+    int count = wifi_manager_saved_count();
+    (void)e;
+
+    if (count <= 0)
+        return;
+
+    wifi_selected_index = (wifi_selected_index + 1) % count;
+    refresh_wifi_settings_ui();
+}
+
+static void event_wifi_edit_saved(lv_event_t *e)
+{
+    wifi_manager_network_t net;
+    (void)e;
+
+    if (wifi_manager_get_saved(wifi_selected_index, &net))
+        wifi_open_password_editor(net.ssid, false);
+}
+
+static void event_wifi_preferred(lv_event_t *e)
+{
+    wifi_manager_network_t net;
+    (void)e;
+
+    if (wifi_manager_get_saved(wifi_selected_index, &net))
+        wifi_manager_set_preferred(net.ssid);
+    refresh_wifi_settings_ui();
+}
+
+static void event_wifi_forget(lv_event_t *e)
+{
+    wifi_manager_network_t net;
+    (void)e;
+
+    if (wifi_manager_get_saved(wifi_selected_index, &net))
+        wifi_manager_forget_network(net.ssid);
+    refresh_wifi_settings_ui();
+}
+
+static void event_wifi_scan_next(lv_event_t *e)
+{
+    int count = wifi_manager_scan_count();
+    (void)e;
+
+    if (count <= 0)
+        return;
+    wifi_scan_index = (wifi_scan_index + 1) % count;
+    refresh_wifi_scan_ui();
+}
+
+static void event_wifi_rescan(lv_event_t *e)
+{
+    (void)e;
+    wifi_scan_index = 0;
+
+    if (wifi_scan_network_lbl != NULL)
+        lv_label_set_text(wifi_scan_network_lbl, "Scanning...");
+    if (wifi_scan_meta_lbl != NULL)
+        lv_label_set_text(wifi_scan_meta_lbl, "Please wait");
+    lv_refr_now(NULL);
+
+    wifi_manager_scan();
+    refresh_wifi_scan_ui();
+}
+
+static void event_wifi_use_scan(lv_event_t *e)
+{
+    char ssid[WIFI_MANAGER_SSID_MAX];
+    (void)e;
+
+    if (wifi_manager_scan_ssid(wifi_scan_index, ssid, sizeof(ssid), NULL))
+        wifi_open_password_editor(ssid, true);
+}
+
+static void event_wifi_scan_back(lv_event_t *e)
+{
+    (void)e;
+    if (wifi_scan_from_home) {
+        wifi_scan_from_home = false;
+        lv_scr_load(screen_pregame_home);
+    } else {
+        refresh_wifi_settings_ui();
+        lv_scr_load(screen_wifi);
+    }
+}
+
+static void wifi_password_finish(bool save)
+{
+    const char *password = "";
+    wifi_connect_result_t result;
+    char status[96];
+
+    if (!save) {
+        if (wifi_password_keyboard != NULL)
+            lv_obj_add_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+
+        if (wifi_scan_from_home) {
+            lv_scr_load(screen_wifi_scan);
+        } else {
+            lv_scr_load(wifi_editor_from_scan ? screen_wifi_scan : screen_wifi);
+        }
+        return;
+    }
+
+    if (wifi_password_textarea != NULL)
+        password = lv_textarea_get_text(wifi_password_textarea);
+
+    if (!wifi_editor_from_scan && (password == NULL || password[0] == '\0')) {
+        if (wifi_password_status_lbl != NULL)
+            lv_label_set_text(wifi_password_status_lbl, "Enter a password");
+        return;
+    }
+    if (password == NULL)
+        password = "";
+
+    if (wifi_password_status_lbl != NULL) {
+        snprintf(status, sizeof(status), "Connecting to\n%s...", wifi_editor_ssid);
+        lv_label_set_text(wifi_password_status_lbl, status);
+    }
+    lv_refr_now(NULL);
+
+    result = wifi_manager_connect_network(wifi_editor_ssid, password, true);
+
+    if (result == WIFI_CONNECT_OK) {
+        char current[WIFI_MANAGER_SSID_MAX] = {0};
+
+        if (wifi_password_keyboard != NULL)
+            lv_obj_add_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+        if (wifi_password_textarea != NULL)
+            lv_obj_add_flag(wifi_password_textarea, LV_OBJ_FLAG_HIDDEN);
+        if (wifi_password_eye_btn != NULL)
+            lv_obj_add_flag(wifi_password_eye_btn, LV_OBJ_FLAG_HIDDEN);
+
+        wifi_manager_current_ssid(current, sizeof(current));
+        if (wifi_password_status_lbl != NULL) {
+            snprintf(status, sizeof(status),
+                     "Wi-Fi Connected\n%s\n%d dBm",
+                     current[0] ? current : wifi_editor_ssid,
+                     wifi_manager_rssi());
+            lv_label_set_text(wifi_password_status_lbl, status);
+        }
+        lv_refr_now(NULL);
+        vTaskDelay(pdMS_TO_TICKS(700));
+
+        refresh_wifi_settings_ui();
+        if (wifi_scan_from_home) {
+            wifi_scan_from_home = false;
+            lv_scr_load(screen_pregame_home);
+        } else {
+            lv_scr_load(screen_wifi);
+        }
+        return;
+    }
+
+    if (wifi_password_status_lbl != NULL) {
+        switch (result) {
+            case WIFI_CONNECT_NO_SSID:
+                lv_label_set_text(wifi_password_status_lbl,
+                                  "Network not found\nTry RESCAN");
+                break;
+            case WIFI_CONNECT_AUTH_FAILED:
+                lv_label_set_text(wifi_password_status_lbl,
+                                  "Password incorrect\nTry again");
+                break;
+            case WIFI_CONNECT_TIMEOUT:
+                lv_label_set_text(wifi_password_status_lbl,
+                                  "Connection timed out\nCheck password/signal");
+                break;
+            case WIFI_CONNECT_BLOCKED:
+                lv_label_set_text(wifi_password_status_lbl,
+                                  "Wi-Fi unavailable\nTable Sync is active");
+                break;
+            default:
+                lv_label_set_text(wifi_password_status_lbl,
+                                  "Connection failed\nTry again");
+                break;
+        }
+    }
+
+    /* Keep the editor open on failure so the user can correct the password. */
+    if (wifi_password_keyboard != NULL)
+        lv_obj_clear_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_password_textarea != NULL)
+        lv_obj_clear_flag(wifi_password_textarea, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_password_eye_btn != NULL)
+        lv_obj_clear_flag(wifi_password_eye_btn, LV_OBJ_FLAG_HIDDEN);
+    lv_refr_now(NULL);
+}
+
+static void event_wifi_password_textarea(lv_event_t *e)
+{
+    if (lv_event_get_code(e) == LV_EVENT_READY)
+        wifi_password_finish(true);
+}
+
+static void event_wifi_password_eye(lv_event_t *e)
+{
+    (void)e;
+
+    wifi_password_visible = !wifi_password_visible;
+    if (wifi_password_textarea != NULL)
+        lv_textarea_set_password_mode(wifi_password_textarea,
+                                      !wifi_password_visible);
+    if (wifi_password_eye_lbl != NULL)
+        lv_label_set_text(wifi_password_eye_lbl,
+                          wifi_password_visible
+                              ? LV_SYMBOL_EYE_CLOSE
+                              : LV_SYMBOL_EYE_OPEN);
+}
+
+static void event_wifi_password_keyboard(lv_event_t *e)
+{
+    if (lv_event_get_code(e) == LV_EVENT_CANCEL)
+        wifi_password_finish(false);
+}
+
+void build_wifi_screen(void)
+{
+    quad_item_t items[4] = {
+        {"Wi-Fi\nOff\nTap: Scan", event_wifi_scan,     true,  LV_EVENT_CLICKED},
+        {"No saved\nnetworks",    event_wifi_next,      true,  LV_EVENT_CLICKED},
+        {"Preferred\n--",         event_wifi_preferred, true,  LV_EVENT_CLICKED},
+        {"Hold to\nForget",       event_wifi_forget,    true,  LV_EVENT_LONG_PRESSED},
+    };
+    quad_item_t scan_items[4] = {
+        {"Network", event_wifi_scan_next, true, LV_EVENT_CLICKED},
+        {"RESCAN",  event_wifi_rescan,    true, LV_EVENT_CLICKED},
+        {"USE",     event_wifi_use_scan,  true, LV_EVENT_CLICKED},
+        {"BACK",    event_wifi_scan_back, true, LV_EVENT_CLICKED},
+    };
+
+    build_quad_screen(&screen_wifi, items);
+    wifi_status_lbl =
+        lv_obj_get_child(lv_obj_get_child(screen_wifi, 0), 0);
+    wifi_saved_lbl =
+        lv_obj_get_child(lv_obj_get_child(screen_wifi, 1), 0);
+    wifi_preferred_lbl =
+        lv_obj_get_child(lv_obj_get_child(screen_wifi, 2), 0);
+    wifi_forget_lbl =
+        lv_obj_get_child(lv_obj_get_child(screen_wifi, 3), 0);
+
+    /* Long-press a saved network to replace its password. */
+    lv_obj_add_event_cb(lv_obj_get_child(screen_wifi, 1),
+                        event_wifi_edit_saved, LV_EVENT_LONG_PRESSED, NULL);
+
+    build_quad_screen(&screen_wifi_scan, scan_items);
+    wifi_scan_network_lbl =
+        lv_obj_get_child(lv_obj_get_child(screen_wifi_scan, 0), 0);
+    wifi_scan_meta_lbl = lv_label_create(lv_obj_get_child(screen_wifi_scan, 0));
+    lv_label_set_text(wifi_scan_meta_lbl, "");
+    lv_obj_set_style_text_color(wifi_scan_meta_lbl, lv_color_hex(0x8CA0B3), 0);
+    lv_obj_set_style_text_font(wifi_scan_meta_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_align(wifi_scan_meta_lbl, LV_ALIGN_CENTER, 10, 42);
+
+    screen_wifi_password = lv_obj_create(NULL);
+    lv_obj_set_size(screen_wifi_password, 360, 360);
+    lv_obj_set_style_bg_color(screen_wifi_password, lv_color_black(), 0);
+    lv_obj_set_style_border_width(screen_wifi_password, 0, 0);
+    lv_obj_set_scrollbar_mode(screen_wifi_password, LV_SCROLLBAR_MODE_OFF);
+
+    wifi_password_title_lbl = lv_label_create(screen_wifi_password);
+    lv_label_set_text(wifi_password_title_lbl, "Wi-Fi Password");
+    lv_obj_set_width(wifi_password_title_lbl, 280);
+    lv_obj_set_style_text_align(wifi_password_title_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(wifi_password_title_lbl, lv_color_white(), 0);
+    lv_obj_set_style_text_font(wifi_password_title_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_align(wifi_password_title_lbl, LV_ALIGN_TOP_MID, 0, 24);
+
+    wifi_password_textarea = lv_textarea_create(screen_wifi_password);
+    lv_obj_set_size(wifi_password_textarea, 214, 44);
+    lv_obj_align(wifi_password_textarea, LV_ALIGN_TOP_MID, -18, 82);
+    lv_textarea_set_one_line(wifi_password_textarea, true);
+    lv_textarea_set_max_length(wifi_password_textarea,
+                               WIFI_MANAGER_PASSWORD_MAX - 1);
+    lv_textarea_set_password_mode(wifi_password_textarea, true);
+    lv_obj_add_event_cb(wifi_password_textarea,
+                        event_wifi_password_textarea,
+                        LV_EVENT_READY, NULL);
+
+    wifi_password_eye_btn = lv_btn_create(screen_wifi_password);
+    lv_obj_remove_style_all(wifi_password_eye_btn);
+    lv_obj_set_size(wifi_password_eye_btn, 38, 44);
+    lv_obj_align_to(wifi_password_eye_btn, wifi_password_textarea,
+                    LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+    lv_obj_set_style_radius(wifi_password_eye_btn, 10, 0);
+    lv_obj_set_style_bg_color(wifi_password_eye_btn, lv_color_hex(0x121820), 0);
+    lv_obj_set_style_bg_opa(wifi_password_eye_btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(wifi_password_eye_btn, 1, 0);
+    lv_obj_set_style_border_color(wifi_password_eye_btn, lv_color_hex(0x4A5563), 0);
+    lv_obj_add_event_cb(wifi_password_eye_btn,
+                        event_wifi_password_eye,
+                        LV_EVENT_CLICKED, NULL);
+
+    wifi_password_eye_lbl = lv_label_create(wifi_password_eye_btn);
+    lv_label_set_text(wifi_password_eye_lbl, LV_SYMBOL_EYE_OPEN);
+    lv_obj_set_style_text_color(wifi_password_eye_lbl, lv_color_hex(0xCFEFFF), 0);
+    lv_obj_set_style_text_font(wifi_password_eye_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_center(wifi_password_eye_lbl);
+
+    wifi_password_status_lbl = lv_label_create(screen_wifi_password);
+    lv_label_set_text(wifi_password_status_lbl, "");
+    lv_obj_set_width(wifi_password_status_lbl, 300);
+    lv_obj_set_style_text_align(wifi_password_status_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(wifi_password_status_lbl, lv_color_hex(0xCFEFFF), 0);
+    lv_obj_set_style_text_font(wifi_password_status_lbl, &lv_font_montserrat_14, 0);
+    lv_obj_align(wifi_password_status_lbl, LV_ALIGN_TOP_MID, 0, 132);
+
+    wifi_password_keyboard = lv_keyboard_create(screen_wifi_password);
+    lv_obj_set_size(wifi_password_keyboard, 360, 190);
+    lv_obj_align(wifi_password_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_textarea(wifi_password_keyboard, wifi_password_textarea);
+    lv_obj_add_event_cb(wifi_password_keyboard,
+                        event_wifi_password_keyboard,
+                        LV_EVENT_CANCEL, NULL);
+    lv_obj_add_flag(wifi_password_keyboard, LV_OBJ_FLAG_HIDDEN);
+
+    refresh_wifi_settings_ui();
+}
 void build_rotate_screen(void)
 {
     screen_rotate = lv_obj_create(NULL);

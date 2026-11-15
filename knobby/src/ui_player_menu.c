@@ -5,8 +5,212 @@
 #include "settings.h"
 #include "storage.h"
 #include "ui_1p.h"
+#include "ui_damage_resolver.h"
+#include "ui_mp.h"
+#include "dial_skull_icon.h"
 
 // ---------- screens ----------
+// ---------- lethal state confirmation ----------
+// Only enters from the main LVGL loop, AFTER an entire combat/action is
+// processed. No screen switches inside the game damage engine.
+lv_obj_t *screen_player_elimination_confirm = NULL;
+static lv_obj_t *elimination_confirm_title = NULL;
+static lv_obj_t *elimination_confirm_reason = NULL;
+static int elimination_confirm_player = -1;
+
+static void event_elimination_confirm(lv_event_t *e) {
+  (void)e;
+  int player=elimination_confirm_player;
+  elimination_confirm_player=-1;
+  if (player>=0) (void)confirm_pending_player_elimination(player);
+  back_to_main();
+}
+static void event_elimination_cancel(lv_event_t *e) {
+  (void)e;
+  int player=elimination_confirm_player;
+  elimination_confirm_player=-1;
+  if (player>=0) (void)cancel_pending_player_elimination(player);
+  back_to_main();
+}
+void poll_player_elimination_confirm(void) {
+  if (screen_player_elimination_confirm==NULL ||
+      lv_scr_act()==screen_player_elimination_confirm ||
+      life_preview_active)return;
+  int player=next_pending_player_elimination();
+  if (player<0)return;
+  /* A pending fight may originate on another menu; show the question
+     after the action returns to gameplay to avoid overwriting its UI. */
+  if (lv_scr_act()!=screen_multiplayer)return;
+  elimination_confirm_player=player;
+  char title[64], reason[90];
+  snprintf(title,sizeof(title),"%s eliminated?",player_names[player]);
+  if (player_life[player]<=0)
+    snprintf(reason,sizeof(reason),"Life: %d",player_life[player]);
+  else if (player_counters[player][COUNTER_TYPE_POISON]>=10)
+    snprintf(reason,sizeof(reason),"Poison: %d",
+             player_counters[player][COUNTER_TYPE_POISON]);
+  else snprintf(reason,sizeof(reason),"Lethal commander damage");
+  lv_label_set_text(elimination_confirm_title,title);
+  lv_label_set_text(elimination_confirm_reason,reason);
+  load_screen_if_needed(screen_player_elimination_confirm);
+}
+static void build_player_elimination_confirm_screen(void) {
+  screen_player_elimination_confirm=lv_obj_create(NULL);
+  lv_obj_set_size(screen_player_elimination_confirm,360,360);
+  lv_obj_set_style_bg_color(screen_player_elimination_confirm,
+                            lv_color_black(),0);
+  lv_obj_set_style_border_width(screen_player_elimination_confirm,0,0);
+  lv_obj_set_style_pad_all(screen_player_elimination_confirm,0,0);
+  lv_obj_set_scrollbar_mode(screen_player_elimination_confirm,
+                             LV_SCROLLBAR_MODE_OFF);
+
+  elimination_confirm_title=lv_label_create(screen_player_elimination_confirm);
+  lv_obj_set_width(elimination_confirm_title,290);
+  lv_label_set_text(elimination_confirm_title,"PLAYER eliminated?");
+  lv_obj_set_style_text_align(elimination_confirm_title,LV_TEXT_ALIGN_CENTER,0);
+  lv_obj_set_style_text_color(elimination_confirm_title,lv_color_white(),0);
+  lv_obj_set_style_text_font(elimination_confirm_title,&lv_font_montserrat_22,0);
+  lv_obj_align(elimination_confirm_title,LV_ALIGN_TOP_MID,0,65);
+
+  elimination_confirm_reason=lv_label_create(screen_player_elimination_confirm);
+  lv_label_set_text(elimination_confirm_reason,"Life: 0");
+  lv_obj_set_style_text_color(elimination_confirm_reason,
+                               lv_color_hex(0xFF1744),0);
+  lv_obj_set_style_text_font(elimination_confirm_reason,
+                             &lv_font_montserrat_32,0);
+  lv_obj_align(elimination_confirm_reason,LV_ALIGN_CENTER,0,-10);
+
+  lv_obj_t *btn=make_button(screen_player_elimination_confirm,
+                            "BACK",105,48,event_elimination_cancel);
+  lv_obj_set_style_radius(btn,12,0);
+  lv_obj_align(btn,LV_ALIGN_BOTTOM_LEFT,56,-70);
+  btn=make_button(screen_player_elimination_confirm,
+                  "CONFIRM",105,48,event_elimination_confirm);
+  lv_obj_set_style_radius(btn,12,0);
+  lv_obj_align(btn,LV_ALIGN_BOTTOM_RIGHT,-56,-70);
+}
+
+// ---------- focused life adjustment ----------
+// Uses the same Montserrat fonts, visual emphasis and physical dial as the
+// other built-in editors. Nothing commits until APPLY.
+lv_obj_t *screen_player_life_adjust = NULL;
+static lv_obj_t *life_edit_title = NULL;
+static lv_obj_t *life_edit_value = NULL;
+static lv_obj_t *life_edit_delta_label = NULL;
+static int life_edit_delta = 0;
+
+static void life_edit_refresh(void) {
+  char title[64], value[20], delta[24];
+  if (menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS) return;
+  snprintf(title, sizeof(title), "%s", player_names[menu_player]);
+  snprintf(value, sizeof(value), "%d",
+           clamp_life(player_life[menu_player] + life_edit_delta));
+  snprintf(delta, sizeof(delta), "%+d LIFE", life_edit_delta);
+  if (life_edit_title) lv_label_set_text(life_edit_title, title);
+  if (life_edit_value) lv_label_set_text(life_edit_value, value);
+  if (life_edit_delta_label) {
+    lv_label_set_text(life_edit_delta_label, delta);
+    lv_obj_set_style_text_color(life_edit_delta_label,
+        life_edit_delta > 0 ? lv_color_hex(0x06D6A0) :
+        life_edit_delta < 0 ? lv_color_hex(0xFF1744) :
+                              lv_color_hex(0x929BA8), 0);
+  }
+}
+
+void player_life_adjust_change(int step) {
+  if (step == 0 || menu_player < 0 || menu_player >= MAX_DISPLAY_PLAYERS ||
+      player_eliminated[menu_player]) return;
+  int next = clamp_life(player_life[menu_player] + life_edit_delta + step);
+  life_edit_delta = next - player_life[menu_player];
+  life_edit_refresh();
+}
+
+static void life_edit_adjust(lv_event_t *e) {
+  player_life_adjust_change((int)(intptr_t)lv_event_get_user_data(e));
+}
+static void life_edit_noop(lv_event_t *e) { (void)e; }
+static void life_edit_apply(lv_event_t *e) {
+  (void)e;
+  if (menu_player >= 0 && menu_player < MAX_DISPLAY_PLAYERS &&
+      !player_eliminated[menu_player] && life_edit_delta)
+    apply_life_delta(menu_player, life_edit_delta);
+  life_edit_delta = 0;
+  back_to_main();
+}
+static void life_edit_more(lv_event_t *e) {
+  (void)e;
+  life_edit_delta = 0;
+  open_player_menu(menu_player);
+}
+static void life_edit_cancel(lv_event_t *e) {
+  (void)e;
+  life_edit_delta = 0;
+  back_to_main();
+}
+void open_player_life_adjust(int player_index) {
+  if (player_index < 0 || player_index >= MAX_DISPLAY_PLAYERS ||
+      player_eliminated[player_index]) return;
+  menu_player = player_index;
+  life_edit_delta = 0;
+  life_edit_refresh();
+  load_screen_if_needed(screen_player_life_adjust);
+}
+static lv_obj_t *life_edit_button(const char *label, int x, int y,
+                                  int w, int height, lv_event_cb_t cb) {
+  lv_obj_t *btn = make_button(screen_player_life_adjust, label,
+                              w, height, cb);
+  lv_obj_set_pos(btn, x, y);
+  lv_obj_set_style_radius(btn, 12, 0);
+  lv_obj_set_style_bg_color(btn, lv_color_hex(0x1A1A2E), 0);
+  lv_obj_set_style_shadow_width(btn, 0, 0);
+  lv_obj_t *txt = lv_obj_get_child(btn, 0);
+  lv_obj_set_style_text_font(txt, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(txt, lv_color_white(), 0);
+  return btn;
+}
+static void build_player_life_adjust_screen(void) {
+  screen_player_life_adjust = lv_obj_create(NULL);
+  lv_obj_set_size(screen_player_life_adjust, 360, 360);
+  lv_obj_set_style_bg_color(screen_player_life_adjust, lv_color_black(), 0);
+  lv_obj_set_style_border_width(screen_player_life_adjust, 0, 0);
+  lv_obj_set_style_pad_all(screen_player_life_adjust, 0, 0);
+  lv_obj_set_scrollbar_mode(screen_player_life_adjust, LV_SCROLLBAR_MODE_OFF);
+
+  life_edit_title = lv_label_create(screen_player_life_adjust);
+  lv_obj_set_width(life_edit_title, 250);
+  lv_obj_set_style_text_align(life_edit_title, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_style_text_color(life_edit_title, lv_color_white(), 0);
+  lv_obj_set_style_text_font(life_edit_title, &lv_font_montserrat_22, 0);
+  lv_obj_align(life_edit_title, LV_ALIGN_TOP_MID, 0, 36);
+
+  life_edit_value = lv_label_create(screen_player_life_adjust);
+  lv_obj_set_style_text_font(life_edit_value, &lv_font_montserrat_bold_56, 0);
+  lv_obj_set_style_text_color(life_edit_value, lv_color_white(), 0);
+  lv_obj_align(life_edit_value, LV_ALIGN_TOP_MID, 0, 82);
+
+  life_edit_delta_label = lv_label_create(screen_player_life_adjust);
+  lv_obj_set_style_text_font(life_edit_delta_label, &lv_font_montserrat_16, 0);
+  lv_obj_align(life_edit_delta_label, LV_ALIGN_TOP_MID, 0, 148);
+
+  lv_obj_t *btn;
+  btn = life_edit_button("-1", 64, 183, 65, 46, life_edit_noop);
+  lv_obj_add_event_cb(btn, life_edit_adjust, LV_EVENT_CLICKED,
+                      (void *)(intptr_t)-1);
+  btn = life_edit_button("+1", 231, 183, 65, 46, life_edit_noop);
+  lv_obj_add_event_cb(btn, life_edit_adjust, LV_EVENT_CLICKED,
+                      (void *)(intptr_t)+1);
+
+  lv_obj_t *hint = lv_label_create(screen_player_life_adjust);
+  lv_label_set_text(hint, "Turn dial to change life");
+  lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(hint, lv_color_hex(0x929BA8), 0);
+  lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 243);
+
+  life_edit_button("CANCEL", 58, 279, 84, 38, life_edit_cancel);
+  life_edit_button("APPLY", 218, 279, 84, 38, life_edit_apply);
+  life_edit_button("MORE", 148, 321, 64, 28, life_edit_more);
+}
+
 lv_obj_t *screen_player_menu = NULL;
 lv_obj_t *screen_player_all_damage = NULL;
 lv_obj_t *screen_counter_menu = NULL;
@@ -140,6 +344,11 @@ static void event_menu_cmd_damage(lv_event_t *e) {
   open_select_screen();
 }
 
+static void event_menu_deal_damage(lv_event_t *e) {
+  (void)e;
+  open_damage_resolver(menu_player);
+}
+
 static void event_menu_all_damage(lv_event_t *e) {
   (void)e;
   open_all_damage_screen();
@@ -148,6 +357,11 @@ static void event_menu_all_damage(lv_event_t *e) {
 static void event_menu_counters(lv_event_t *e) {
   (void)e;
   open_counter_menu();
+}
+
+static void event_eliminated_close(lv_event_t *e) {
+  (void)e;
+  back_to_main();
 }
 
 static void event_eliminated_undo(lv_event_t *e) {
@@ -189,21 +403,34 @@ static void event_counter_experience(lv_event_t *e) {
 
 static void event_all_damage_apply(lv_event_t *e) {
   int i;
+  int track = nvs_get_players_to_track();
+  uint8_t target_mask = 0;
   bool include_myself = false;
+
+  (void)e;
+  if (all_damage_value <= 0) return;
 
   if (cb_include_myself != NULL) {
     include_myself = lv_obj_has_state(cb_include_myself, LV_STATE_CHECKED);
   }
 
-  (void)e;
-  for (i = 0; i < nvs_get_players_to_track(); i++) {
-    if (i == menu_player && !include_myself) {
-      continue;
-    }
-    apply_life_delta(i, -all_damage_value);
+  /*
+   * Build one multi-target attack instead of invoking the full resolver once
+   * per opponent. This keeps one logical action/event batch and one UI pass.
+   */
+  for (i = 0; i < track && i < MAX_DISPLAY_PLAYERS; i++) {
+    if (i == menu_player || player_eliminated[i]) continue;
+    target_mask |= (uint8_t)(1U << i);
   }
 
-  refresh_player_ui();
+  damage_log_begin_action();
+  if (target_mask != 0)
+    apply_sourced_attack(menu_player, target_mask, all_damage_value, 0);
+  if (include_myself && !player_eliminated[menu_player])
+    apply_life_delta(menu_player, -all_damage_value);
+  damage_log_end_action();
+
+  /* back_to_main() performs the single final gameplay refresh. */
   back_to_main();
 }
 
@@ -216,7 +443,6 @@ static void event_counter_apply(lv_event_t *e) {
   (void)e;
   apply_counter_edit();
   refresh_counter_edit_ui();
-  refresh_player_ui();
   back_to_main();
 }
 
@@ -237,7 +463,6 @@ static void event_color_default(lv_event_t *e) {
     return;
   player_has_override[menu_player] = false;
   player_life_color[menu_player] = false;
-  refresh_player_ui();
   back_to_main();
 }
 
@@ -247,7 +472,6 @@ static void event_color_life(lv_event_t *e) {
     return;
   player_has_override[menu_player] = true;
   player_life_color[menu_player] = true;
-  refresh_player_ui();
   back_to_main();
 }
 
@@ -294,7 +518,6 @@ void commit_player_color(void) {
   player_has_override[menu_player] = true;
   player_color_index[menu_player] = color_picker_index;
   player_life_color[menu_player] = false;
-  refresh_player_ui();
 }
 
 static void event_color_apply(lv_event_t *e) {
@@ -307,11 +530,13 @@ static void event_color_apply(lv_event_t *e) {
 void build_player_menu_screen(void) {
   quad_item_t items[4] = {
       {"Name/\nColor", event_menu_color, true, LV_EVENT_CLICKED},
-      {"Commander\nDamage", event_menu_cmd_damage, true, LV_EVENT_CLICKED},
+      {"Deal\nDamage", event_menu_deal_damage, true, LV_EVENT_CLICKED},
       {"All\nDamage", event_menu_all_damage, true, LV_EVENT_CLICKED},
       {"Counters", event_menu_counters, true, LV_EVENT_SHORT_CLICKED},
   };
   build_quad_screen(&screen_player_menu, items);
+  build_player_life_adjust_screen();
+  build_player_elimination_confirm_screen();
 
   /* Long-press Counters to manually eliminate */
   lv_obj_t *counters_btn = lv_obj_get_child(screen_player_menu, 3);
@@ -320,29 +545,46 @@ void build_player_menu_screen(void) {
 }
 
 void build_eliminated_player_menu_screen(void) {
-  screen_eliminated_player_menu = lv_obj_create(NULL);
-  lv_obj_set_size(screen_eliminated_player_menu, 360, 360);
-  lv_obj_set_style_bg_color(screen_eliminated_player_menu, lv_color_black(), 0);
-  lv_obj_set_style_border_width(screen_eliminated_player_menu, 0, 0);
+  screen_eliminated_player_menu=lv_obj_create(NULL);
+  lv_obj_set_size(screen_eliminated_player_menu,360,360);
+  lv_obj_set_style_bg_color(screen_eliminated_player_menu,
+                            lv_color_hex(0x090E16),0);
+  lv_obj_set_style_border_width(screen_eliminated_player_menu,0,0);
+  lv_obj_set_style_pad_all(screen_eliminated_player_menu,0,0);
   lv_obj_set_scrollbar_mode(screen_eliminated_player_menu,
                             LV_SCROLLBAR_MODE_OFF);
 
-  lv_obj_t *title = lv_label_create(screen_eliminated_player_menu);
-  lv_label_set_text(title, "Undo elimination");
-  lv_obj_set_style_text_color(title, lv_color_white(), 0);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
-  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 40);
+  lv_obj_t *skull=lv_img_create(screen_eliminated_player_menu);
+  lv_img_set_src(skull,&dial_skull_icon);
+  lv_img_set_zoom(skull,410);
+  lv_obj_align(skull,LV_ALIGN_TOP_MID,0,34);
 
-  lv_obj_t *hint = lv_label_create(screen_eliminated_player_menu);
-  lv_label_set_text(hint, "Restore the action that eliminated this player");
-  lv_obj_set_style_text_color(hint, lv_color_hex(0x7A7A7A), 0);
-  lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
-  lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(hint, LV_ALIGN_CENTER, 0, 0);
+  lv_obj_t *title=lv_label_create(screen_eliminated_player_menu);
+  lv_label_set_text(title,"PLAYER ELIMINATED");
+  lv_obj_set_width(title,290);
+  lv_obj_set_style_text_align(title,LV_TEXT_ALIGN_CENTER,0);
+  lv_obj_set_style_text_color(title,lv_color_hex(0xE6E9EF),0);
+  lv_obj_set_style_text_font(title,&lv_font_montserrat_22,0);
+  lv_obj_align(title,LV_ALIGN_TOP_MID,0,125);
 
-  lv_obj_t *btn = make_button(screen_eliminated_player_menu, "Undo", 120, 46,
-                              event_eliminated_undo);
-  lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -46);
+  lv_obj_t *hint=lv_label_create(screen_eliminated_player_menu);
+  lv_label_set_text(hint,"Restore this player to the game?");
+  lv_obj_set_width(hint,285);
+  lv_obj_set_style_text_align(hint,LV_TEXT_ALIGN_CENTER,0);
+  lv_obj_set_style_text_color(hint,lv_color_hex(0x9CA8B7),0);
+  lv_obj_set_style_text_font(hint,&lv_font_montserrat_14,0);
+  lv_obj_align(hint,LV_ALIGN_TOP_MID,0,175);
+
+  lv_obj_t *btn=make_button(screen_eliminated_player_menu,"BACK",
+                             110,46,event_eliminated_close);
+  lv_obj_set_style_radius(btn,12,0);
+  lv_obj_set_style_bg_color(btn,lv_color_hex(0x253142),0);
+  lv_obj_align(btn,LV_ALIGN_BOTTOM_LEFT,55,-66);
+  btn=make_button(screen_eliminated_player_menu,"UNDO",
+                  110,46,event_eliminated_undo);
+  lv_obj_set_style_radius(btn,12,0);
+  lv_obj_set_style_bg_color(btn,lv_color_hex(0x176A60),0);
+  lv_obj_align(btn,LV_ALIGN_BOTTOM_RIGHT,-55,-66);
 }
 
 void build_counter_menu_screen(void) {

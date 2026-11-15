@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "status": "starter-inventory-only-not-ready-for-gacha",
+  "notes": "Tiers are DIAL game-design proposals, not canonical Pokemon rarity. Only Mimikyu #778 has been confirmed on the real DIAL. Do not treat uninstalled species as available.",
+  "species": [
+    {
+      "id": 778,
+      "name": "Mimikyu",
+      "tier": "rare",
+      "asset": "p778.bin",
+      "confirmed_on_hardware": true
+    }
+  ]
+}

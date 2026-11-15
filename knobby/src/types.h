@@ -8,7 +8,7 @@
 
 // ---------- constants ----------
 #define MAX_GAME_PLAYERS 8
-#define MAX_DISPLAY_PLAYERS 4
+#define MAX_DISPLAY_PLAYERS 6
 #define MAX_ENEMY_COUNT (MAX_GAME_PLAYERS - 1)
 #define LIFE_MIN -999
 #define LIFE_MAX 999
@@ -17,15 +17,20 @@
 #define DEFAULT_LIFE_TOTAL 40
 #define DEFAULT_BRIGHTNESS_PERCENT 30
 #define INTRO_CHAR_COUNT 7
-#define MULTIPLAYER_COUNT 4
+#define MULTIPLAYER_COUNT 6
 #define KNOB_EVENT_QUEUE_SIZE 32
 
 // ---------- color modes ----------
 #define COLOR_MODE_PLAYER     0
-#define COLOR_MODE_LIFE       1
+#define COLOR_MODE_ART        1
 #define COLOR_MODE_COUNT      2
 
 #define CUSTOM_COLOR_COUNT 18
+
+// ---------- commander marker modes ----------
+#define CMD_MARKER_DOT   0
+#define CMD_MARKER_ART   1
+#define CMD_MARKER_COUNT 2
 
 // ---------- orientation modes ----------
 #define ORIENTATION_MODE_ABSOLUTE 0
