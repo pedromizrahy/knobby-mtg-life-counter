@@ -7,6 +7,7 @@
 #include "ui_1p.h"
 #include "ui_damage_resolver.h"
 #include "ui_mp.h"
+#include "dial_skull_icon.h"
 
 // ---------- screens ----------
 // ---------- lethal state confirmation ----------
@@ -358,6 +359,11 @@ static void event_menu_counters(lv_event_t *e) {
   open_counter_menu();
 }
 
+static void event_eliminated_close(lv_event_t *e) {
+  (void)e;
+  back_to_main();
+}
+
 static void event_eliminated_undo(lv_event_t *e) {
   (void)e;
   if (elimination_action_available(menu_player)) {
@@ -539,29 +545,46 @@ void build_player_menu_screen(void) {
 }
 
 void build_eliminated_player_menu_screen(void) {
-  screen_eliminated_player_menu = lv_obj_create(NULL);
-  lv_obj_set_size(screen_eliminated_player_menu, 360, 360);
-  lv_obj_set_style_bg_color(screen_eliminated_player_menu, lv_color_black(), 0);
-  lv_obj_set_style_border_width(screen_eliminated_player_menu, 0, 0);
+  screen_eliminated_player_menu=lv_obj_create(NULL);
+  lv_obj_set_size(screen_eliminated_player_menu,360,360);
+  lv_obj_set_style_bg_color(screen_eliminated_player_menu,
+                            lv_color_hex(0x090E16),0);
+  lv_obj_set_style_border_width(screen_eliminated_player_menu,0,0);
+  lv_obj_set_style_pad_all(screen_eliminated_player_menu,0,0);
   lv_obj_set_scrollbar_mode(screen_eliminated_player_menu,
                             LV_SCROLLBAR_MODE_OFF);
 
-  lv_obj_t *title = lv_label_create(screen_eliminated_player_menu);
-  lv_label_set_text(title, "Undo elimination");
-  lv_obj_set_style_text_color(title, lv_color_white(), 0);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_22, 0);
-  lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 40);
+  lv_obj_t *skull=lv_img_create(screen_eliminated_player_menu);
+  lv_img_set_src(skull,&dial_skull_icon);
+  lv_img_set_zoom(skull,410);
+  lv_obj_align(skull,LV_ALIGN_TOP_MID,0,34);
 
-  lv_obj_t *hint = lv_label_create(screen_eliminated_player_menu);
-  lv_label_set_text(hint, "Restore the action that eliminated this player");
-  lv_obj_set_style_text_color(hint, lv_color_hex(0x7A7A7A), 0);
-  lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
-  lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(hint, LV_ALIGN_CENTER, 0, 0);
+  lv_obj_t *title=lv_label_create(screen_eliminated_player_menu);
+  lv_label_set_text(title,"PLAYER ELIMINATED");
+  lv_obj_set_width(title,290);
+  lv_obj_set_style_text_align(title,LV_TEXT_ALIGN_CENTER,0);
+  lv_obj_set_style_text_color(title,lv_color_hex(0xE6E9EF),0);
+  lv_obj_set_style_text_font(title,&lv_font_montserrat_22,0);
+  lv_obj_align(title,LV_ALIGN_TOP_MID,0,125);
 
-  lv_obj_t *btn = make_button(screen_eliminated_player_menu, "Undo", 120, 46,
-                              event_eliminated_undo);
-  lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -46);
+  lv_obj_t *hint=lv_label_create(screen_eliminated_player_menu);
+  lv_label_set_text(hint,"Restore this player to the game?");
+  lv_obj_set_width(hint,285);
+  lv_obj_set_style_text_align(hint,LV_TEXT_ALIGN_CENTER,0);
+  lv_obj_set_style_text_color(hint,lv_color_hex(0x9CA8B7),0);
+  lv_obj_set_style_text_font(hint,&lv_font_montserrat_14,0);
+  lv_obj_align(hint,LV_ALIGN_TOP_MID,0,175);
+
+  lv_obj_t *btn=make_button(screen_eliminated_player_menu,"BACK",
+                             110,46,event_eliminated_close);
+  lv_obj_set_style_radius(btn,12,0);
+  lv_obj_set_style_bg_color(btn,lv_color_hex(0x253142),0);
+  lv_obj_align(btn,LV_ALIGN_BOTTOM_LEFT,55,-66);
+  btn=make_button(screen_eliminated_player_menu,"UNDO",
+                  110,46,event_eliminated_undo);
+  lv_obj_set_style_radius(btn,12,0);
+  lv_obj_set_style_bg_color(btn,lv_color_hex(0x176A60),0);
+  lv_obj_align(btn,LV_ALIGN_BOTTOM_RIGHT,-55,-66);
 }
 
 void build_counter_menu_screen(void) {

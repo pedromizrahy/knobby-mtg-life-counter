@@ -167,6 +167,14 @@ static void mp_refresh_skull(int panel_index, int player) {
     }
 }
 
+/* Both multiplayer preview paths use the same direction colors. */
+static lv_color_t mp_delta_color(int delta)
+{
+    if(delta>0) return lv_color_hex(0x06D6A0);
+    if(delta<0) return lv_color_hex(0xFF4A64);
+    return lv_color_white();
+}
+
 static void mp_label_set_text_if_changed(lv_obj_t *label, const char *text)
 {
     const char *current;
@@ -774,22 +782,8 @@ static lv_color_t refresh_mp_panel(lv_obj_t *panel, lv_obj_t *life_lbl, lv_obj_t
         if (preview_here) {
             snprintf(buf, sizeof(buf), "%+d", pending_life_delta);
             mp_label_set_text_if_changed(life_lbl, buf);
-            {
-                lv_color_t preview_c;
-                if (nvs_get_color_mode() == COLOR_MODE_ART) {
-                    preview_c = lv_color_white();
-                } else if (nvs_get_color_mode() == COLOR_MODE_PLAYER &&
-                           !player_has_override[i]) {
-                    preview_c = get_player_preview_color(color_i, pending_life_delta);
-                    if (color_is_light(bg_color) && color_is_light(preview_c))
-                        preview_c = lv_color_black();
-                    else if (!color_is_light(bg_color) && !color_is_light(preview_c))
-                        preview_c = lv_color_white();
-                } else {
-                    preview_c = color_is_light(bg_color) ? lv_color_black() : lv_color_white();
-                }
-                mp_set_text_color_if_changed(life_lbl, preview_c);
-            }
+            mp_set_text_color_if_changed(life_lbl,
+                                         mp_delta_color(pending_life_delta));
         } else {
             snprintf(buf, sizeof(buf), "%d", player_life[i]);
             mp_label_set_text_if_changed(life_lbl, buf);
@@ -1192,22 +1186,10 @@ void refresh_multiplayer_life_preview(void)
 
         if (life_lbl != NULL) {
             if (life_preview_active) {
-                lv_color_t preview_c = text_color;
-
                 snprintf(buf, sizeof(buf), "%+d", pending_life_delta);
-
-                if (nvs_get_color_mode() == COLOR_MODE_PLAYER &&
-                    !player_has_override[player]) {
-                    lv_color_t bg_color =
-                        get_effective_player_color(player, spec->color_index, LIFE_VIB_VIV);
-                    preview_c =
-                        get_player_preview_color(spec->color_index, pending_life_delta);
-                    if (color_is_light(bg_color) == color_is_light(preview_c))
-                        preview_c = text_color;
-                }
-
-                mp_label_set_text_if_changed(life_lbl, buf);
-                mp_set_text_color_if_changed(life_lbl, preview_c);
+                mp_label_set_text_if_changed(life_lbl,buf);
+                mp_set_text_color_if_changed(life_lbl,
+                                              mp_delta_color(pending_life_delta));
             } else {
                 snprintf(buf, sizeof(buf), "%d", player_life[player]);
                 mp_label_set_text_if_changed(life_lbl, buf);

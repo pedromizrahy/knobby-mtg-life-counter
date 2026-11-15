@@ -33,6 +33,9 @@ void turn_timer_reset_silent(void);
 uint32_t get_turn_elapsed_ms(void);
 uint32_t get_current_turn_elapsed_ms(void);
 void turn_advance(void);
+/* When the active player is eliminated, close their turn and select the
+ * next living player. Never pass a turn for an unrelated elimination. */
+void turn_advance_after_elimination(int eliminated_player);
 void turn_reminder_reconcile_after_setting_change(void);
 bool turn_life_input_blocked(void);
 

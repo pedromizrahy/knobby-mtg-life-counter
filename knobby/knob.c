@@ -397,6 +397,8 @@ static void handle_back_navigation(lv_obj_t *screen)
     } else if (screen == screen_custom_life) {
         refresh_game_mode_menu_ui();
         lv_scr_load(screen_game_setup);
+    } else if (screen == screen_eliminated_player_menu) {
+        back_to_main();
     } else if (screen == screen_player_elimination_confirm) {
         /* No swipe-out: the user must explicitly confirm or undo. */
         return;

@@ -272,6 +272,24 @@ void turn_advance(void)
         refresh_turn_ui();
 }
 
+void turn_advance_after_elimination(int eliminated_player)
+{
+    if (!turn_timer_enabled || active_turn_player != eliminated_player)
+        return;
+    int count=nvs_get_players_to_track();
+    if (count>MAX_DISPLAY_PLAYERS) count=MAX_DISPLAY_PLAYERS;
+    bool has_survivor=false;
+    for (int i=0;i<count;i++)
+        if (i!=eliminated_player && !player_eliminated[i]) {
+            has_survivor=true;
+            break;
+        }
+    /* Preserve the final player's turn for the postgame outcome flow.
+     * Never emit a new TurnStarted for somebody already eliminated. */
+    if (has_survivor)
+        turn_advance();
+}
+
 bool turn_life_input_blocked(void)
 {
     if (turn_hold_active) return true;

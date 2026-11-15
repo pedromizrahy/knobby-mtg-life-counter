@@ -276,6 +276,7 @@ bool confirm_pending_player_elimination(int player)
     net_sync_commit_player(player);
     refresh_game_player_state(player);
     playgroup_pending_reconcile_outcome();
+    turn_advance_after_elimination(player);
     return true;
 }
 
@@ -314,6 +315,7 @@ void manual_eliminate_player(int player)
     net_sync_commit_player(player);
     refresh_game_player_state(player);
     playgroup_pending_reconcile_outcome();
+    turn_advance_after_elimination(player);
 }
 
 void manual_uneliminate_player(int player)
