@@ -138,6 +138,22 @@ class PlaygroupFastPathTests(unittest.TestCase):
         for x in (100,176,184,260):
             self.assertLess(hypot(x-180,335-180),180)
 
+    def test_roster_short_tap_edits_only_selected_seat(self):
+        src=(ROOT / "knobby/src/pregame.c").read_text(encoding="utf-8")
+        handler=between(src,"static void event_roster_member_cycle(lv_event_t *e)\\n{",
+                        "\\nstatic bool member_index_used_by_other_seat(")
+        self.assertIn("member_picker_seat=seat;",handler)
+        self.assertIn("roster_edit_mode=true;",handler)
+        self.assertIn("lv_scr_load(screen_pregame_member);",handler)
+        self.assertNotIn("selected_deck_id[seat] = 0;",handler)
+        self.assertNotIn("candidate = (candidate + 1)",handler)
+        self.assertIn("if (roster_edit_mode)",src)
+        self.assertIn("roster_edit_has_pending_member",src)
+        self.assertIn("roster_edit_original_deck_id",src)
+        self.assertIn('Tap: edit player | Hold: decks',src)
+        self.assertIn("event_roster_open_decks,",src)
+        self.assertIn("LV_EVENT_LONG_PRESSED,",src)
+
     def test_starter_ui_authenticates_seat_and_persists_before_reveal(self):
         ui = (ROOT / "knobby/src/pokemon_starter_ui.cpp").read_text(encoding="utf-8")
         preview = (ROOT / "knobby/src/pokemon_playgroup_preview.cpp").read_text(encoding="utf-8")

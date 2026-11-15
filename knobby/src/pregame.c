@@ -56,6 +56,14 @@ static int selected_member_index[MAX_DISPLAY_PLAYERS] = {0};
 static bool selected_member_set[MAX_DISPLAY_PLAYERS] = {false};
 static int member_picker_seat = 0;
 static int member_picker_index = 0;
+static bool roster_edit_mode = false; /* only clicked seat is editable */
+static bool roster_edit_has_pending_member = false;
+static int roster_edit_original_member = 0;
+static bool roster_edit_original_set = false;
+static long roster_edit_original_deck_id = 0;
+static long roster_edit_original_commander_id = 0;
+static char roster_edit_original_deck_name[PG_DECK_NAME_LEN];
+static char roster_edit_original_commander_name[PG_COMMANDER_NAME_LEN];
 /* Guest is the virtual last picker item, index == current member count. */
 static bool seat_is_guest(int seat)
 {
@@ -277,6 +285,7 @@ static void show_decoded_art(deck_decoded_cache_entry_t *entry)
 }
 
 static void refresh_roster(void);
+static int first_eligible_member_index(int current_seat);
 static void refresh_mulligans(void);
 static void refresh_playgroup_picker(void);
 static void refresh_member_picker(void);
@@ -907,6 +916,8 @@ static void event_playgroup_select(lv_event_t *e)
     /* Remaining seats may be filled by virtual guests. */
 
     playgroup_roster_active = true;
+    roster_edit_mode = false;
+    roster_edit_has_pending_member = false;
     clear_selected_player_art();
     for (i = 0; i < MAX_DISPLAY_PLAYERS; i++) {
         selected_member_index[i] = 0;
@@ -927,29 +938,28 @@ static void event_playgroup_select(lv_event_t *e)
 
 static void event_roster_member_cycle(lv_event_t *e)
 {
-    int seat = (int)(intptr_t)lv_event_get_user_data(e);
-    int member_count = playgroup_cached_member_count() + 1;
-    int candidate;
-
-    if (!playgroup_roster_active || seat < 0 || seat >= pregame_player_count ||
-        member_count <= 0)
+    int seat=(int)(intptr_t)lv_event_get_user_data(e);
+    if (!playgroup_roster_active || mapping_offline_game ||
+        commander_prepare_active || seat<0 || seat>=pregame_player_count)
         return;
-
-    candidate = selected_member_index[seat];
-    for (int tries = 0; tries < member_count; tries++) {
-        candidate = (candidate + 1) % member_count;
-        if (!member_index_used_by_other_seat(candidate, seat)) {
-            selected_member_index[seat] = candidate;
-            selected_member_set[seat] = true;
-            selected_deck_id[seat] = 0;
-            selected_commander_id[seat] = 0;
-            selected_deck_name[seat][0] = '\0';
-            selected_commander_name[seat][0] = '\0';
-            refresh_playgroup_display_names();
-            refresh_roster();
-            return;
-        }
-    }
+    /* A tap must not cycle the member or erase an already chosen deck.
+       Explicit SELECT confirms any change, scoped to this seat only. */
+    roster_edit_mode=true;
+    roster_edit_has_pending_member=false;
+    roster_edit_original_member=selected_member_index[seat];
+    roster_edit_original_set=selected_member_set[seat];
+    roster_edit_original_deck_id=selected_deck_id[seat];
+    roster_edit_original_commander_id=selected_commander_id[seat];
+    snprintf(roster_edit_original_deck_name,sizeof(roster_edit_original_deck_name),
+             "%s",selected_deck_name[seat]);
+    snprintf(roster_edit_original_commander_name,sizeof(roster_edit_original_commander_name),
+             "%s",selected_commander_name[seat]);
+    member_picker_seat=seat;
+    member_picker_index=selected_member_set[seat] ?
+                        selected_member_index[seat] :
+                        first_eligible_member_index(seat);
+    refresh_member_picker();
+    lv_scr_load(screen_pregame_member);
 }
 
 static bool member_index_used_by_other_seat(int member_index, int current_seat)
@@ -1312,6 +1322,22 @@ static void event_member_select(lv_event_t *e)
         return;
     }
 
+    if (roster_edit_mode && selected_member_set[member_picker_seat] &&
+        selected_member_index[member_picker_seat]==member_picker_index) {
+        roster_edit_mode=false;
+        refresh_roster();
+        lv_scr_load(screen_pregame_roster);
+        return;
+    }
+    /* A network failure cannot erase the deck of an existing seat. */
+    if (roster_edit_mode && member != NULL &&
+        !playgroup_refresh_decks(member->user_id)) {
+        if (member_status_label != NULL)
+            lv_label_set_text(member_status_label,
+                              "Deck load failed - retry SELECT");
+        return;
+    }
+    if (roster_edit_mode) roster_edit_has_pending_member=true;
     selected_member_index[member_picker_seat] = member_picker_index;
     selected_member_set[member_picker_seat] = true;
     selected_deck_id[member_picker_seat] = 0;
@@ -1331,6 +1357,12 @@ static void event_member_select(lv_event_t *e)
     if (seat_is_guest(member_picker_seat)) {
         printf("[Playgroup] P%d selected %s (no account/deck)\n",
                member_picker_seat + 1, player_names[member_picker_seat]);
+        if (roster_edit_mode) {
+            roster_edit_mode=false;
+            refresh_roster();
+            lv_scr_load(screen_pregame_roster);
+            return;
+        }
         if (member_picker_seat + 1 < pregame_player_count) {
             member_picker_seat++;
             member_picker_index = first_eligible_member_index(member_picker_seat);
@@ -1711,6 +1743,13 @@ static void event_deck_select(lv_event_t *e)
     if (deck_art_timer != NULL)
         lv_timer_pause(deck_art_timer);
 
+    if (roster_edit_mode) {
+        roster_edit_mode=false;
+        roster_edit_has_pending_member=false;
+        refresh_roster();
+        lv_scr_load(screen_pregame_roster);
+        return;
+    }
     if (deck_picker_seat + 1 < pregame_player_count) {
         member_picker_seat = deck_picker_seat + 1;
         member_picker_index = first_eligible_member_index(member_picker_seat);
@@ -2202,8 +2241,13 @@ bool pregame_handle_back(lv_obj_t *screen)
         return true;
     }
     if (screen == screen_pregame_member) {
-        if (commander_prepare_active)
+        if (commander_prepare_active) return true;
+        if (roster_edit_mode) {
+            roster_edit_mode=false;
+            refresh_roster();
+            lv_scr_load(screen_pregame_roster);
             return true;
+        }
         lv_scr_load(screen_pregame_playgroup);
         return true;
     }
@@ -2213,6 +2257,28 @@ bool pregame_handle_back(lv_obj_t *screen)
         return true;
     }
     if (screen == screen_pregame_deck) {
+        if (roster_edit_mode) {
+            roster_edit_mode=false;
+            if (roster_edit_has_pending_member &&
+                member_picker_seat>=0 && member_picker_seat<pregame_player_count) {
+                int seat=member_picker_seat;
+                selected_member_index[seat]=roster_edit_original_member;
+                selected_member_set[seat]=roster_edit_original_set;
+                selected_deck_id[seat]=roster_edit_original_deck_id;
+                selected_commander_id[seat]=roster_edit_original_commander_id;
+                snprintf(selected_deck_name[seat],sizeof(selected_deck_name[seat]),
+                         "%s",roster_edit_original_deck_name);
+                snprintf(selected_commander_name[seat],sizeof(selected_commander_name[seat]),
+                         "%s",roster_edit_original_commander_name);
+                refresh_playgroup_display_names();
+            }
+            roster_edit_has_pending_member=false;
+            clear_deck_art();
+            if (deck_art_timer!=NULL) lv_timer_pause(deck_art_timer);
+            refresh_roster();
+            lv_scr_load(screen_pregame_roster);
+            return true;
+        }
         clear_deck_art();
         if (deck_art_timer != NULL)
             lv_timer_pause(deck_art_timer);
@@ -2602,7 +2668,7 @@ void build_pregame_screens(void)
 
         {
             lv_obj_t *hint = lv_label_create(screen_pregame_roster);
-            lv_label_set_text(hint, "Review players and decks");
+            lv_label_set_text(hint, "Tap: edit player | Hold: decks");
             lv_obj_set_style_text_color(hint, lv_color_hex(0x778391), 0);
             lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
             lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 66);
